@@ -1,0 +1,5 @@
+dist/
+node_modules/
+.inspection/
+pnpm-lock.yaml
+test-results/

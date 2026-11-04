@@ -1,0 +1,34 @@
+node_modules/
+.inspection/
+test-results/
+playwright-report/
+.playwright-profile/
+*.log
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env.*.example
+.npmrc
+.netrc
+.aws/
+.azure/
+.auth/
+playwright/.auth/
+secrets/
+secrets*.json
+credentials*.json
+*.secret.json
+*.credentials.json
+*.pem
+*.key
+*.pfx
+*.p12
+id_rsa
+id_ed25519
+
+# Browser session state and network captures may contain credentials
+storage-state*.json
+storageState*.json
+*.har
