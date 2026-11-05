@@ -12,6 +12,10 @@ export const card = (id = "42") => ({
   subjectId: id,
   name: id === "42" ? "Northern Lights" : "Voyager 1",
   rarity: "Rare",
+  families: [
+    { id: "space.astronomy", name: "Astronomy" },
+    { id: "space.exploration", name: "Space Exploration" },
+  ],
   copies: [
     {
       id: COPY_A,
@@ -27,6 +31,9 @@ export const card = (id = "42") => ({
     source: "Wikimedia Pageviews API (all-access, user agent)",
   },
 });
+export const friends = {
+  friends: [{ handle: "batu" }, { handle: "FriendB" }, { handle: "NoMatch" }],
+};
 export const albums = (contains = false) => ({
   albums: [
     {

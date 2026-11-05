@@ -7,16 +7,40 @@ import {
   readSettings,
   SETTINGS_KEY,
 } from "../shared/settings";
-import { FINISHES, messageOf, type CardContext } from "../shared/types";
+import {
+  FINISHES,
+  messageOf,
+  type CardContext,
+  type Finish,
+} from "../shared/types";
+import {
+  MARKET_FINISHES_KEY,
+  parseMarketFinishes,
+  readMarketFinishes,
+  saveMarketFinishes,
+} from "../shared/market-preferences";
 import { Popup } from "./popup";
+import { SocialReminders } from "./social";
+import { CardOverlays } from "./card-overlays";
 
 const client = new GameClient();
+new SocialReminders(client).start();
+const overlays = new CardOverlays(client);
+overlays.start();
 let settings = defaults();
+let marketFinishes: Finish[] = [...FINISHES];
+let pendingFilterWrites = 0;
+const preferencesReady = readMarketFinishes()
+  .then((finishes) => {
+    marketFinishes = finishes;
+  })
+  .catch(() => {});
 let current: CardContext | null = null,
   popup: Popup | undefined;
 let activeRequest: AbortController | undefined,
   openTimer: ReturnType<typeof setTimeout> | undefined,
   closeTimer: ReturnType<typeof setTimeout> | undefined;
+let headerSignalRequest = 0;
 let lastUrl = location.href,
   hovered = false,
   scheduled = false,
@@ -35,9 +59,16 @@ function hide() {
 }
 function laterHide() {
   cancelClose();
+  if (popup?.isPinned) return;
   closeTimer = setTimeout(() => {
-    if (!popup?.host.matches(":hover") && !popup?.shadow.activeElement) hide();
-  }, 200);
+    if (
+      !popup?.isPinned &&
+      !hovered &&
+      !popup?.host.matches(":hover") &&
+      !popup?.shadow.activeElement
+    )
+      hide();
+  }, settings.dismissDelayMs);
 }
 function options() {
   void chrome.runtime
@@ -45,8 +76,10 @@ function options() {
     .catch(() => {});
 }
 async function show(context: CardContext, fresh = false) {
-  if (!settings.enabled) return;
+  await preferencesReady;
+  if (!settings.enabled || current !== context) return;
   activeRequest?.abort();
+  const placement = popup?.pinnedPlacement();
   popup?.dispose();
   current = context;
   dialog = topDialog();
@@ -58,6 +91,22 @@ async function show(context: CardContext, fresh = false) {
     () => void show(context, true),
     hide,
     options,
+    marketFinishes,
+    async (finishes) => {
+      marketFinishes = [...finishes];
+      pendingFilterWrites++;
+      try {
+        await saveMarketFinishes(finishes);
+      } finally {
+        pendingFilterWrites--;
+      }
+    },
+    settings,
+    placement,
+    () => {
+      cancelClose();
+      if (!popup?.isPinned && !hovered) laterHide();
+    },
   );
   popup = view;
   view.host.addEventListener("pointerenter", cancelClose);
@@ -72,10 +121,25 @@ async function show(context: CardContext, fresh = false) {
   try {
     const account = await client.account(abort.signal);
     if (!valid()) return;
+    view.setAccount(account, settings.pinnedAlbums[account.key] ?? []);
+    loadHeaderSignals(view, context, abort.signal);
     const detail = client.insights(context.subjectId, abort.signal, fresh);
     void detail.then(
-      (d) => {
-        if (valid()) view.setInsights(d);
+      async (d) => {
+        if (!valid()) return;
+        view.setInsights(d);
+        let chosen;
+        let problem: string | undefined;
+        try {
+          chosen = await client.resolveCopy(context, d.copies, abort.signal);
+          if (context.surface !== "page" && !chosen)
+            problem =
+              "The exact pack copy could not be verified. Select an owned copy explicitly.";
+        } catch {
+          problem =
+            "The pack copy could not be loaded. Select an owned copy explicitly.";
+        }
+        if (valid()) view.setCopies(chosen, problem);
       },
       (error) => {
         if (valid()) view.insightsFailed(error);
@@ -90,27 +154,15 @@ async function show(context: CardContext, fresh = false) {
           if (valid()) view.setHistory(finish, new Error(messageOf(error)));
         },
       );
-    void Promise.all([detail, client.albums(context.subjectId, abort.signal)])
+    void client
+      .albums(context.subjectId, abort.signal)
       .then(
-        async ([d, albums]) => {
-          let chosen;
-          let problem: string | undefined;
-          try {
-            chosen = await client.resolveCopy(context, d.copies, abort.signal);
-            if (context.surface !== "page" && !chosen)
-              problem =
-                "The exact pack copy could not be verified. Select an owned copy explicitly.";
-          } catch {
-            problem =
-              "The pack copy could not be loaded. Select an owned copy explicitly.";
-          }
+        (albums) => {
           if (valid())
             view.setAlbums(
               account,
               albums,
               settings.pinnedAlbums[account.key] ?? [],
-              chosen,
-              problem,
             );
         },
         (error) => {
@@ -127,6 +179,27 @@ async function show(context: CardContext, fresh = false) {
       for (const f of FINISHES) view.setHistory(f, new Error(messageOf(error)));
     }
   }
+}
+function loadHeaderSignals(
+  view: Popup,
+  context: CardContext,
+  signal: AbortSignal,
+) {
+  const request = ++headerSignalRequest,
+    requestedSettings = settings;
+  view.setSignals();
+  void overlays
+    .signals(context, requestedSettings)
+    .then((signals) => {
+      if (
+        !signal.aborted &&
+        popup === view &&
+        settings === requestedSettings &&
+        request === headerSignalRequest
+      )
+        view.setSignals(signals);
+    })
+    .catch(() => {});
 }
 function enter(target: Element) {
   if (target.closest(`#${HOST_ID}`)) {
@@ -146,7 +219,8 @@ function enter(target: Element) {
     current.anchor === context.anchor
   )
     return;
-  hide();
+  if (popup?.isPinned) clearTimeout(openTimer);
+  else hide();
   current = context;
   openTimer = setTimeout(() => {
     if (current === context) void show(context);
@@ -227,16 +301,25 @@ const observer = new MutationObserver((records) => {
       return;
     }
     if (!current) return;
-    if (!current.anchor.isConnected || (popup && topDialog() !== dialog)) {
+    if (popup && topDialog() !== dialog) {
       hide();
+      return;
+    }
+    if (!current.anchor.isConnected) {
+      if (!popup?.isPinned) hide();
       return;
     }
     const next = resolveCard(current.anchor);
     if (!next) {
-      hide();
+      if (!popup?.isPinned) hide();
       return;
     }
     if (contextKey(next) !== contextKey(current)) {
+      if (popup?.isPinned) {
+        current = next;
+        void show(next);
+        return;
+      }
       const wasHovered = hovered;
       hide();
       if (wasHovered) enter(next.anchor);
@@ -253,13 +336,36 @@ observer.observe(document.body, {
 void readSettings()
   .then((s) => {
     settings = s;
+    overlays.setSettings(s);
     if (!settings.enabled) hide();
   })
   .catch(() => {});
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (
+    area === "local" &&
+    Object.keys(changes).some((key) => key.startsWith("kosmore.friend."))
+  ) {
+    popup?.refreshTrade();
+    overlays.invalidate();
+    if (popup && current && activeRequest)
+      loadHeaderSignals(popup, current, activeRequest.signal);
+  }
   if (area === "local" && changes[SETTINGS_KEY]) {
     settings = parseSettings(changes[SETTINGS_KEY].newValue);
-    hide();
+    overlays.setSettings(settings);
+    if (!settings.enabled) hide();
+    else if (popup && current && activeRequest) {
+      popup.setSettings(settings);
+      loadHeaderSignals(popup, current, activeRequest.signal);
+    }
+  }
+  if (
+    area === "local" &&
+    changes[MARKET_FINISHES_KEY] &&
+    pendingFilterWrites === 0
+  ) {
+    marketFinishes = parseMarketFinishes(changes[MARKET_FINISHES_KEY].newValue);
+    popup?.setFinishes(marketFinishes);
   }
 });
 chrome.runtime.onMessage.addListener((message, sender, respond) => {

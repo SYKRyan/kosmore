@@ -25,6 +25,7 @@ Market amounts are integer strings in millionths of a Kosmo (`100000000` display
 - A copy must still appear in the current signed-in account's `/collection/{subjectId}` response immediately before a write. A copy ID in a market, social, or card URL does not prove ownership.
 - The native market finish selector uses `plain`, `veil`, and `fullart`. Copy flags preserve both `veil` and `fullArt`; visual recognition uses `.kc-veil`, `.kc-fa`, and reveal classes. Full art takes precedence in the native market finish classification.
 - No dedicated fresh Wikipedia request is needed: the card detail already carries the recorded median and source.
+- The delivered card-detail client links owned copies to `/market/sell?subject={subjectId}&instance={copyId}`. The gavel uses this navigation only after fresh account/ownership checks and requires an available copy. It does not submit a market mutation.
 
 ## Pack identity and DOM mapping
 
@@ -40,6 +41,38 @@ Verified selectors:
 - Native enlarged preview: `.ko-viewer-sheet`, `.ko-viewer-count`.
 
 Delivered bundles consulted included `29r8uba_nhmde.js` (transport), `33yu_fe2y9x88.js` (card detail/owned copies), `18715hayuf10m.js` (price schema and finish selector), `0ihvnr133opgk.js` (album add/remove branches and viewer), and `12fwyn7dj2o02.js` (opening cards and ordering). Hash-based filenames are evidence labels, not runtime dependencies.
+
+## Private social reminders
+
+The public social client (`3i4rvn2i63msn.js`, with shared `Page` in `0e4alq37o-niu.js`) renders the selected friend as `section.sb-page[data-testid="sb-friend-card"]` inside `.sb-side`. KosMore mounts its own Shadow DOM panel immediately after that section, below the entire friend panel. Identity comes from matching `.sb-links` collection (`/friends/{handle}/collection`) and profile (`/u/{handle}`) links. A present `/social?f={handle}` must agree; a desktop default selection may have no `f` parameter. Other social subpages do not mount an editor. This uses delivered DOM contracts without inspecting React internals.
+
+Reminders use one `chrome.storage.local` key per normalized account/friend handle (`kosmore.friend.{account}.{friend}`), independently of popup settings. `/api/me` is read to verify the account; notes and selected family names are never sent to Kosmora. Handle renames create a separate reminder entry, as with account-specific album pins.
+
+New family tokens come from `GET /api/atlas/families`, the complete catalog used by `useFamilyChoices(true)` in the delivered card filters (`2ace7u1ogy3d9.js`, module `357445`). The response is `{domains:[{id,name,families:[{id,name,parent?}]}]}`; the picker uses `id`, `name`, and the domain's name. A signed-in read in the built-in browser verified 24 domains and 1,461 families on 2026-11-04; an unsigned request returned 401. There is no pagination in this catalog response. The adapter validates and flattens it, caching reads with the existing account-scoped five-minute cache. The editor accepts selected or exactly matched catalog names, supports punctuation such as commas within a family name, and preserves previously saved names that no longer match. Names remain the local reminder representation for compatibility with the initial editor. A failed catalog read disables new selections and offers Retry without blocking notes or removing stored tokens. No family preference is changed on the game's server.
+
+## Trade suggestions
+
+`GET /api/collection/{subjectId}` also exposes `families:[{id,name,...}]`; the native card-detail client renders this list directly. A signed-in built-in-browser read confirmed this shape. KosMore retains all listed memberships for matching; it does not infer other families from domain names or parent metadata. Missing or malformed family data disables suggestions without disabling market insights or album actions.
+
+The social client's `useSocial` reads `GET /api/friends` and uses `friends[]` with each friend's `handle`. A signed-in read confirmed the top-level `friends`, `incoming`, `outgoing`, `blocked`, `limits`, `requests`, and `looks` fields; that account had no friends. The populated friend-entry shape comes from the delivered social client and synthetic fixtures. Suggestions use only this current friend list, not pending requests or reminder records for former friends.
+
+The Trade tab loads its friend list on first use, verifies the account, and reads only `kosmore.friend.{account}.{friend}` keys for those friends. Matching compares saved family names with the card's actual membership names, ignoring case and whitespace. It does not use substring matching, hidden game interest data, or another account's reminders. Matches rank by matching-family count, then handle. Changes to local reminders invalidate an open popup's suggestions. Refresh/Retry explicitly refreshes the friend list. No trade is submitted; links open `/social?f={handle}`.
+
+## Card overlays and quest membership
+
+Card-corner overlays use the same DOM adapter as hover detection and consider only rendered visual cards. Text-only links, hidden faces, and decorative backs are excluded. A single paced queue checks visible cards; results are cached per account and card for five minutes. Late results are discarded when the card identity or settings change. All badges use isolated Shadow DOM and `pointer-events: none`; each indicator has a separate saved toggle and requires no hover.
+
+The sale gavel requires a positive completed-sale count in at least one verified finish history within the 30-day response window. The friend badge uses the same current-friends and saved-family matching logic as Trade. Ordinary read failures suppress that signal; 401 pauses checks until session refresh and 429 respects the shared client cooldown.
+
+`GET /api/quests` was verified through a signed-in built-in-browser read and the delivered quest hook (module `925729`, including `0qlrvpfh1jxkd.js` and `2ace7u1ogy3d9.js`). It returns `{quests:[{id,state,stars:[{subjectId,lit,...}],...}],following,max,cards}` without pagination. The inspected response and native quest catalog listed 30 quests of 15 stars each. KosMore extracts and deduplicates only validated subject IDs from every quest's stars. It does not store account progress, interpret `held` as membership, or require a quest to be followed. Lit stars remain members. The native `/quests/wanted` contract is intentionally narrower (followed quests still needing cards), so it is not used for this badge. No follow, drop, celebration, or quest mutation is called. Missing, locked, or unfamiliar catalogs produce no quest badge; sales and friend badges can still load. Synthetic fixtures preserve this response shape without account inventory or progress dumps.
+
+## Private card notes and popup layout
+
+The Notes tab uses one local key per normalized signed-in account and subject (`kosmore.cardNotes.{account}.{subjectId}`), independently of copies and finishes. Save rechecks the account before writing extension storage; no note text is sent to Kosmora. Dirty drafts survive tab changes. External storage changes refresh clean editors and preserve dirty drafts with a conflict message. Save/Cancel and storage errors are handled inside the editor.
+
+Market, Trade, and Notes tabs sit after the selected shared stats and pinned-album section. Only the selected panel scrolls; enabled stats remain visible. Both scrolling sections reserve a scrollbar gutter and inset their contents. Tab selection, loading, filtering, and stat preference changes retain the fixed popup dimensions; only the sales Show All/Show Less action changes its height within viewport limits. Recent sales labels the number displayed against the returned sample size (`Latest X of Y`); this denominator is not presented as total market activity.
+
+`Settings.stats` stores ordered `{id,enabled}` entries from the shared stat catalog. Older settings default to the original six boxes. Parsing preserves existing order and disabled entries, removes unknown/duplicate IDs, and appends newly implemented stats. Popup and options use the same stat-box renderer, and live preference updates preserve open tab editors. Header badges use the exact same applicable-signal renderer and settings flags as card-corner overlays; they do not add new game requests beyond the existing cached signal provider. Reminder loading/error messages remain visible when needed, while the normal family-picker helper and private-storage subtitle are omitted.
 
 ## Remaining live verification
 

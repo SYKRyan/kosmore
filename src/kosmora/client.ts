@@ -1,4 +1,7 @@
 import { ReadCache } from "../shared/cache";
+import { parseFamilyChoices } from "./families";
+import { parseFriends } from "./friends";
+import { parseQuestSubjects } from "./quests";
 import type {
   Account,
   Album,
@@ -22,6 +25,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status = 0,
+    public retryAt = 0,
   ) {
     super(message);
   }
@@ -47,6 +51,7 @@ export class GameClient implements KosmoraClient {
       throw new ApiError(
         "Kosmora is rate limiting requests. Try again shortly.",
         429,
+        this.blockedUntil,
       );
     const timeout = AbortSignal.timeout(15_000),
       combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
@@ -88,6 +93,7 @@ export class GameClient implements KosmoraClient {
               ? "This card or album is no longer available."
               : `Kosmora could not complete the request (${r.status}).`,
         r.status,
+        r.status === 429 ? this.blockedUntil : 0,
       );
     }
     return data;
@@ -103,6 +109,28 @@ export class GameClient implements KosmoraClient {
     return this.reads.get(
       `${this.lastAccount?.key}:card:${id}`,
       async () => parseInsights(await this.read(`/collection/${id}`, signal)),
+      fresh,
+    );
+  }
+  families(signal?: AbortSignal, fresh = false) {
+    return this.reads.get(
+      `${this.lastAccount?.key}:family-choices`,
+      async () =>
+        parseFamilyChoices(await this.read("/atlas/families", signal)),
+      fresh,
+    );
+  }
+  friends(signal?: AbortSignal, fresh = false) {
+    return this.reads.get(
+      `${this.lastAccount?.key}:friends`,
+      async () => parseFriends(await this.read("/friends", signal)),
+      fresh,
+    );
+  }
+  questSubjects(signal?: AbortSignal, fresh = false) {
+    return this.reads.get(
+      `${this.lastAccount?.key}:quest-subjects`,
+      async () => parseQuestSubjects(await this.read("/quests", signal)),
       fresh,
     );
   }

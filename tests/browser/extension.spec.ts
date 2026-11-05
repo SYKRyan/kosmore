@@ -1,14 +1,18 @@
+import { questCatalog } from "../fixtures/quests";
 import {
   test,
   expect,
   type BrowserContext,
   type Page,
+  type Route,
   type Worker,
 } from "@playwright/test";
 import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import { resolve, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { launchTestBrowser } from "./browser";
+import { socialFixture } from "../fixtures/social";
+import { familyCatalog } from "../fixtures/families";
 import {
   ALBUM_A,
   ALBUM_B,
@@ -18,6 +22,7 @@ import {
   albums,
   card,
   face,
+  friends,
   me,
   opening,
   prices,
@@ -28,6 +33,7 @@ let context: BrowserContext,
   extensionId: string,
   profile: string;
 let variantFailure = false,
+  familyCatalogFailure = false,
   holdSlow = false,
   inventoryEmpty = false,
   writeRequests = 0,
@@ -79,7 +85,15 @@ test.beforeAll(async () => {
         });
         return;
       }
-      if (path === "/api/me") body = { ...me, handle: account };
+      if (path === "/api/atlas/families") {
+        if (familyCatalogFailure) {
+          await route.fulfill({ status: 503, json: { code: "unavailable" } });
+          return;
+        }
+        body = familyCatalog;
+      } else if (path === "/api/me") body = { ...me, handle: account };
+      else if (path === "/api/friends") body = friends;
+      else if (path === "/api/quests") body = questCatalog;
       else if (path.startsWith("/api/collection/")) {
         const id = path.split("/").at(-1)!;
         if (id === "42" && holdSlow)
@@ -109,6 +123,16 @@ test.beforeAll(async () => {
       await route.fulfill({ contentType: "image/svg+xml", body: artwork });
       return;
     }
+    if (path === "/social") {
+      await route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: socialFixture(
+          account,
+          url.searchParams.get("f") === "FriendB" ? "FriendB" : "batu",
+        ),
+      });
+      return;
+    }
     await route.fulfill({
       contentType: "text/html",
       body: fixture(
@@ -124,6 +148,7 @@ test.beforeAll(async () => {
 });
 test.beforeEach(async () => {
   variantFailure = false;
+  familyCatalogFailure = false;
   holdSlow = false;
   inventoryEmpty = false;
   membership = false;
@@ -131,11 +156,19 @@ test.beforeEach(async () => {
   account = "FixturePlayer";
   await worker.evaluate(
     async ({ a, b }) => {
+      const all = await chrome.storage.local.get(null);
+      await chrome.storage.local.remove(
+        Object.keys(all).filter((key) => key.startsWith("kosmore.friend.")),
+      );
       await chrome.storage.local.set({
+        "kosmore.marketFinishes": ["plain", "veil", "fullart"],
         "kosmore.settings": {
           schemaVersion: 1,
           enabled: true,
           hoverDelayMs: 100,
+          showSaleHistoryOverlay: false,
+          showFriendInterestOverlay: false,
+          showQuestOverlay: false,
           pinnedAlbums: { fixtureplayer: [a, b] },
         },
       });
@@ -210,7 +243,9 @@ test("a failed variant stays separate from empty history and does not disable al
   await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
   await page.locator(".ko-grid-open").first().hover();
   const popup = page.locator("#kosmore-root");
-  await expect(popup.locator(".error")).toContainText("Shiny:");
+  await expect(
+    popup.locator(".error").filter({ hasText: "Shiny:" }),
+  ).toBeVisible();
   await expect(
     popup.getByRole("button", { name: "Space & discovery", exact: true }),
   ).toBeEnabled();
@@ -235,6 +270,13 @@ test("popup stays inside a narrow viewport and works above an open native dialog
   await expect(
     popup.getByRole("button", { name: "Refresh", exact: true }),
   ).toBeEnabled();
+  // Async sections resize the popup; allow its ResizeObserver to reposition it.
+  await expect
+    .poll(async () => {
+      const box = await popup.boundingBox();
+      return box!.y + box!.height;
+    })
+    .toBeLessThanOrEqual(900);
   const box = await popup.boundingBox();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(650);
@@ -289,6 +331,9 @@ test("unowned cards show insights but cannot submit an album write", async () =>
     }),
   ).toBeVisible();
   await expect(popup.locator(".stats")).toContainText("Standard");
+  await expect(
+    popup.getByRole("button", { name: "Sell card", exact: true }),
+  ).toBeDisabled();
   expect(writeRequests).toBe(0);
 });
 test("replacing an anchor removes its popup and newly inserted cards work without reinitialization", async () => {
@@ -326,7 +371,974 @@ test("saving disabled hover settings closes an existing popup in an already-open
   await options.close();
   expect(writeRequests).toBe(0);
 });
+test("price boxes precede existing stats and pinned albums precede market history", async () => {
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await page.locator(".ko-grid-open").first().hover();
+  const popup = page.locator("#kosmore-root");
+  await expect(
+    popup.locator('.metric[data-stat-id$="Price"] strong'),
+  ).toHaveText(["12", "18", "24"]);
+  await expect(popup.locator('.metric[data-stat-id$="Price"] span')).toHaveText(
+    ["Min Price", "Median Price", "Max Price"],
+  );
+  expect(
+    await popup
+      .locator(".body")
+      .evaluate((body) => [...body.children].map((e) => e.className)),
+  ).toEqual(["stat-area", "pinned-albums", "tab-workspace", "footer"]);
+  expect(
+    await popup
+      .locator(".stat-area")
+      .evaluate((stats) => [...stats.children].map((e) => e.className)),
+  ).toEqual([
+    "metrics",
+    "summary-label price-scope",
+    "note error metric-error",
+  ]);
+  await expect(
+    popup.getByRole("button", { name: "Sell card", exact: true }),
+  ).toBeEnabled();
+  await popup.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await mkdir("test-results/screenshots", { recursive: true });
+  await page.screenshot({ path: "test-results/screenshots/popup-updated.png" });
+});
+test("recent sales defaults to five and expands to every returned sale", async () => {
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await page.locator(".ko-grid-open").first().hover();
+  const popup = page.locator("#kosmore-root");
+  await expect(popup.locator(".sales li")).toHaveCount(5);
+  const collapsed = await popup.boundingBox();
+  await popup.getByRole("button", { name: "Show All", exact: true }).click();
+  await expect(popup.locator(".sales li")).toHaveCount(6);
+  const expanded = await popup.boundingBox();
+  expect(expanded!.width).toBe(collapsed!.width);
+  expect(expanded!.height).toBeGreaterThan(collapsed!.height);
+  expect(expanded!.y + expanded!.height).toBeLessThanOrEqual(1000);
+  await popup.getByRole("button", { name: "Show Less", exact: true }).click();
+  await expect(popup.locator(".sales li")).toHaveCount(5);
+  expect((await popup.boundingBox())!.height).toBeCloseTo(collapsed!.height, 2);
+  expect(writeRequests).toBe(0);
+});
+test("popup dimensions stay fixed while data loads, filters hide content, and a new card opens", async () => {
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const pause = async (route: Route) => {
+    await ready;
+    await route.fallback();
+  };
+  await page.route("**/api/**", pause);
+  try {
+    await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+    await page.locator(".ko-grid-open").first().hover();
+    const popup = page.locator("#kosmore-root");
+    await expect(popup).toBeVisible();
+    const initial = await popup.boundingBox();
+    expect(initial!.width).toBeCloseTo(440, 2);
+    expect(initial!.height).toBeCloseTo(900, 2);
+    release();
+    await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_A);
+    await expect(popup.locator(".sales li")).toHaveCount(5);
+    const dimensions = async () => {
+      return popup.evaluate((element) => ({
+        width: (element as HTMLElement).offsetWidth,
+        height: (element as HTMLElement).offsetHeight,
+      }));
+    };
+    const expected = {
+      width: Math.round(initial!.width),
+      height: Math.round(initial!.height),
+    };
+    expect(await dimensions()).toEqual(expected);
+    const bodyWidth = await popup
+      .locator(".body")
+      .evaluate((e) => e.clientWidth);
+    for (const finish of ["Standard", "Shiny", "Full art"])
+      await popup.getByLabel(finish, { exact: true }).uncheck();
+    await expect(popup.locator(".sales li")).toHaveCount(0);
+    expect(await dimensions()).toEqual(expected);
+    expect(await popup.locator(".body").evaluate((e) => e.clientWidth)).toBe(
+      bodyWidth,
+    );
+    await page.keyboard.press("Escape");
+    await page.locator(".ko-grid-open").nth(3).hover();
+    await expect(popup.locator("h2")).toHaveText("Andromeda");
+    expect(await dimensions()).toEqual(expected);
+    expect(writeRequests).toBe(0);
+  } finally {
+    release();
+    await page.unroute("**/api/**", pause);
+  }
+});
+test("variant checkboxes persist across popups and options saves without closing the current popup", async () => {
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await page.locator(".ko-grid-open").first().hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByLabel("Shiny", { exact: true }).uncheck();
+  await expect(popup).toBeVisible();
+  await expect(popup.locator(".sales li")).toHaveCount(3);
+  await expect
+    .poll(() =>
+      worker.evaluate(
+        async () =>
+          (await chrome.storage.local.get("kosmore.marketFinishes"))[
+            "kosmore.marketFinishes"
+          ],
+      ),
+    )
+    .toEqual(["plain", "fullart"]);
+  await page.keyboard.press("Escape");
+  await page.locator(".ko-grid-open").nth(3).hover();
+  await expect(popup.getByLabel("Shiny", { exact: true })).not.toBeChecked();
+  const options = await context.newPage();
+  await options.goto(`chrome-extension://${extensionId}/options.html`);
+  await expect(
+    options.getByText("Connected to FixturePlayer.", { exact: true }),
+  ).toBeVisible();
+  await options
+    .getByRole("button", { name: "Save settings", exact: true })
+    .click();
+  await options.close();
+  await page.locator(".ko-grid-open").nth(3).hover();
+  await expect(popup.getByLabel("Shiny", { exact: true })).not.toBeChecked();
+});
+test("the gavel opens the native sell form for the exact recap copy without submitting a sale", async () => {
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await page.locator(".ko-grid-open").nth(1).hover();
+  const popup = page.locator("#kosmore-root");
+  await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_B);
+  await popup.getByRole("button", { name: "Sell card", exact: true }).click();
+  await expect(page).toHaveURL(
+    `https://kosmora.io/market/sell?subject=42&instance=${COPY_B}`,
+  );
+  expect(writeRequests).toBe(0);
+});
+test("the gavel requires copy selection when ambiguous even without pinned albums", async () => {
+  await worker.evaluate(async () => {
+    const s = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as { pinnedAlbums: Record<string, string[]> };
+    s.pinnedAlbums.fixtureplayer = [];
+    await chrome.storage.local.set({ "kosmore.settings": s });
+  });
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await expect(
+    popup.getByRole("button", { name: "Sell card", exact: true }),
+  ).toBeDisabled();
+  await popup.getByLabel("Owned copy").selectOption(COPY_A);
+  await expect(
+    popup.getByRole("button", { name: "Sell card", exact: true }),
+  ).toBeEnabled();
+  await popup.getByRole("button", { name: "Sell card", exact: true }).click();
+  await expect(page).toHaveURL(
+    `https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`,
+  );
+  expect(writeRequests).toBe(0);
+});
+test("closing the popup after pressing the gavel still opens sale details", async () => {
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await page.locator(".ko-grid-open").nth(1).hover();
+  const popup = page.locator("#kosmore-root");
+  const sell = popup.getByRole("button", { name: "Sell card", exact: true });
+  await expect(sell).toBeEnabled();
+  holdSlow = true;
+  const verification = page.waitForRequest("**/api/collection/42");
+  await sell.click();
+  await verification;
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+  await expect(page).toHaveURL(
+    `https://kosmora.io/market/sell?subject=42&instance=${COPY_B}`,
+  );
+  expect(writeRequests).toBe(0);
+});
+test("pending sell navigation does not override another page the user opens", async () => {
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await page.locator(".ko-grid-open").nth(1).hover();
+  const sell = page
+    .locator("#kosmore-root")
+    .getByRole("button", { name: "Sell card", exact: true });
+  await expect(sell).toBeEnabled();
+  holdSlow = true;
+  const verification = page.waitForResponse("**/api/collection/42");
+  await sell.click();
+  // Exercise same-document navigation: the content script remains alive.
+  await page.evaluate(() => {
+    history.pushState({}, "", "/collection");
+  });
+  await verification;
+  await page.waitForTimeout(100);
+  await expect(page).toHaveURL("https://kosmora.io/collection");
+  expect(writeRequests).toBe(0);
+});
+test("friend notes and family tokens save locally below the native panel and survive reload", async () => {
+  await page.goto("https://kosmora.io/social?f=batu");
+  const editor = page.locator("#kosmore-friend-reminders");
+  await expect(editor.getByLabel("Notes", { exact: true })).toBeEnabled();
+  await expect(editor.locator("h2")).toHaveText("batu");
+  expect(
+    await editor
+      .locator(".section")
+      .evaluateAll((sections) =>
+        sections.map((s) => s.querySelector("h3")?.textContent),
+      ),
+  ).toEqual(["Families they like", "Notes"]);
+  expect(
+    await editor.evaluate((e) =>
+      e.previousElementSibling?.getAttribute("data-testid"),
+    ),
+  ).toBe("sb-friend-card");
+  await editor
+    .getByLabel("Notes", { exact: true })
+    .fill("Prefers ships. Ask before sending duplicates.");
+  const families = editor.getByLabel("Families they like", { exact: true });
+  await families.fill("Ships and Boats");
+  await families.press("Enter");
+  await families.fill("Fish");
+  await families.press("Enter");
+  await families.fill("fish");
+  await editor.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(
+    editor.getByRole("list", { name: "Preferred families" }).locator("li"),
+  ).toHaveCount(2);
+  await editor
+    .getByRole("button", { name: "Save reminders", exact: true })
+    .click();
+  await expect(editor.getByRole("status")).toHaveText("Saved locally");
+  expect(
+    await worker.evaluate(
+      async () =>
+        (await chrome.storage.local.get("kosmore.friend.fixtureplayer.batu"))[
+          "kosmore.friend.fixtureplayer.batu"
+        ],
+    ),
+  ).toEqual({
+    schemaVersion: 1,
+    notes: "Prefers ships. Ask before sending duplicates.",
+    families: ["Ships and Boats", "Fish"],
+  });
+  await editor.getByLabel("Notes", { exact: true }).fill("Discard this edit");
+  await editor
+    .getByRole("button", { name: "Remove family Fish", exact: true })
+    .click();
+  await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(editor.getByLabel("Notes", { exact: true })).toHaveValue(
+    "Prefers ships. Ask before sending duplicates.",
+  );
+  await expect(
+    editor.getByRole("button", { name: "Remove family Fish", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(editor.getByLabel("Notes", { exact: true })).toHaveValue(
+    "Prefers ships. Ask before sending duplicates.",
+  );
+  await expect(
+    editor.getByRole("button", {
+      name: "Remove family Ships and Boats",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await editor.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: "test-results/screenshots/friend-reminders.png",
+    fullPage: true,
+  });
+  await expect(page.locator("body")).toHaveAttribute("data-native-action", "");
+  expect(writeRequests).toBe(0);
+});
+test("reminders follow friend selection and remain separate between signed-in accounts", async () => {
+  await page.goto("https://kosmora.io/social");
+  const editor = page.locator("#kosmore-friend-reminders");
+  const notes = editor.getByLabel("Notes", { exact: true });
+  await expect(notes).toBeEnabled();
+  await notes.fill("Batu reminder");
+  await editor
+    .getByRole("button", { name: "Save reminders", exact: true })
+    .click();
+  await expect(editor.getByRole("status")).toHaveText("Saved locally");
+  await page.locator('[data-friend="FriendB"]').click();
+  await expect(
+    editor.getByRole("heading", { name: "FriendB", exact: true }),
+  ).toBeVisible();
+  await expect(notes).toBeEnabled();
+  await expect(notes).toHaveValue("");
+  await notes.fill("Other friend reminder");
+  await editor
+    .getByRole("button", { name: "Save reminders", exact: true })
+    .click();
+  await expect(editor.getByRole("status")).toHaveText("Saved locally");
+  await page.locator('[data-friend="batu"]').click();
+  await expect(notes).toHaveValue("Batu reminder");
+  account = "OtherPlayer";
+  await page.evaluate(() => {
+    document.querySelector(".rail a")!.setAttribute("href", "/u/OtherPlayer");
+  });
+  await expect(notes).toHaveValue("");
+  await expect(notes).toBeEnabled();
+  await notes.fill("Different account reminder");
+  await editor
+    .getByRole("button", { name: "Save reminders", exact: true })
+    .click();
+  await expect(editor.getByRole("status")).toHaveText("Saved locally");
+  account = "FixturePlayer";
+  await page.evaluate(() => {
+    document.querySelector(".rail a")!.setAttribute("href", "/u/FixturePlayer");
+  });
+  await expect(notes).toHaveValue("Batu reminder");
+  expect(
+    await worker.evaluate(
+      async () =>
+        (await chrome.storage.local.get("kosmore.friend.otherplayer.batu"))[
+          "kosmore.friend.otherplayer.batu"
+        ],
+    ),
+  ).toMatchObject({ notes: "Different account reminder" });
+  expect(writeRequests).toBe(0);
+});
+test("a save after an account change cannot put a draft into either account's reminders", async () => {
+  await page.goto("https://kosmora.io/social?f=batu");
+  const editor = page.locator("#kosmore-friend-reminders");
+  const notes = editor.getByLabel("Notes", { exact: true });
+  await expect(notes).toBeEnabled();
+  await notes.fill("Do not save across accounts");
+  account = "OtherPlayer";
+  await editor
+    .getByRole("button", { name: "Save reminders", exact: true })
+    .click();
+  await expect(editor.getByRole("status")).toContainText(
+    "Your account is changing",
+  );
+  await expect(notes).toBeDisabled();
+  expect(
+    await worker.evaluate(async () =>
+      Object.keys(await chrome.storage.local.get(null)).filter((k) =>
+        k.startsWith("kosmore.friend."),
+      ),
+    ),
+  ).toEqual([]);
+  expect(writeRequests).toBe(0);
+});
+test("reminders receive other-tab saves while preserving an unsaved local draft", async () => {
+  await page.goto("https://kosmora.io/social?f=batu");
+  const editor = page.locator("#kosmore-friend-reminders");
+  const notes = editor.getByLabel("Notes", { exact: true });
+  await expect(notes).toBeEnabled();
+  await worker.evaluate(async () => {
+    await chrome.storage.local.set({
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        notes: "From another tab",
+        families: ["Fish"],
+      },
+    });
+  });
+  await expect(notes).toHaveValue("From another tab");
+  await notes.fill("My unsaved draft");
+  await worker.evaluate(async () => {
+    await chrome.storage.local.set({
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        notes: "Newer remote edit",
+        families: ["Ships and Boats"],
+      },
+    });
+  });
+  await expect(editor.getByRole("status")).toContainText(
+    "Updated in another tab",
+  );
+  await expect(notes).toHaveValue("My unsaved draft");
+  await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(notes).toHaveValue("Newer remote edit");
+  await expect(
+    editor.getByRole("button", {
+      name: "Remove family Ships and Boats",
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(writeRequests).toBe(0);
+});
+test("a delayed account read never populates a different friend's editor", async () => {
+  await worker.evaluate(async () => {
+    await chrome.storage.local.set({
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        notes: "Batu only",
+        families: [],
+      },
+      "kosmore.friend.fixtureplayer.friendb": {
+        schemaVersion: 1,
+        notes: "FriendB only",
+        families: [],
+      },
+    });
+  });
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let held = false;
+  const pause = async (route: Route) => {
+    if (!held) {
+      held = true;
+      await ready;
+    }
+    await route.fallback();
+  };
+  await page.route("**/api/me", pause);
+  try {
+    await page.goto("https://kosmora.io/social?f=batu");
+    const editor = page.locator("#kosmore-friend-reminders");
+    await expect(editor.getByLabel("Notes", { exact: true })).toBeDisabled();
+    await page.locator('[data-friend="FriendB"]').click();
+    await expect(editor.getByLabel("Notes", { exact: true })).toHaveValue(
+      "FriendB only",
+    );
+    release();
+    await expect(
+      editor.getByRole("heading", { name: "FriendB", exact: true }),
+    ).toBeVisible();
+    await expect(editor.getByLabel("Notes", { exact: true })).toHaveValue(
+      "FriendB only",
+    );
+  } finally {
+    release();
+    await page.unroute("**/api/me", pause);
+  }
+  expect(writeRequests).toBe(0);
+});
+test("reminders stay within a narrow screen and disappear on other social subpages", async () => {
+  await page.setViewportSize({ width: 650, height: 900 });
+  try {
+    await page.goto("https://kosmora.io/social?f=batu");
+    const editor = page.locator("#kosmore-friend-reminders");
+    await expect(editor.getByLabel("Notes", { exact: true })).toBeEnabled();
+    const box = await editor.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(650);
+    await page.evaluate(() => {
+      history.pushState({}, "", "/social?v=give&f=batu");
+      document
+        .querySelector(".sb-side")!
+        .setAttribute("class", "sb-side giving");
+    });
+    await expect(editor).toHaveCount(0);
+    await page.evaluate(() => {
+      history.pushState({}, "", "/social?f=batu");
+      document.querySelector(".sb-side")!.setAttribute("class", "sb-side");
+    });
+    await expect(editor).toHaveCount(1);
+    expect(writeRequests).toBe(0);
+  } finally {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+  }
+});
+test("family search accepts only catalog choices and preserves commas in names", async () => {
+  await page.goto("https://kosmora.io/social?f=batu");
+  const editor = page.locator("#kosmore-friend-reminders");
+  const family = editor.getByRole("combobox", {
+    name: "Families they like",
+    exact: true,
+  });
+  await family.fill("Invented invalid family");
+  await editor.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(editor.getByRole("status")).toContainText(
+    "Choose a valid family",
+  );
+  await expect(editor.locator(".tokens li")).toHaveCount(0);
+  await family.fill("ducks");
+  await expect(
+    editor.getByRole("option", {
+      name: "Ducks, Geese and Swans · Animals",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await family.press("ArrowDown");
+  await family.press("Enter");
+  await editor
+    .getByRole("button", { name: "Save reminders", exact: true })
+    .click();
+  await expect(editor.getByRole("status")).toHaveText("Saved locally");
+  await page.reload();
+  await expect(
+    editor.getByRole("button", {
+      name: "Remove family Ducks, Geese and Swans",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await family.fill("cinema");
+  await editor
+    .getByRole("option", { name: "Cinéma · Arts", exact: true })
+    .click();
+  await expect(
+    editor.getByRole("button", { name: "Remove family Cinéma", exact: true }),
+  ).toBeVisible();
+  expect(writeRequests).toBe(0);
+});
+test("a catalog failure preserves old tokens and notes remain editable while retry restores choices", async () => {
+  familyCatalogFailure = true;
+  await worker.evaluate(async () => {
+    await chrome.storage.local.set({
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        notes: "Keep this",
+        families: ["Previously entered family"],
+      },
+    });
+  });
+  await page.goto("https://kosmora.io/social?f=batu");
+  const editor = page.locator("#kosmore-friend-reminders");
+  await expect(editor.getByText(/Family list unavailable/)).toBeVisible();
+  await expect(
+    editor.getByRole("combobox", { name: "Families they like", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    editor.getByRole("button", {
+      name: "Remove family Previously entered family",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await editor
+    .getByLabel("Notes", { exact: true })
+    .fill("Notes can still save");
+  await editor
+    .getByRole("button", { name: "Save reminders", exact: true })
+    .click();
+  await expect(editor.getByRole("status")).toHaveText("Saved locally");
+  familyCatalogFailure = false;
+  await editor
+    .getByRole("button", { name: "Retry families", exact: true })
+    .click();
+  await expect(
+    editor.getByRole("combobox", { name: "Families they like", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    editor.getByRole("button", {
+      name: "Remove family Previously entered family",
+      exact: true,
+    }),
+  ).toBeVisible();
+  expect(writeRequests).toBe(0);
+});
+test("Market is selected by default and Trade matches only current friends' saved families", async () => {
+  await worker.evaluate(async () => {
+    const r = (families: string[]) => ({
+      schemaVersion: 1,
+      notes: "private",
+      families,
+    });
+    await chrome.storage.local.set({
+      "kosmore.friend.fixtureplayer.batu": r(["Astronomy"]),
+      "kosmore.friend.fixtureplayer.friendb": r([
+        "Astronomy",
+        "Space Exploration",
+      ]),
+      "kosmore.friend.otherplayer.nomatch": r(["Astronomy"]),
+      "kosmore.friend.fixtureplayer.formerfriend": r(["Astronomy"]),
+    });
+  });
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await expect(
+    popup.getByRole("tab", { name: "Market", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  const before = await popup.evaluate((e) => ({
+    width: (e as HTMLElement).offsetWidth,
+    height: (e as HTMLElement).offsetHeight,
+  }));
+  await popup
+    .getByRole("tab", { name: "Market", exact: true })
+    .press("ArrowRight");
+  await expect(
+    popup.getByRole("tab", { name: "Trade", exact: true }),
+  ).toBeFocused();
+  await expect(
+    popup
+      .getByRole("list", { name: "Matching friends", exact: true })
+      .locator(".friend-link"),
+  ).toHaveText(["FriendB", "batu"]);
+  await expect(
+    popup.getByRole("tabpanel", { name: "Market", exact: true }),
+  ).toBeHidden();
+  expect(
+    await popup.evaluate((e) => ({
+      width: (e as HTMLElement).offsetWidth,
+      height: (e as HTMLElement).offsetHeight,
+    })),
+  ).toEqual(before);
+  await worker.evaluate(async () => {
+    await chrome.storage.local.set({
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        notes: "private",
+        families: [],
+      },
+    });
+  });
+  await expect(
+    popup
+      .getByRole("list", { name: "Matching friends", exact: true })
+      .locator(".friend-link"),
+  ).toHaveText(["FriendB"]);
+  await popup.getByRole("tab", { name: "Trade", exact: true }).press("Home");
+  await expect(
+    popup.getByRole("tabpanel", { name: "Market", exact: true }),
+  ).toBeVisible();
+  await expect(popup.locator(".sales li")).toHaveCount(5);
+  expect(writeRequests).toBe(0);
+});
+test("Trade has an empty state when no current friend's saved families match", async () => {
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("tab", { name: "Trade", exact: true }).click();
+  await expect(
+    popup.getByText(
+      "No saved family preferences for your current friends yet.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    popup.getByRole("link", {
+      name: "Edit friends' family preferences on Social",
+      exact: true,
+    }),
+  ).toHaveAttribute("href", "/social");
+  expect(writeRequests).toBe(0);
+});
+test("a failed friend read leaves the Market tab usable and offers Retry", async () => {
+  await page.route("**/api/friends", (route) =>
+    route.fulfill({ status: 503, json: { error: "unavailable" } }),
+  );
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await page.locator(".kc-article").hover();
+    const popup = page.locator("#kosmore-root");
+    await popup.getByRole("tab", { name: "Trade", exact: true }).click();
+    await expect(
+      popup.getByRole("button", { name: "Retry matches", exact: true }),
+    ).toBeVisible();
+    await popup.getByRole("tab", { name: "Market", exact: true }).click();
+    await expect(popup.locator(".sales li")).toHaveCount(5);
+    expect(writeRequests).toBe(0);
+  } finally {
+    await page.unroute("**/api/friends");
+  }
+});
+test("card notes persist per subject while switching tabs never resizes the popup", async () => {
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  const dimensions = () =>
+    popup.evaluate((e) => ({
+      width: (e as HTMLElement).offsetWidth,
+      height: (e as HTMLElement).offsetHeight,
+    }));
+  await expect(
+    popup.getByRole("tab", { name: "Market", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await popup.evaluate((element) =>
+    Promise.all(element.getAnimations().map((animation) => animation.finished)),
+  );
+  const size = await dimensions();
+  const commonPosition = () =>
+    popup.locator(".stat-area").evaluate((e) => e.getBoundingClientRect().y);
+  const statsY = await commonPosition();
+  await popup.locator(".tab-content").evaluate((e) => {
+    e.scrollTop = e.scrollHeight;
+  });
+  expect(await commonPosition()).toBe(statsY);
+  expect(
+    await popup
+      .locator(".tab-content")
+      .evaluate((e) => e.scrollWidth <= e.clientWidth),
+  ).toBe(true);
+  expect(
+    await popup.locator(".tabs").evaluate((e) => e.getBoundingClientRect().y),
+  ).toBeGreaterThan(
+    await popup
+      .locator(".pinned-albums")
+      .evaluate((e) => e.getBoundingClientRect().bottom),
+  );
+  await popup.getByRole("tab", { name: "Market", exact: true }).press("End");
+  await expect(
+    popup.getByRole("tab", { name: "Notes", exact: true }),
+  ).toBeFocused();
+  const input = popup.getByRole("textbox", { name: "Card notes", exact: true });
+  await input.fill("Keep one copy for trading.");
+  await popup.getByRole("button", { name: "Save notes", exact: true }).click();
+  await expect(popup.getByRole("status")).toHaveText("Saved locally");
+  expect(await dimensions()).toEqual(size);
+  expect(await commonPosition()).toBe(statsY);
+  await page.keyboard.press("Escape");
+  await page.locator(".kc-article").hover();
+  await popup.getByRole("tab", { name: "Notes", exact: true }).click();
+  await expect(input).toHaveValue("Keep one copy for trading.");
+  expect(writeRequests).toBe(0);
+});
+test("saved settings independently remove the three card overlays in existing tabs", async () => {
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as Record<string, unknown>;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        showSaleHistoryOverlay: true,
+        showFriendInterestOverlay: true,
+        showQuestOverlay: true,
+      },
+    });
+  });
+  await worker.evaluate(async () => {
+    await chrome.storage.local.set({
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        notes: "",
+        families: ["Astronomy"],
+      },
+    });
+  });
+  await page.goto("https://kosmora.io/collection");
+  await expect(
+    page.locator("[data-kosmore-card-overlays] .sale"),
+  ).toBeVisible();
+  await expect(
+    page.locator("[data-kosmore-card-overlays] .friend"),
+  ).toBeVisible();
+  const options = await context.newPage();
+  await options.goto(`chrome-extension://${extensionId}/options.html`);
+  await options
+    .getByLabel("Show sale history icon on cards", { exact: true })
+    .uncheck();
+  await options
+    .getByRole("button", { name: "Save settings", exact: true })
+    .click();
+  await expect(page.locator("[data-kosmore-card-overlays] .sale")).toHaveCount(
+    0,
+  );
+  await expect(
+    page.locator("[data-kosmore-card-overlays] .friend"),
+  ).toBeVisible();
+  await options
+    .getByLabel("Show interested friends icon on cards", { exact: true })
+    .uncheck();
+  await options
+    .getByRole("button", { name: "Save settings", exact: true })
+    .click();
+  await expect(
+    page.locator("[data-kosmore-card-overlays] .quest"),
+  ).toBeVisible();
+  await options
+    .getByLabel("Show quest icon on cards", { exact: true })
+    .uncheck();
+  await options
+    .getByRole("button", { name: "Save settings", exact: true })
+    .click();
+  await expect(page.locator("[data-kosmore-card-overlays]")).toHaveCount(0);
+  await options.close();
+  expect(writeRequests).toBe(0);
+});
+test("popup dimensions and dismiss delay save, cancel and apply in an open tab", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  const options = await context.newPage();
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    const width = options.getByLabel("Popup width", { exact: true });
+    const height = options.getByLabel("Popup height", { exact: true });
+    const dismiss = options.getByLabel("Dismiss delay", { exact: true });
+    await expect(width).toHaveValue("440");
+    await width.fill("100");
+    await options
+      .getByRole("button", { name: "Save settings", exact: true })
+      .click();
+    await expect(options.getByRole("status")).toContainText(
+      "Choose a popup width",
+    );
+    await width.fill("560");
+    await height.fill("760");
+    await dismiss.fill("1200");
+    await options
+      .getByRole("button", { name: "Save settings", exact: true })
+      .click();
+    await expect(options.getByRole("status")).toContainText("Saved.");
+    await expect
+      .poll(async () => {
+        const bounds = await popup.boundingBox();
+        return { width: bounds?.width, height: bounds?.height };
+      })
+      .toEqual({ width: 560, height: 760 });
+    await width.fill("600");
+    await dismiss.fill("0");
+    await options
+      .getByRole("button", { name: "Cancel changes", exact: true })
+      .click();
+    await expect(width).toHaveValue("560");
+    await expect(dismiss).toHaveValue("1200");
+    await options.reload();
+    await expect(height).toHaveValue("760");
+    await expect(dismiss).toHaveValue("1200");
+    await options.screenshot({
+      path: "test-results/screenshots/popup-settings.png",
+      fullPage: true,
+    });
+  } finally {
+    await options.close();
+  }
+  expect(writeRequests).toBe(0);
+});
+test("the configured dismiss delay starts after leaving and cancels on reentry", async () => {
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as Record<string, unknown>;
+    await chrome.storage.local.set({
+      "kosmore.settings": { ...settings, dismissDelayMs: 1000 },
+    });
+  });
+  await page.goto("https://kosmora.io/collection");
+  const card = page.locator(".kc-article"),
+    popup = page.locator("#kosmore-root");
+  await card.hover();
+  await expect(popup.locator(".sales li")).toHaveCount(5);
+  await page.mouse.move(10, 10);
+  await page.waitForTimeout(350);
+  await expect(popup).toBeVisible();
+  await card.hover();
+  await page.waitForTimeout(750);
+  await expect(popup).toBeVisible();
+  await page.mouse.move(10, 10);
+  await expect(popup).toHaveCount(0);
+  expect(writeRequests).toBe(0);
+});
+test("a pinned popup drags, stays visible, and updates cards without moving or accepting stale results", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  holdSlow = true;
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await page.locator(".ko-grid-open").first().hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await expect(
+    popup.getByRole("button", { name: "Unpin popup", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  const before = (await popup.boundingBox())!;
+  const header = (await popup.locator(".top").boundingBox())!;
+  await page.mouse.move(header.x + 35, header.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(1020, 45, { steps: 8 });
+  await page.mouse.up();
+  const moved = (await popup.boundingBox())!;
+  expect(moved.x).toBeGreaterThan(before.x + 100);
+  await popup.getByRole("tab", { name: "Trade", exact: true }).click();
+  await page.mouse.move(10, 10);
+  await expect(popup).toBeVisible();
+  await page.locator(".ko-grid-open").nth(3).hover();
+  await expect(popup.locator("h2")).toHaveText("Andromeda");
+  await expect(popup.locator(".subtitle")).toContainText("No. 46");
+  await expect(
+    popup.getByRole("tab", { name: "Trade", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    popup.getByRole("button", { name: "Unpin popup", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.waitForTimeout(700);
+  await expect(popup.locator(".subtitle")).toContainText("No. 46");
+  const updated = (await popup.boundingBox())!;
+  expect(updated).toEqual(moved);
+  await popup.getByRole("tab", { name: "Market", exact: true }).click();
+  await popup.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(popup.locator(".sales li")).toHaveCount(5);
+  expect(await popup.boundingBox()).toEqual(moved);
+  await page.screenshot({ path: "test-results/screenshots/pinned-popup.png" });
+  await page.evaluate(() => {
+    document.querySelectorAll(".ko-grid > li")[3].remove();
+  });
+  await expect(popup).toBeVisible();
+  await page.setViewportSize({ width: 650, height: 700 });
+  const clamped = (await popup.boundingBox())!;
+  expect(clamped.x + clamped.width).toBeLessThanOrEqual(650);
+  expect(clamped.y + clamped.height).toBeLessThanOrEqual(700);
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  expect(writeRequests).toBe(0);
+});
+test("unpin restores automatic dismissal and Close also dismisses a pinned popup", async () => {
+  await page.goto("https://kosmora.io/collection");
+  const popup = page.locator("#kosmore-root");
+  await page.locator(".kc-article").hover();
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await popup.getByRole("button", { name: "Unpin popup", exact: true }).click();
+  await page.locator("h1").click();
+  await expect(popup).toHaveCount(0);
+  await page.locator(".kc-article").hover();
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await popup
+    .getByRole("button", { name: "Close KosMore popup", exact: true })
+    .click();
+  await expect(popup).toHaveCount(0);
+  expect(writeRequests).toBe(0);
+});
+test("the smallest popup keeps its tabs and footer accessible by scrolling", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as Record<string, unknown>;
+    await chrome.storage.local.set({
+      "kosmore.settings": { ...settings, popupWidth: 320, popupHeight: 480 },
+    });
+  });
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await expect(popup.locator(".sales li")).toHaveCount(5);
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  const bounds = (await popup.boundingBox())!;
+  expect({ width: bounds.width, height: bounds.height }).toEqual({
+    width: 320,
+    height: 480,
+  });
+  await popup.getByRole("tab", { name: "Notes", exact: true }).click();
+  await popup
+    .getByRole("textbox", { name: "Card notes", exact: true })
+    .fill("Notes at the smallest size");
+  await popup.getByRole("button", { name: "Save notes", exact: true }).click();
+  await expect(popup.getByRole("status")).toHaveText("Saved locally");
+  await popup
+    .getByRole("button", { name: "Settings", exact: true })
+    .scrollIntoViewIfNeeded();
+  await expect(
+    popup.getByRole("button", { name: "Settings", exact: true }),
+  ).toBeInViewport();
+  expect(
+    await popup.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: "test-results/screenshots/small-popup.png" });
+  expect(writeRequests).toBe(0);
+});
 test("persisted settings survive a browser restart", async () => {
+  await worker.evaluate(async () => {
+    await chrome.storage.local.set({ "kosmore.marketFinishes": ["veil"] });
+    await chrome.storage.local.set({
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        notes: "Remember after restart",
+        families: ["Fish"],
+      },
+    });
+  });
   await context.close();
   context = await launchTestBrowser(profile, {
     channel: "chromium",
@@ -348,4 +1360,24 @@ test("persisted settings survive a browser restart", async () => {
       ).pinnedAlbums.fixtureplayer,
   );
   expect(pins).toEqual([ALBUM_A, ALBUM_B]);
+  expect(
+    await worker.evaluate(
+      async () =>
+        (await chrome.storage.local.get("kosmore.marketFinishes"))[
+          "kosmore.marketFinishes"
+        ],
+    ),
+  ).toEqual(["veil"]);
+  expect(
+    await worker.evaluate(
+      async () =>
+        (await chrome.storage.local.get("kosmore.friend.fixtureplayer.batu"))[
+          "kosmore.friend.fixtureplayer.batu"
+        ],
+    ),
+  ).toEqual({
+    schemaVersion: 1,
+    notes: "Remember after restart",
+    families: ["Fish"],
+  });
 });

@@ -7,6 +7,7 @@ import type {
   OpeningCard,
   Variant,
 } from "../shared/types";
+import { parseCardFamilies } from "./friends";
 type Obj = Record<string, unknown>;
 export function object(v: unknown): Obj {
   if (!v || typeof v !== "object" || Array.isArray(v))
@@ -66,10 +67,17 @@ export function parseInsights(v: unknown): CardInsights {
     pop = d.popularity ? object(d.popularity) : undefined;
   if (!Array.isArray(d.copies))
     throw new Error("Owned copies are unavailable.");
+  let families: CardInsights["families"] = null;
+  try {
+    families = parseCardFamilies(d.families);
+  } catch {
+    /* Isolate family failures from market and album features. */
+  }
   return {
     subjectId: id,
     name: text(d.name),
     rarity: text(d.rarity),
+    families,
     interested:
       interest && typeof interest.count === "number"
         ? count(interest.count)

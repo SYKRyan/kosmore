@@ -1,5 +1,9 @@
 import { beforeEach, it, expect } from "vitest";
-import { contextKey, resolveCard } from "../../src/kosmora/dom";
+import {
+  cardOverlayTargets,
+  contextKey,
+  resolveCard,
+} from "../../src/kosmora/dom";
 import { face, OPENING } from "../fixtures/data";
 beforeEach(() => {
   document.body.innerHTML = "";
@@ -57,4 +61,21 @@ it("reads copy identifiers from card links without inferring ownership", () => {
   expect(resolveCard(document.querySelector("img")!)?.copyId).toBe(
     "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   );
+});
+it("enumerates visual cards once while ignoring plain card links and hidden backs", () => {
+  document.body.innerHTML = `<a href="/card/42">${face()}</a><a href="/card/99">A history entry</a><div hidden>${face("43")}</div>`;
+  expect([...cardOverlayTargets().values()].map((c) => c.subjectId)).toEqual([
+    "42",
+  ]);
+});
+it("re-identifies an unlinked recap card when its face is replaced", () => {
+  history.replaceState(null, "", `/packs/open?id=${OPENING}&recap=1`);
+  document.body.innerHTML = `<div class="ko-summary"><ul class="ko-grid"><li>${face()}<button class="ko-grid-open"></button></li></ul></div>`;
+  expect([...cardOverlayTargets().values()][0]).toMatchObject({
+    subjectId: "42",
+    surface: "summary",
+    entryIndex: 0,
+  });
+  document.querySelector(".kc-article")!.outerHTML = face("43", "Voyager 1");
+  expect([...cardOverlayTargets().values()][0].subjectId).toBe("43");
 });

@@ -1,4 +1,6 @@
 import "./options.css";
+import "../content/stat-box.css";
+import { StatSettings } from "./stat-settings";
 import { button, el, note } from "../content/ui";
 import { readSettings, saveSettings, defaults } from "../shared/settings";
 import { request, type Session } from "../shared/messages";
@@ -57,7 +59,116 @@ delay.max = "2000";
 delay.step = "50";
 delayRow.append(delayInfo, delay);
 general.append(delayRow);
+const popupInputs = (
+  [
+    [
+      "dismissDelayMs",
+      "Dismiss delay",
+      "Milliseconds after leaving the card and popup (0–30,000). Pinned popups stay open.",
+      0,
+      30000,
+      50,
+    ],
+    [
+      "popupWidth",
+      "Popup width",
+      "Width in pixels (320–1,200), limited to fit your screen.",
+      320,
+      1200,
+      10,
+    ],
+    [
+      "popupHeight",
+      "Popup height",
+      "Height in pixels (480–1,600), limited to fit your screen.",
+      480,
+      1600,
+      10,
+    ],
+  ] as const
+).map(([field, title, hint, min, max, step]) => {
+  const row = el("div", "row"),
+    info = el("div"),
+    label = el("label", "", title),
+    input = el("input");
+  input.type = "number";
+  input.id = field;
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  label.htmlFor = input.id;
+  info.append(label, el("p", "sub", hint));
+  row.append(info, input);
+  general.append(el("div", "rule"), row);
+  input.addEventListener("input", () => {
+    draft[field] = input.value === "" ? NaN : Number(input.value);
+  });
+  return { field, input, title, min, max };
+});
+general.append(
+  el(
+    "p",
+    "sub",
+    "Use the pin in the popup's top right to keep it open, then drag its header to move it. Hover another card to update its contents.",
+  ),
+);
 app.append(general);
+const overlays = el("section", "panel");
+overlays.append(
+  el("h2", "", "Card overlays"),
+  el(
+    "p",
+    "sub",
+    "Indicators on visible cards and in popup headers. These work independently of hover popups.",
+  ),
+);
+function overlayToggle(
+  id: string,
+  label: string,
+  hint: string,
+  update: (checked: boolean) => void,
+) {
+  const row = el("div", "row"),
+    input = el("input"),
+    text = el("label", "label settings-toggle", label);
+  input.type = "checkbox";
+  input.id = id;
+  text.prepend(input);
+  row.append(text, el("span", "hint", hint));
+  input.addEventListener("change", () => update(input.checked));
+  overlays.append(el("div", "rule"), row);
+  return input;
+}
+const saleOverlay = overlayToggle(
+  "sale-history-overlay",
+  "Show sale history icon on cards",
+  "Gavel · completed sales in the last 30 days",
+  (checked) => {
+    draft.showSaleHistoryOverlay = checked;
+  },
+);
+const friendOverlay = overlayToggle(
+  "friend-interest-overlay",
+  "Show interested friends icon on cards",
+  "Friends · matching saved family preferences",
+  (checked) => {
+    draft.showFriendInterestOverlay = checked;
+  },
+);
+const questOverlay = overlayToggle(
+  "quest-overlay",
+  "Show quest icon on cards",
+  "Quest · belongs to any quest, followed or not",
+  (checked) => {
+    draft.showQuestOverlay = checked;
+  },
+);
+app.append(overlays);
+const statSettings = new StatSettings((preferences) => {
+  draft.stats = preferences;
+  statSettings.render(draft.stats);
+});
+app.append(statSettings.host);
 enabled.addEventListener("change", () => {
   draft.enabled = enabled.checked;
 });
@@ -138,6 +249,12 @@ app.append(
 function renderSettings() {
   enabled.checked = draft.enabled;
   delay.value = String(draft.hoverDelayMs);
+  for (const { field, input } of popupInputs)
+    input.value = String(draft[field]);
+  saleOverlay.checked = draft.showSaleHistoryOverlay;
+  friendOverlay.checked = draft.showFriendInterestOverlay;
+  questOverlay.checked = draft.showQuestOverlay;
+  statSettings.render(draft.stats);
 }
 function pinned() {
   return selected ? (draft.pinnedAlbums[selected.account.key] ?? []) : [];
@@ -327,6 +444,17 @@ select.addEventListener("change", () => {
 });
 async function persist() {
   if (busy) return;
+  for (const { field, input, title, min, max } of popupInputs) {
+    if (
+      !Number.isInteger(draft[field]) ||
+      draft[field] < min ||
+      draft[field] > max
+    ) {
+      status.textContent = `Choose a ${title.toLowerCase()} from ${min.toLocaleString()} to ${max.toLocaleString()}.`;
+      input.focus();
+      return;
+    }
+  }
   if (
     !Number.isInteger(draft.hoverDelayMs) ||
     draft.hoverDelayMs < 100 ||

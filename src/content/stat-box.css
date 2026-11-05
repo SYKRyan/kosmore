@@ -1,0 +1,27 @@
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+.metric {
+  background: #211832;
+  border: 1px solid #ffffff0b;
+  padding: 10px 9px;
+  border-radius: 9px;
+  min-width: 0;
+}
+.metric strong {
+  display: block;
+  color: #fff0c7;
+  font-size: 19px;
+  line-height: 1.2;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.metric span {
+  display: block;
+  font-size: 10px;
+  color: #beaed1;
+  margin-top: 5px;
+  line-height: 1.35;
+}

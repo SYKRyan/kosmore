@@ -1,5 +1,26 @@
 import type { CardContext } from "../shared/types";
 export const HOST_ID = "kosmore-root";
+export const OVERLAY_ATTR = "data-kosmore-card-overlays";
+export function cardOverlayTargets(
+  doc: Document = document,
+): Map<HTMLElement, CardContext> {
+  const targets = new Map<HTMLElement, CardContext>();
+  for (const root of doc.querySelectorAll<HTMLElement>(
+    '.kc-article,a.kc-link,a[href*="/card/"]',
+  )) {
+    const container = root.matches(".kc-article")
+      ? root
+      : (root.querySelector<HTMLElement>(".kc-article") ?? root);
+    if (
+      targets.has(container) ||
+      !container.querySelector('.kc-img,[data-testid="card-corner"]')
+    )
+      continue;
+    const context = resolveCard(container, doc);
+    if (context) targets.set(container, context);
+  }
+  return targets;
+}
 function normalize(s: string | null | undefined): string | undefined {
   return s && /^\d{1,18}$/.test(s) ? BigInt(s).toString() : undefined;
 }

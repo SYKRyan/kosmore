@@ -40,6 +40,15 @@ export interface CardInsights {
   readership: number | null;
   readershipSource?: string;
   copies: OwnedCopy[];
+  families: CardFamily[] | null;
+}
+export interface CardFamily {
+  id: string;
+  name: string;
+}
+export interface Friend {
+  handle: string;
+  key: string;
 }
 export interface Sale {
   auctionId: string;
@@ -80,10 +89,23 @@ export interface Settings {
   schemaVersion: 1;
   enabled: boolean;
   hoverDelayMs: number;
+  dismissDelayMs: number;
+  popupWidth: number;
+  popupHeight: number;
+  showSaleHistoryOverlay: boolean;
+  showFriendInterestOverlay: boolean;
+  showQuestOverlay: boolean;
+  stats: import("./stat-catalog").StatPreference[];
   pinnedAlbums: Record<string, string[]>;
 }
 export interface KosmoraClient {
   account(signal?: AbortSignal, fresh?: boolean): Promise<Account>;
+  friends(signal?: AbortSignal, fresh?: boolean): Promise<Friend[]>;
+  questSubjects(signal?: AbortSignal, fresh?: boolean): Promise<string[]>;
+  families(
+    signal?: AbortSignal,
+    fresh?: boolean,
+  ): Promise<import("../kosmora/families").FamilyChoice[]>;
   insights(
     subjectId: string,
     signal?: AbortSignal,
