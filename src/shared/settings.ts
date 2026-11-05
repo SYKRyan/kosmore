@@ -1,5 +1,7 @@
 import type { Settings } from "./types";
 import { defaultStats, parseStats } from "./stat-catalog";
+import { parseHotkeys } from "./hotkeys";
+import { parsePopupPosition } from "./popup-layout";
 export const SETTINGS_KEY = "kosmore.settings";
 export const defaults = (): Settings => ({
   schemaVersion: 1,
@@ -8,10 +10,12 @@ export const defaults = (): Settings => ({
   dismissDelayMs: 200,
   popupWidth: 440,
   popupHeight: 900,
+  popupPosition: null,
   showSaleHistoryOverlay: true,
   showFriendInterestOverlay: true,
   showQuestOverlay: true,
   stats: defaultStats(),
+  hotkeys: {},
   pinnedAlbums: {},
 });
 export function parseSettings(value: unknown): Settings {
@@ -20,6 +24,8 @@ export function parseSettings(value: unknown): Settings {
   const v = value as Partial<Settings>;
   if (v.schemaVersion !== 1) return d;
   d.stats = parseStats(v.stats);
+  d.hotkeys = parseHotkeys(v.hotkeys);
+  d.popupPosition = parsePopupPosition(v.popupPosition);
   if (typeof v.enabled === "boolean") d.enabled = v.enabled;
   if (typeof v.showSaleHistoryOverlay === "boolean")
     d.showSaleHistoryOverlay = v.showSaleHistoryOverlay;

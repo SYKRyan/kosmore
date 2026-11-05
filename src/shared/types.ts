@@ -92,10 +92,12 @@ export interface Settings {
   dismissDelayMs: number;
   popupWidth: number;
   popupHeight: number;
+  popupPosition: import("./popup-layout").PopupPosition | null;
   showSaleHistoryOverlay: boolean;
   showFriendInterestOverlay: boolean;
   showQuestOverlay: boolean;
   stats: import("./stat-catalog").StatPreference[];
+  hotkeys: import("./hotkeys").Hotkeys;
   pinnedAlbums: Record<string, string[]>;
 }
 export interface KosmoraClient {

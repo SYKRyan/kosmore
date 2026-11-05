@@ -1,8 +1,16 @@
 import "./options.css";
 import "../content/stat-box.css";
 import { StatSettings } from "./stat-settings";
+import { HotkeySettings } from "./hotkey-settings";
+import { hotkeyConflict } from "../shared/hotkeys";
 import { button, el, note } from "../content/ui";
-import { readSettings, saveSettings, defaults } from "../shared/settings";
+import {
+  readSettings,
+  saveSettings,
+  defaults,
+  parseSettings,
+  SETTINGS_KEY,
+} from "../shared/settings";
 import { request, type Session } from "../shared/messages";
 import { messageOf, type Album, type Settings } from "../shared/types";
 const app = document.getElementById("app")!;
@@ -14,9 +22,6 @@ let saved: Settings = defaults(),
   filter = "",
   sequence = 0,
   busy = false;
-const status = el("p", "status");
-status.setAttribute("role", "status");
-status.setAttribute("aria-live", "polite");
 const header = el("header", "header"),
   head = el("div");
 head.append(
@@ -109,10 +114,14 @@ general.append(
   el(
     "p",
     "sub",
-    "Use the pin in the popup's top right to keep it open, then drag its header to move it. Hover another card to update its contents.",
+    "Pin to keep the popup open across pages in this tab. Drag the header to move it, or any edge or corner to resize. Position and size save automatically. New pages show No Card Selected until you hover a card. Unpin to open beside cards again.",
   ),
 );
 app.append(general);
+const hotkeySettings = new HotkeySettings((hotkeys) => {
+  draft.hotkeys = hotkeys;
+});
+app.append(hotkeySettings.host);
 const overlays = el("section", "panel");
 overlays.append(
   el("h2", "", "Card overlays"),
@@ -222,28 +231,107 @@ pinnedPanel.append(
   pins,
 );
 grid.append(catalogPanel, pinnedPanel);
-app.append(grid);
-const save = button("Save settings", () => void persist(), "primary"),
-  cancel = button(
-    "Cancel changes",
+grid.style.marginTop = "18px";
+connection.append(grid);
+type SettingsGroup = {
+  host: HTMLElement;
+  name: string;
+  keys: (keyof Settings)[];
+  validate?: () => string | undefined;
+  render: () => void;
+};
+function groupControls(group: SettingsGroup) {
+  group.host.setAttribute("aria-label", group.name);
+  const status = el("p", "status");
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  const save = button(
+    `Save ${group.name}`,
+    () => void persist(group, status, save),
+    "primary",
+  );
+  const cancel = button(
+    `Cancel ${group.name} changes`,
     () => {
-      draft = structuredClone(saved);
-      renderSettings();
-      renderAlbums();
+      for (const key of group.keys)
+        Object.assign(draft, { [key]: structuredClone(saved[key]) });
+      group.render();
       status.textContent = "Unsaved changes discarded.";
     },
     "ghost",
   );
-const savebar = el("div", "savebar"),
-  saveActions = el("div", "save-actions");
-saveActions.append(cancel, save);
-savebar.append(status, saveActions);
+  const bar = el("div", "savebar"),
+    actions = el("div", "save-actions");
+  actions.append(cancel, save);
+  bar.append(status, actions);
+  group.host.append(bar);
+}
+groupControls({
+  host: general,
+  name: "popup settings",
+  keys: [
+    "enabled",
+    "hoverDelayMs",
+    "dismissDelayMs",
+    "popupWidth",
+    "popupHeight",
+  ],
+  render: renderSettings,
+  validate: () => {
+    for (const { field, input, title, min, max } of popupInputs) {
+      if (
+        !Number.isInteger(draft[field]) ||
+        draft[field] < min ||
+        draft[field] > max
+      ) {
+        input.focus();
+        return `Choose a ${title.toLowerCase()} from ${min.toLocaleString()} to ${max.toLocaleString()}.`;
+      }
+    }
+    if (
+      !Number.isInteger(draft.hoverDelayMs) ||
+      draft.hoverDelayMs < 100 ||
+      draft.hoverDelayMs > 2000
+    ) {
+      delay.focus();
+      return "Choose a hover delay from 100 to 2,000 milliseconds.";
+    }
+  },
+});
+groupControls({
+  host: hotkeySettings.host,
+  name: "hotkeys",
+  keys: ["hotkeys"],
+  render: () => hotkeySettings.render(draft.hotkeys),
+  validate: () => hotkeyConflict(draft.hotkeys),
+});
+groupControls({
+  host: overlays,
+  name: "overlay settings",
+  keys: [
+    "showSaleHistoryOverlay",
+    "showFriendInterestOverlay",
+    "showQuestOverlay",
+  ],
+  render: renderSettings,
+});
+groupControls({
+  host: statSettings.host,
+  name: "stat layout",
+  keys: ["stats"],
+  render: () => statSettings.render(draft.stats),
+});
+groupControls({
+  host: connection,
+  name: "album shortcuts",
+  keys: ["pinnedAlbums"],
+  render: renderAlbums,
+});
 app.append(
-  savebar,
   el(
     "p",
     "bottom",
-    "KosMore 0.1 · Settings stay in this browser. Card and market data come from Kosmora.",
+    "KosMore 0.2 · Settings stay in this browser. Card and market data come from Kosmora.",
   ),
 );
 function renderSettings() {
@@ -255,6 +343,7 @@ function renderSettings() {
   friendOverlay.checked = draft.showFriendInterestOverlay;
   questOverlay.checked = draft.showQuestOverlay;
   statSettings.render(draft.stats);
+  hotkeySettings.render(draft.hotkeys);
 }
 function pinned() {
   return selected ? (draft.pinnedAlbums[selected.account.key] ?? []) : [];
@@ -442,33 +531,29 @@ select.addEventListener("change", () => {
   renderAlbums();
   if (selected) void loadAlbums();
 });
-async function persist() {
+async function persist(
+  group: SettingsGroup,
+  status: HTMLElement,
+  save: HTMLButtonElement,
+) {
   if (busy) return;
-  for (const { field, input, title, min, max } of popupInputs) {
-    if (
-      !Number.isInteger(draft[field]) ||
-      draft[field] < min ||
-      draft[field] > max
-    ) {
-      status.textContent = `Choose a ${title.toLowerCase()} from ${min.toLocaleString()} to ${max.toLocaleString()}.`;
-      input.focus();
-      return;
-    }
-  }
-  if (
-    !Number.isInteger(draft.hoverDelayMs) ||
-    draft.hoverDelayMs < 100 ||
-    draft.hoverDelayMs > 2000
-  ) {
-    status.textContent = "Choose a hover delay from 100 to 2,000 milliseconds.";
-    delay.focus();
+  const error = group.validate?.();
+  if (error) {
+    status.className = "status error";
+    status.textContent = error;
     return;
   }
   busy = true;
   save.disabled = true;
+  const values = Object.fromEntries(
+    group.keys.map((key) => [key, structuredClone(draft[key])]),
+  );
   try {
-    await saveSettings(draft);
-    saved = structuredClone(draft);
+    const next = await readSettings();
+    Object.assign(next, values);
+    await saveSettings(next);
+    for (const key of group.keys)
+      Object.assign(saved, { [key]: structuredClone(next[key]) });
     status.className = "status success";
     status.textContent = "Saved. Changes apply to open Kosmora tabs.";
   } catch (error) {
@@ -488,5 +573,19 @@ void readSettings()
     return discover();
   })
   .catch((error) => {
-    status.textContent = messageOf(error);
+    app.append(note(`Could not load settings: ${messageOf(error)}`, true));
   });
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes[SETTINGS_KEY]) return;
+  const next = parseSettings(changes[SETTINGS_KEY].newValue);
+  for (const { field, input } of popupInputs) {
+    if (field !== "popupWidth" && field !== "popupHeight") continue;
+    if (draft[field] === saved[field]) {
+      draft[field] = next[field];
+      input.value = String(next[field]);
+    }
+    saved[field] = next[field];
+  }
+  saved.popupPosition = next.popupPosition;
+  draft.popupPosition = next.popupPosition;
+});

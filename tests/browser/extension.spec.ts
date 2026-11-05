@@ -13,6 +13,11 @@ import { tmpdir } from "node:os";
 import { launchTestBrowser } from "./browser";
 import { socialFixture } from "../fixtures/social";
 import { familyCatalog } from "../fixtures/families";
+import { NAVIGATION } from "../../src/shared/hotkeys";
+import {
+  activityRow,
+  marketActivityFixture,
+} from "../fixtures/market-activity";
 import {
   ALBUM_A,
   ALBUM_B,
@@ -34,6 +39,7 @@ let context: BrowserContext,
   profile: string;
 let variantFailure = false,
   familyCatalogFailure = false,
+  legacyMarket = false,
   holdSlow = false,
   inventoryEmpty = false,
   writeRequests = 0,
@@ -133,6 +139,16 @@ test.beforeAll(async () => {
       });
       return;
     }
+    if (path === "/market") {
+      await route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body:
+          url.searchParams.get("view") === "mine"
+            ? marketActivityFixture()
+            : `<!doctype html><html><body><h1>Market</h1><button data-testid="${legacyMarket ? "watch-open" : "market-alerts"}" onclick="document.querySelector('dialog').showModal()">Alerts</button><dialog aria-label="Market Alerts"><p>Watched words</p></dialog></body></html>`,
+      });
+      return;
+    }
     await route.fulfill({
       contentType: "text/html",
       body: fixture(
@@ -149,6 +165,7 @@ test.beforeAll(async () => {
 test.beforeEach(async () => {
   variantFailure = false;
   familyCatalogFailure = false;
+  legacyMarket = false;
   holdSlow = false;
   inventoryEmpty = false;
   membership = false;
@@ -156,6 +173,7 @@ test.beforeEach(async () => {
   account = "FixturePlayer";
   await worker.evaluate(
     async ({ a, b }) => {
+      await chrome.storage.session.clear();
       const all = await chrome.storage.local.get(null);
       await chrome.storage.local.remove(
         Object.keys(all).filter((key) => key.startsWith("kosmore.friend.")),
@@ -297,9 +315,13 @@ test("options discovers the real content-script session, saves ordered pins and 
     .getByRole("button", { name: "Move up Favourites", exact: true })
     .click();
   await options
-    .getByRole("button", { name: "Save settings", exact: true })
+    .getByRole("button", { name: "Save album shortcuts", exact: true })
     .click();
-  await expect(options.getByRole("status")).toContainText("Saved.");
+  await expect(
+    options
+      .getByRole("region", { name: "album shortcuts", exact: true })
+      .getByRole("status"),
+  ).toContainText("Saved.");
   const pins = await worker.evaluate(
     async () =>
       (
@@ -311,7 +333,7 @@ test("options discovers the real content-script session, saves ordered pins and 
   expect(pins).toEqual([ALBUM_B, ALBUM_A]);
   await options.getByLabel("Hover delay", { exact: true }).fill("900");
   await options
-    .getByRole("button", { name: "Cancel changes", exact: true })
+    .getByRole("button", { name: "Cancel popup settings changes", exact: true })
     .click();
   await expect(options.getByLabel("Hover delay", { exact: true })).toHaveValue(
     "100",
@@ -364,9 +386,13 @@ test("saving disabled hover settings closes an existing popup in an already-open
     .getByLabel("Enable card hover popups", { exact: true })
     .uncheck();
   await options
-    .getByRole("button", { name: "Save settings", exact: true })
+    .getByRole("button", { name: "Save popup settings", exact: true })
     .click();
-  await expect(options.getByRole("status")).toContainText("Saved.");
+  await expect(
+    options
+      .getByRole("region", { name: "popup settings", exact: true })
+      .getByRole("status"),
+  ).toContainText("Saved.");
   await expect(page.locator("#kosmore-root")).toHaveCount(0);
   await options.close();
   expect(writeRequests).toBe(0);
@@ -413,8 +439,8 @@ test("recent sales defaults to five and expands to every returned sale", async (
   await popup.getByRole("button", { name: "Show All", exact: true }).click();
   await expect(popup.locator(".sales li")).toHaveCount(6);
   const expanded = await popup.boundingBox();
-  expect(expanded!.width).toBe(collapsed!.width);
-  expect(expanded!.height).toBeGreaterThan(collapsed!.height);
+  expect(expanded!.width).toBeCloseTo(collapsed!.width, 2);
+  expect(expanded!.height).toBeCloseTo(collapsed!.height, 2);
   expect(expanded!.y + expanded!.height).toBeLessThanOrEqual(1000);
   await popup.getByRole("button", { name: "Show Less", exact: true }).click();
   await expect(popup.locator(".sales li")).toHaveCount(5);
@@ -499,7 +525,7 @@ test("variant checkboxes persist across popups and options saves without closing
     options.getByText("Connected to FixturePlayer.", { exact: true }),
   ).toBeVisible();
   await options
-    .getByRole("button", { name: "Save settings", exact: true })
+    .getByRole("button", { name: "Save popup settings", exact: true })
     .click();
   await options.close();
   await page.locator(".ko-grid-open").nth(3).hover();
@@ -1117,7 +1143,7 @@ test("saved settings independently remove the three card overlays in existing ta
     .getByLabel("Show sale history icon on cards", { exact: true })
     .uncheck();
   await options
-    .getByRole("button", { name: "Save settings", exact: true })
+    .getByRole("button", { name: "Save overlay settings", exact: true })
     .click();
   await expect(page.locator("[data-kosmore-card-overlays] .sale")).toHaveCount(
     0,
@@ -1129,7 +1155,7 @@ test("saved settings independently remove the three card overlays in existing ta
     .getByLabel("Show interested friends icon on cards", { exact: true })
     .uncheck();
   await options
-    .getByRole("button", { name: "Save settings", exact: true })
+    .getByRole("button", { name: "Save overlay settings", exact: true })
     .click();
   await expect(
     page.locator("[data-kosmore-card-overlays] .quest"),
@@ -1138,7 +1164,7 @@ test("saved settings independently remove the three card overlays in existing ta
     .getByLabel("Show quest icon on cards", { exact: true })
     .uncheck();
   await options
-    .getByRole("button", { name: "Save settings", exact: true })
+    .getByRole("button", { name: "Save overlay settings", exact: true })
     .click();
   await expect(page.locator("[data-kosmore-card-overlays]")).toHaveCount(0);
   await options.close();
@@ -1159,18 +1185,24 @@ test("popup dimensions and dismiss delay save, cancel and apply in an open tab",
     await expect(width).toHaveValue("440");
     await width.fill("100");
     await options
-      .getByRole("button", { name: "Save settings", exact: true })
+      .getByRole("button", { name: "Save popup settings", exact: true })
       .click();
-    await expect(options.getByRole("status")).toContainText(
-      "Choose a popup width",
-    );
+    await expect(
+      options
+        .getByRole("region", { name: "popup settings", exact: true })
+        .getByRole("status"),
+    ).toContainText("Choose a popup width");
     await width.fill("560");
     await height.fill("760");
     await dismiss.fill("1200");
     await options
-      .getByRole("button", { name: "Save settings", exact: true })
+      .getByRole("button", { name: "Save popup settings", exact: true })
       .click();
-    await expect(options.getByRole("status")).toContainText("Saved.");
+    await expect(
+      options
+        .getByRole("region", { name: "popup settings", exact: true })
+        .getByRole("status"),
+    ).toContainText("Saved.");
     await expect
       .poll(async () => {
         const bounds = await popup.boundingBox();
@@ -1180,7 +1212,10 @@ test("popup dimensions and dismiss delay save, cancel and apply in an open tab",
     await width.fill("600");
     await dismiss.fill("0");
     await options
-      .getByRole("button", { name: "Cancel changes", exact: true })
+      .getByRole("button", {
+        name: "Cancel popup settings changes",
+        exact: true,
+      })
       .click();
     await expect(width).toHaveValue("560");
     await expect(dismiss).toHaveValue("1200");
@@ -1326,6 +1361,766 @@ test("the smallest popup keeps its tabs and footer accessible by scrolling", asy
     ),
   ).toBe(true);
   await page.screenshot({ path: "test-results/screenshots/small-popup.png" });
+  expect(writeRequests).toBe(0);
+});
+test("all navigation hotkeys open their destination, including both market views and the alerts dialog", async () => {
+  await worker.evaluate(
+    async (ids) => {
+      const settings = (await chrome.storage.local.get("kosmore.settings"))[
+        "kosmore.settings"
+      ] as Record<string, unknown>;
+      const hotkeys = Object.fromEntries(
+        ids.map((id, i) => [
+          id,
+          {
+            code: `Key${String.fromCharCode(65 + i)}`,
+            ctrl: false,
+            alt: true,
+            shift: true,
+            meta: false,
+          },
+        ]),
+      );
+      await chrome.storage.local.set({
+        "kosmore.settings": { ...settings, enabled: false, hotkeys },
+      });
+    },
+    NAVIGATION.map((item) => item.id),
+  );
+  for (const [index, item] of NAVIGATION.entries()) {
+    await page.goto("https://kosmora.io/collection");
+    await expect(async () => {
+      await page.keyboard.press(
+        `Alt+Shift+Key${String.fromCharCode(65 + index)}`,
+      );
+      if (item.id === "marketAlerts")
+        await expect(
+          page.getByRole("dialog", { name: "Market Alerts" }),
+        ).toBeVisible({ timeout: 1000 });
+      else
+        await expect(page).toHaveURL(
+          `https://kosmora.io${item.path ?? "/u/FixturePlayer"}`,
+          { timeout: 1000 },
+        );
+    }).toPass({ timeout: 6000 });
+  }
+  expect(writeRequests).toBe(0);
+});
+test("Market Alerts works on the current market page and with the older search-bell layout", async () => {
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as Record<string, unknown>;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        hotkeys: {
+          marketAlerts: {
+            code: "KeyA",
+            ctrl: false,
+            alt: true,
+            shift: true,
+            meta: false,
+          },
+        },
+      },
+    });
+  });
+  for (const legacy of [false, true]) {
+    legacyMarket = legacy;
+    await page.goto("https://kosmora.io/market");
+    await expect(async () => {
+      await page.keyboard.press("Alt+Shift+KeyA");
+      await expect(
+        page.getByRole("dialog", { name: "Market Alerts" }),
+      ).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 6000 });
+    await expect(page).toHaveURL("https://kosmora.io/market");
+  }
+  expect(writeRequests).toBe(0);
+});
+test("hotkeys ignore typing, shadow editors, composition, repeats, and extra modifiers", async () => {
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as Record<string, unknown>;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        hotkeys: {
+          home: {
+            code: "KeyH",
+            ctrl: false,
+            alt: false,
+            shift: false,
+            meta: false,
+          },
+        },
+      },
+    });
+  });
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await popup.getByRole("tab", { name: "Notes", exact: true }).click();
+  const notes = popup.getByRole("textbox", { name: "Card notes", exact: true });
+  await notes.fill("");
+  await notes.press("h");
+  await expect(notes).toHaveValue("h");
+  await page.evaluate(() => {
+    const fields = document.createElement("div");
+    fields.id = "hotkey-inputs";
+    fields.innerHTML =
+      '<input aria-label="Search cards"><select aria-label="Filter"><option>One</option></select><div contenteditable="true" role="textbox" aria-label="Rich notes"></div>';
+    document.body.prepend(fields);
+  });
+  await page
+    .getByRole("textbox", { name: "Search cards", exact: true })
+    .press("h");
+  await page
+    .getByRole("textbox", { name: "Rich notes", exact: true })
+    .press("h");
+  await page.getByRole("combobox", { name: "Filter", exact: true }).press("h");
+  await page.locator("h1").click();
+  await page.evaluate(() => {
+    for (const options of [
+      { repeat: true },
+      { isComposing: true },
+      { ctrlKey: true },
+    ])
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "h",
+          code: "KeyH",
+          bubbles: true,
+          composed: true,
+          ...options,
+        }),
+      );
+  });
+  await page.keyboard.press("Shift+H");
+  await expect(page).toHaveURL("https://kosmora.io/collection");
+  await page.keyboard.press("h");
+  await expect(page).toHaveURL("https://kosmora.io/home");
+  expect(writeRequests).toBe(0);
+});
+test("shortcut recording detects conflicts and group saves preserve other drafts", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  await page.goto("https://kosmora.io/collection");
+  const options = await context.newPage();
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    const hotkeys = options.getByRole("region", {
+      name: "hotkeys",
+      exact: true,
+    });
+    const record = (label: string) =>
+      hotkeys.getByRole("button", {
+        name: `Set shortcut for ${label}`,
+        exact: true,
+      });
+    await expect(hotkeys.locator(".hotkey-row")).toHaveCount(14);
+    await options.getByLabel("Popup width", { exact: true }).fill("600");
+    await record("Home").click();
+    await record("Home").press("Alt+Shift+H");
+    await record("Collection").click();
+    await record("Collection").press("Alt+Shift+H");
+    await hotkeys
+      .getByRole("button", { name: "Save hotkeys", exact: true })
+      .click();
+    await expect(hotkeys.getByRole("status")).toContainText(
+      "Home and Collection both use",
+    );
+    await hotkeys
+      .getByRole("button", {
+        name: "Clear shortcut for Collection",
+        exact: true,
+      })
+      .click();
+    await record("Atlas").click();
+    await record("Atlas").press("Escape");
+    await expect(record("Atlas")).toHaveText("Not set");
+    await hotkeys
+      .getByRole("button", { name: "Save hotkeys", exact: true })
+      .click();
+    await expect(hotkeys.getByRole("status")).toContainText("Saved.");
+    const stored = await worker.evaluate(
+      async () =>
+        (await chrome.storage.local.get("kosmore.settings"))[
+          "kosmore.settings"
+        ] as { popupWidth: number; hotkeys: object },
+    );
+    expect(stored.popupWidth).toBe(440);
+    expect(Object.keys(stored.hotkeys)).toEqual(["home"]);
+    await record("Atlas").click();
+    await record("Atlas").press("Alt+Shift+X");
+    await options
+      .getByRole("button", {
+        name: "Cancel popup settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(
+      options.getByLabel("Popup width", { exact: true }),
+    ).toHaveValue("440");
+    await expect(record("Atlas")).toHaveText("Alt + Shift + X");
+    await options
+      .getByLabel("Show sale history icon on cards", { exact: true })
+      .check();
+    await options
+      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .click();
+    await expect(
+      options
+        .getByRole("region", { name: "overlay settings", exact: true })
+        .getByRole("status"),
+    ).toContainText("Saved.");
+    await hotkeys
+      .getByRole("button", { name: "Cancel hotkeys changes", exact: true })
+      .click();
+    await expect(record("Atlas")).toHaveText("Not set");
+    await options.getByLabel("Show Min Price", { exact: true }).uncheck();
+    await options
+      .getByRole("button", { name: "Save stat layout", exact: true })
+      .click();
+    await expect(
+      options
+        .getByRole("region", { name: "stat layout", exact: true })
+        .getByRole("status"),
+    ).toContainText("Saved.");
+    await hotkeys.screenshot({
+      path: "test-results/screenshots/navigation-hotkeys.png",
+    });
+    await options
+      .getByRole("region", { name: "popup settings", exact: true })
+      .screenshot({ path: "test-results/screenshots/popup-group-save.png" });
+    await page.locator("h1").click();
+    await page.keyboard.press("Alt+Shift+H");
+    await expect(page).toHaveURL("https://kosmora.io/home");
+    await hotkeys
+      .getByRole("button", { name: "Clear shortcut for Home", exact: true })
+      .click();
+    await hotkeys
+      .getByRole("button", { name: "Save hotkeys", exact: true })
+      .click();
+    await expect(hotkeys.getByRole("status")).toContainText("Saved.");
+    await options.reload();
+    await expect(record("Home")).toHaveText("Not set");
+    await expect(
+      options.getByLabel("Show sale history icon on cards", { exact: true }),
+    ).toBeChecked();
+    await expect(
+      options.getByLabel("Show Min Price", { exact: true }),
+    ).not.toBeChecked();
+  } finally {
+    await options.close();
+  }
+  expect(writeRequests).toBe(0);
+});
+test("pinned albums use three columns at default and minimum popup widths", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  const extras = [
+    "00000000-0000-4000-8000-000000000003",
+    "00000000-0000-4000-8000-000000000004",
+  ];
+  await page.route("**/api/albums**", async (route) => {
+    await route.fulfill({
+      json: {
+        albums: [
+          ...albums().albums,
+          ...extras.map((id, i) => ({
+            id,
+            name: `Extra album ${i + 1}`,
+            items: 2,
+            contains: false,
+            containsCount: 0,
+          })),
+        ],
+      },
+    });
+  });
+  try {
+    await worker.evaluate(
+      async (ids) => {
+        const settings = (await chrome.storage.local.get("kosmore.settings"))[
+          "kosmore.settings"
+        ] as Record<string, unknown>;
+        await chrome.storage.local.set({
+          "kosmore.settings": {
+            ...settings,
+            pinnedAlbums: { fixtureplayer: ids },
+          },
+        });
+      },
+      [ALBUM_A, ALBUM_B, ...extras],
+    );
+    await page.goto("https://kosmora.io/collection");
+    await page.locator(".kc-article").hover();
+    const popup = page.locator("#kosmore-root");
+    await expect(popup.locator(".albums button")).toHaveCount(4);
+    await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+    for (const width of [440, 320]) {
+      await worker.evaluate(async (popupWidth) => {
+        const settings = (await chrome.storage.local.get("kosmore.settings"))[
+          "kosmore.settings"
+        ] as Record<string, unknown>;
+        await chrome.storage.local.set({
+          "kosmore.settings": { ...settings, popupWidth },
+        });
+      }, width);
+      await expect
+        .poll(async () => (await popup.boundingBox())?.width)
+        .toBe(width);
+      const buttons = await popup
+        .locator(".albums button")
+        .evaluateAll((elements) =>
+          elements.map((element) => {
+            const r = element.getBoundingClientRect();
+            return { x: r.x, y: r.y };
+          }),
+        );
+      expect(buttons[0].y).toBe(buttons[1].y);
+      expect(buttons[1].y).toBe(buttons[2].y);
+      expect(buttons[3].y).toBeGreaterThan(buttons[0].y);
+      expect(buttons[3].x).toBe(buttons[0].x);
+      await popup.screenshot({
+        path: `test-results/screenshots/three-albums-${width}.png`,
+      });
+    }
+  } finally {
+    await page.unroute("**/api/albums**");
+  }
+  expect(writeRequests).toBe(0);
+});
+test("My Profile uses the current account and a delayed lookup cannot override later navigation", async () => {
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as Record<string, unknown>;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        hotkeys: {
+          profile: {
+            code: "KeyP",
+            ctrl: false,
+            alt: true,
+            shift: true,
+            meta: false,
+          },
+        },
+      },
+    });
+  });
+  account = "OtherPlayer";
+  await page.goto("https://kosmora.io/collection");
+  await expect(async () => {
+    await page.keyboard.press("Alt+Shift+P");
+    await expect(page).toHaveURL("https://kosmora.io/u/OtherPlayer", {
+      timeout: 1000,
+    });
+  }).toPass({ timeout: 6000 });
+  let release!: () => void, started!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const pause = async (route: Route) => {
+    started();
+    await held;
+    await route.fallback();
+  };
+  await page.goto("https://kosmora.io/collection");
+  await page.route("**/api/me", pause);
+  try {
+    await page.keyboard.press("Alt+Shift+P");
+    await ready;
+    await page.evaluate(() => history.pushState({}, "", "/atlas"));
+    release();
+    await page.waitForTimeout(200);
+    await expect(page).toHaveURL("https://kosmora.io/atlas");
+  } finally {
+    release();
+    await page.unroute("**/api/me", pause);
+  }
+  expect(writeRequests).toBe(0);
+});
+test("pinning remembers position across page loads, clears the card, and unpinning restores card placement", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": { ...settings, popupHeight: 640 },
+    });
+  });
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await expect(popup.locator(".last-sold")).toContainText("Last Sold: $");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  const header = (await popup.locator(".top").boundingBox())!;
+  await page.mouse.move(header.x + 25, header.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(925, 120, { steps: 5 });
+  await page.mouse.up();
+  const pinned = (await popup.boundingBox())!;
+  await expect
+    .poll(() =>
+      worker.evaluate(async () => {
+        const states = Object.values(
+          await chrome.storage.session.get(null),
+        ) as { pinned: boolean }[];
+        return states.some((state) => state.pinned);
+      }),
+    )
+    .toBe(true);
+  await page.mouse.move(10, 10);
+  await page.goto("https://kosmora.io/home");
+  await expect(
+    popup.getByText("No Card Selected", { exact: true }),
+  ).toBeVisible();
+  expect(await popup.boundingBox()).toEqual(pinned);
+  await expect(popup.locator(".body")).toBeHidden();
+  await expect(popup.locator(".last-sold")).toBeHidden();
+  await expect(
+    popup.getByRole("button", { name: "Refresh", exact: true }),
+  ).toHaveCount(0);
+  const centered = await popup.locator(".empty-state").evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const text = range.getBoundingClientRect(),
+      area = element.getBoundingClientRect();
+    return {
+      x: (text.left + text.right - area.left - area.right) / 2,
+      y: (text.top + text.bottom - area.top - area.bottom) / 2,
+    };
+  });
+  expect(Math.abs(centered.x)).toBeLessThan(1);
+  expect(Math.abs(centered.y)).toBeLessThan(1);
+  await page.screenshot({ path: "test-results/screenshots/pinned-empty.png" });
+  const other = await context.newPage();
+  try {
+    await other.goto("https://kosmora.io/collection");
+    await expect(other.locator("#kosmore-root")).toHaveCount(0);
+  } finally {
+    await other.close();
+  }
+  await page.locator(".kc-article").hover();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  expect(await popup.boundingBox()).toEqual(pinned);
+  await popup.getByRole("button", { name: "Unpin popup", exact: true }).click();
+  expect((await popup.boundingBox())!.x).not.toBe(pinned.x);
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  expect(await popup.boundingBox()).toEqual(pinned);
+  await page.mouse.move(10, 10);
+  await page.reload();
+  await expect(
+    popup.getByText("No Card Selected", { exact: true }),
+  ).toBeVisible();
+  expect(await popup.boundingBox()).toEqual(pinned);
+  await popup.getByRole("button", { name: "Unpin popup", exact: true }).click();
+  await expect(popup).toHaveCount(0);
+  await page.goto("https://kosmora.io/collection");
+  await expect(popup).toHaveCount(0);
+  expect(writeRequests).toBe(0);
+});
+test("same-document navigation clears pinned details and discards delayed card responses", async () => {
+  holdSlow = true;
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await page.mouse.move(10, 10);
+  await page.evaluate(() => {
+    history.pushState({}, "", "/atlas");
+    document.querySelector("main")!.innerHTML = "<h1>Atlas</h1>";
+  });
+  await expect(
+    popup.getByText("No Card Selected", { exact: true }),
+  ).toBeVisible();
+  await page.waitForTimeout(800);
+  await expect(
+    popup.getByText("No Card Selected", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(
+    (html) => {
+      document
+        .querySelector("main")!
+        .insertAdjacentHTML(
+          "beforeend",
+          `<a href="/card/46" style="display:block;width:270px;margin:30px">${html}</a>`,
+        );
+    },
+    face("46", "Andromeda"),
+  );
+  await page.locator(".kc-article").hover();
+  await expect(popup.locator("h2")).toHaveText("Andromeda");
+  await expect(popup.locator(".subtitle")).toContainText("No. 46");
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await expect(popup).toHaveCount(0);
+  expect(writeRequests).toBe(0);
+});
+test("all popup edges resize and autosave dimensions while preserving dirty settings fields", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": { ...settings, popupWidth: 460, popupHeight: 640 },
+    });
+  });
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  const options = await context.newPage();
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await expect(
+      options.getByLabel("Popup width", { exact: true }),
+    ).toHaveValue("460");
+    for (const edge of ["e", "s", "w", "n", "se", "nw", "ne", "sw"]) {
+      const before = (await popup.boundingBox())!,
+        handle = (await popup.locator(`[data-edge="${edge}"]`).boundingBox())!;
+      const x = handle.x + handle.width / 2,
+        y = handle.y + handle.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(
+        x + (edge.includes("e") ? -10 : edge.includes("w") ? 10 : 0),
+        y + (edge.includes("s") ? -10 : edge.includes("n") ? 10 : 0),
+        { steps: 3 },
+      );
+      await page.mouse.up();
+      const after = (await popup.boundingBox())!;
+      expect(after.width).toBe(
+        before.width - (edge.includes("e") || edge.includes("w") ? 10 : 0),
+      );
+      expect(after.height).toBe(
+        before.height - (edge.includes("s") || edge.includes("n") ? 10 : 0),
+      );
+      await expect(
+        options.getByLabel("Popup width", { exact: true }),
+      ).toHaveValue(String(after.width));
+      await expect(
+        options.getByLabel("Popup height", { exact: true }),
+      ).toHaveValue(String(after.height));
+    }
+    await options.getByLabel("Popup width", { exact: true }).fill("555");
+    const edge = popup.locator('[data-edge="e"]');
+    await edge.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(
+      options.getByLabel("Popup width", { exact: true }),
+    ).toHaveValue("555");
+    const size = (await popup.boundingBox())!;
+    await options
+      .getByRole("button", {
+        name: "Cancel popup settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(
+      options.getByLabel("Popup width", { exact: true }),
+    ).toHaveValue(String(size.width));
+    await page.mouse.move(10, 10);
+    await popup.screenshot({
+      path: "test-results/screenshots/popup-resized.png",
+    });
+    await page.goto("https://kosmora.io/home");
+    await expect(
+      popup.getByText("No Card Selected", { exact: true }),
+    ).toBeVisible();
+    expect(await popup.boundingBox()).toEqual(size);
+    await page.setViewportSize({ width: 400, height: 400 });
+    await expect
+      .poll(async () => (await popup.boundingBox())!.width)
+      .toBeLessThanOrEqual(376);
+    expect((await popup.boundingBox())!.height).toBeLessThanOrEqual(376);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await expect
+      .poll(async () => (await popup.boundingBox())!.width)
+      .toBe(size.width);
+    await expect.poll(() => popup.boundingBox()).toEqual(size);
+    await options.reload();
+    await expect(
+      options.getByLabel("Popup width", { exact: true }),
+    ).toHaveValue(String(size.width));
+    await expect(
+      options.getByLabel("Popup height", { exact: true }),
+    ).toHaveValue(String(size.height));
+    await page.keyboard.press("Escape");
+  } finally {
+    await options.close();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+  }
+  expect(writeRequests).toBe(0);
+});
+test("the header shows the newest completed sale across selected variants", async () => {
+  await page.route("**/api/cards/*/prices*", async (route) => {
+    const finish = new URL(route.request().url()).searchParams.get("finish")!;
+    const amount =
+      finish === "fullart"
+        ? "12345000"
+        : finish === "veil"
+          ? "90000000"
+          : "2000000";
+    const day = finish === "fullart" ? "03" : finish === "veil" ? "02" : "01";
+    const fixture = prices(1);
+    await route.fulfill({
+      json: {
+        prices: {
+          ...fixture.prices,
+          low: amount,
+          median: amount,
+          high: amount,
+          sales: [
+            {
+              ...fixture.prices.sales[0],
+              price: amount,
+              soldAt: `2026-11-${day}T00:00:00Z`,
+            },
+          ],
+        },
+      },
+    });
+  });
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await page.locator(".kc-article").hover();
+    const popup = page.locator("#kosmore-root");
+    await expect(popup.locator(".top .last-sold")).toHaveText(
+      "Last Sold: $12.35",
+    );
+    await popup.getByLabel("Full art", { exact: true }).uncheck();
+    await expect(popup.locator(".last-sold")).toHaveText("Last Sold: $90.00");
+    await popup.getByLabel("Shiny", { exact: true }).uncheck();
+    await expect(popup.locator(".last-sold")).toHaveText("Last Sold: $2.00");
+    await popup.getByLabel("Standard", { exact: true }).uncheck();
+    await expect(popup.locator(".last-sold")).toHaveText("Last Sold: —");
+  } finally {
+    await page.unroute("**/api/cards/*/prices*");
+  }
+  expect(writeRequests).toBe(0);
+});
+test("market activity thumbnails and names open card details in all three sections without bidding", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  await page.goto("https://kosmora.io/market?tab=overview&view=mine");
+  const popup = page.locator("#kosmore-root");
+  for (const [section, name, id, variant] of [
+    ["dash-turn", "Northern Lights", "42", "Shiny"],
+    ["dash-bids", "Andromeda", "46", "Full art"],
+    ["dash-sale", "Orion Nebula", "47", "Standard"],
+  ] as const) {
+    const row = page.getByTestId(section);
+    for (const target of [row.locator(".kc-img"), row.locator(".ui-line")]) {
+      await target.hover();
+      await expect(popup.locator("h2")).toHaveText(name);
+      await expect(popup.locator(".subtitle")).toContainText(
+        `No. ${id} · ${variant}`,
+      );
+      await expect(popup.locator(".last-sold")).toContainText("Last Sold: $");
+      await page.keyboard.press("Escape");
+    }
+    await row.locator("a").focus();
+    await expect(popup.locator("h2")).toHaveText(name);
+    await page.keyboard.press("Escape");
+  }
+  await page.getByTestId("dash-turn").locator(".mk-act-summary").hover();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  const before = await popup.boundingBox();
+  await page.getByTestId("dash-sale").locator(".ui-line").hover();
+  await expect(popup.locator("h2")).toHaveText("Orion Nebula");
+  expect(await popup.boundingBox()).toEqual(before);
+  await page.screenshot({
+    path: "test-results/screenshots/market-activity-hover.png",
+  });
+  await expect(page.locator("body")).toHaveAttribute("data-bids", "0");
+  expect(writeRequests).toBe(0);
+});
+test("compact market activity thumbnails omit overlays while ordinary cards and popup headers retain them", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        showSaleHistoryOverlay: true,
+        showFriendInterestOverlay: true,
+        showQuestOverlay: true,
+      },
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        notes: "",
+        families: ["Astronomy"],
+      },
+    });
+  });
+  await page.goto("https://kosmora.io/market?tab=overview&view=mine");
+  await page.evaluate(
+    (html) =>
+      document.body.insertAdjacentHTML(
+        "afterbegin",
+        `<a id="ordinary-card" href="/card/42" style="position:fixed;right:24px;top:24px;width:140px">${html}</a>`,
+      ),
+    face(),
+  );
+  await expect(
+    page.locator("#ordinary-card [data-kosmore-card-overlays] .sale"),
+  ).toBeVisible();
+  await expect(
+    page.locator("#ordinary-card [data-kosmore-card-overlays] .friend"),
+  ).toBeVisible();
+  await expect(
+    page.locator("#ordinary-card [data-kosmore-card-overlays] .quest"),
+  ).toBeVisible();
+  for (const section of ["dash-turn", "dash-bids", "dash-sale"]) {
+    await expect(
+      page.getByTestId(section).locator("[data-kosmore-card-overlays]"),
+    ).toHaveCount(0);
+  }
+  await page.getByTestId("dash-turn").locator(".kc-img").hover();
+  const popup = page.locator("#kosmore-root");
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  await expect(popup.locator(".header-signals .sale")).toBeVisible();
+  await expect(popup.locator(".header-signals .friend")).toBeVisible();
+  await page.screenshot({
+    path: "test-results/screenshots/market-activity-no-overlays.png",
+  });
+  expect(writeRequests).toBe(0);
+});
+test("market activity detection follows replaced rows and leaves action controls clickable", async () => {
+  await page.goto("https://kosmora.io/market?tab=overview&view=mine");
+  const row = page.getByTestId("dash-turn"),
+    popup = page.locator("#kosmore-root");
+  await row.locator(".kc-img").hover();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  await page.keyboard.press("Escape");
+  await row.getByTestId("rebid").hover();
+  await page.waitForTimeout(200);
+  await expect(popup).toHaveCount(0);
+  await row.getByTestId("rebid").click();
+  await expect(page.locator("body")).toHaveAttribute("data-bids", "1");
+  await page.evaluate(
+    (html) => {
+      document.querySelector('[data-testid="dash-turn"] .mk-acts')!.innerHTML =
+        html;
+    },
+    activityRow("48", "Cassini", "kc-veil"),
+  );
+  await row.locator(".mk-act-name").hover();
+  await expect(popup.locator("h2")).toHaveText("Cassini");
+  await expect(popup.locator(".subtitle")).toContainText("No. 48 · Shiny");
   expect(writeRequests).toBe(0);
 });
 test("persisted settings survive a browser restart", async () => {

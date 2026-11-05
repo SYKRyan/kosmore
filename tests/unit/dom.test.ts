@@ -5,6 +5,10 @@ import {
   resolveCard,
 } from "../../src/kosmora/dom";
 import { face, OPENING } from "../fixtures/data";
+import {
+  activityRow,
+  marketActivityFixture,
+} from "../fixtures/market-activity";
 beforeEach(() => {
   document.body.innerHTML = "";
   history.replaceState(null, "", "/collection");
@@ -78,4 +82,57 @@ it("re-identifies an unlinked recap card when its face is replaced", () => {
   });
   document.querySelector(".kc-article")!.outerHTML = face("43", "Voyager 1");
   expect([...cardOverlayTargets().values()][0].subjectId).toBe("43");
+});
+it("resolves thumbnails, names and summaries in the three market activity sections", () => {
+  history.replaceState(null, "", "/market?tab=overview&view=mine");
+  document.body.innerHTML = marketActivityFixture();
+  for (const [section, id, name, variant] of [
+    ["dash-turn", "42", "Northern Lights", { veil: true, fullArt: false }],
+    ["dash-bids", "46", "Andromeda", { veil: false, fullArt: true }],
+    ["dash-sale", "47", "Orion Nebula", { veil: false, fullArt: false }],
+  ] as const) {
+    const root = document.querySelector(`[data-testid='${section}']`)!;
+    const link = root.querySelector("a")!;
+    for (const target of [
+      link,
+      root.querySelector("img")!,
+      root.querySelector(".ui-line")!,
+    ]) {
+      expect(resolveCard(target)).toMatchObject({
+        subjectId: id,
+        name,
+        variant,
+        anchor: link,
+        surface: "page",
+      });
+      expect(resolveCard(target)?.copyId).toBeUndefined();
+    }
+  }
+  expect(
+    [...cardOverlayTargets().values()].map((context) => context.subjectId),
+  ).toEqual([]);
+  document.body.insertAdjacentHTML("beforeend", face("99", "Ordinary card"));
+  expect(
+    [...cardOverlayTargets().values()].map((context) => context.subjectId),
+  ).toEqual(["99"]);
+});
+it("does not treat auction IDs or action controls as card identity", () => {
+  history.replaceState(null, "", "/market?tab=overview&view=mine");
+  document.body.innerHTML = activityRow("42", "Northern Lights");
+  expect(resolveCard(document.querySelector("button")!)).toBeNull();
+  document.querySelector(".kc-article")!.remove();
+  expect(resolveCard(document.querySelector(".mk-act-name")!)).toBeNull();
+});
+it("keeps hidden rows, mystery backs and unrelated decorative cards excluded", () => {
+  history.replaceState(null, "", "/market?tab=overview&view=mine");
+  for (const attribute of ["hidden", 'aria-hidden="true"', "inert"]) {
+    document.body.innerHTML = `<div ${attribute}>${activityRow("42", "Northern Lights")}</div>`;
+    expect(resolveCard(document.querySelector("img")!)).toBeNull();
+  }
+  document.body.innerHTML = `<div aria-hidden="true">${face()}</div>`;
+  expect(resolveCard(document.querySelector("img")!)).toBeNull();
+  document.body.innerHTML = activityRow("42", "Mystery card");
+  document.querySelector(".kc-article")!.outerHTML =
+    '<div class="kc-back">Mystery card</div>';
+  expect(resolveCard(document.querySelector(".mk-act-name")!)).toBeNull();
 });

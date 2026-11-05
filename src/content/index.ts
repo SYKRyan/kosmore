@@ -1,6 +1,11 @@
 import { GameClient } from "../kosmora/client";
 import { contextKey, HOST_ID, resolveCard, topDialog } from "../kosmora/dom";
-import { isTabRequest } from "../shared/messages";
+import { isTabRequest, request } from "../shared/messages";
+import {
+  parsePopupState,
+  type PopupState,
+  type PopupLayoutChange,
+} from "../shared/popup-layout";
 import {
   defaults,
   parseSettings,
@@ -22,19 +27,34 @@ import {
 import { Popup } from "./popup";
 import { SocialReminders } from "./social";
 import { CardOverlays } from "./card-overlays";
+import { NavigationHotkeys } from "./navigation";
 
 const client = new GameClient();
 new SocialReminders(client).start();
 const overlays = new CardOverlays(client);
 overlays.start();
 let settings = defaults();
+let pinnedState: PopupState = { pinned: false, position: null };
+new NavigationHotkeys(() => settings, client, navigationAway).start();
 let marketFinishes: Finish[] = [...FINISHES];
 let pendingFilterWrites = 0;
-const preferencesReady = readMarketFinishes()
-  .then((finishes) => {
-    marketFinishes = finishes;
-  })
-  .catch(() => {});
+const preferencesReady = Promise.all([
+  readMarketFinishes().catch(() => marketFinishes),
+  request<PopupState>({ op: "popupState" })
+    .then(parsePopupState)
+    .catch(() => pinnedState)
+    .then(async (state) => ({
+      state,
+      savedSettings: await readSettings().catch(() => settings),
+    })),
+]).then(([finishes, { savedSettings, state }]) => {
+  marketFinishes = finishes;
+  settings = savedSettings;
+  pinnedState = state;
+  overlays.setSettings(settings);
+  if (!settings.enabled) hide();
+  else if (pinnedState.pinned && !popup && !current) createView(null);
+});
 let current: CardContext | null = null,
   popup: Popup | undefined;
 let activeRequest: AbortController | undefined,
@@ -56,6 +76,24 @@ function hide() {
   popup?.dispose();
   popup = undefined;
   current = null;
+}
+function dismiss() {
+  hide();
+  pinnedState.pinned = false;
+  void request<PopupState>({
+    op: "popupLayout",
+    change: { pinned: false },
+  }).catch(() => {});
+}
+function navigationAway() {
+  hovered = false;
+  hide();
+  if (settings.enabled && pinnedState.pinned) createView(null);
+}
+function checkUrl() {
+  if (lastUrl === location.href) return;
+  lastUrl = location.href;
+  navigationAway();
 }
 function laterHide() {
   cancelClose();
@@ -82,42 +120,11 @@ async function show(context: CardContext, fresh = false) {
   const placement = popup?.pinnedPlacement();
   popup?.dispose();
   current = context;
-  dialog = topDialog();
   const abort = new AbortController();
   activeRequest = abort;
-  const view = new Popup(
-    context,
-    client,
-    () => void show(context, true),
-    hide,
-    options,
-    marketFinishes,
-    async (finishes) => {
-      marketFinishes = [...finishes];
-      pendingFilterWrites++;
-      try {
-        await saveMarketFinishes(finishes);
-      } finally {
-        pendingFilterWrites--;
-      }
-    },
-    settings,
-    placement,
-    () => {
-      cancelClose();
-      if (!popup?.isPinned && !hovered) laterHide();
-    },
-  );
-  popup = view;
-  view.host.addEventListener("pointerenter", cancelClose);
-  view.host.addEventListener("pointerleave", () => {
-    if (!hovered) laterHide();
-  });
-  view.host.addEventListener("focusin", cancelClose);
-  view.host.addEventListener("focusout", () => {
-    if (!hovered) laterHide();
-  });
-  const valid = () => !abort.signal.aborted && popup === view;
+  const view = createView(context, placement);
+  const valid = () =>
+    !abort.signal.aborted && popup === view && current === context;
   try {
     const account = await client.account(abort.signal);
     if (!valid()) return;
@@ -179,6 +186,73 @@ async function show(context: CardContext, fresh = false) {
       for (const f of FINISHES) view.setHistory(f, new Error(messageOf(error)));
     }
   }
+}
+function createView(
+  context: CardContext | null,
+  placement = popup?.pinnedPlacement(),
+) {
+  dialog = topDialog();
+  if (!placement && pinnedState.pinned)
+    placement = {
+      ...(pinnedState.position ??
+        settings.popupPosition ?? {
+          left: Math.max(12, innerWidth - settings.popupWidth - 12),
+          top: 12,
+        }),
+      tab: "market",
+    };
+  const view = new Popup(
+    context,
+    client,
+    () => {
+      if (context) void show(context, true);
+    },
+    dismiss,
+    options,
+    marketFinishes,
+    async (finishes) => {
+      marketFinishes = [...finishes];
+      pendingFilterWrites++;
+      try {
+        await saveMarketFinishes(finishes);
+      } finally {
+        pendingFilterWrites--;
+      }
+    },
+    settings,
+    placement,
+    () => {
+      cancelClose();
+      if (!view.isPinned && !current) hide();
+      else if (!view.isPinned && !hovered) laterHide();
+    },
+    (change) => saveLayout(view, change),
+  );
+  popup = view;
+  view.host.addEventListener("pointerenter", cancelClose);
+  view.host.addEventListener("pointerleave", () => {
+    if (!hovered) laterHide();
+  });
+  view.host.addEventListener("focusin", cancelClose);
+  view.host.addEventListener("focusout", () => {
+    if (!hovered) laterHide();
+  });
+  return view;
+}
+function saveLayout(view: Popup, change: PopupLayoutChange) {
+  pinnedState = {
+    pinned: change.pinned ?? pinnedState.pinned,
+    position: change.position ?? pinnedState.position,
+  };
+  settings = {
+    ...settings,
+    popupPosition: change.position ?? settings.popupPosition,
+    popupWidth: change.width ?? settings.popupWidth,
+    popupHeight: change.height ?? settings.popupHeight,
+  };
+  void request<PopupState>({ op: "popupLayout", change }).catch((error) =>
+    view.layoutFailed(error),
+  );
 }
 function loadHeaderSignals(
   view: Popup,
@@ -272,7 +346,7 @@ document.addEventListener(
     if (event.key === "Escape" && popup) {
       event.stopImmediatePropagation();
       event.preventDefault();
-      hide();
+      dismiss();
     }
   },
   true,
@@ -282,8 +356,14 @@ window.addEventListener("scroll", () => popup?.position(), {
   capture: true,
 });
 window.addEventListener("resize", () => popup?.position());
-window.addEventListener("popstate", hide);
+window.addEventListener("popstate", checkUrl);
+window.addEventListener("hashchange", checkUrl);
+const navigation = (window as Window & { navigation?: EventTarget }).navigation;
+navigation?.addEventListener("navigatesuccess", checkUrl);
 window.addEventListener("pagehide", hide);
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) navigationAway();
+});
 const observer = new MutationObserver((records) => {
   if (
     scheduled ||
@@ -296,15 +376,20 @@ const observer = new MutationObserver((records) => {
   requestAnimationFrame(() => {
     scheduled = false;
     if (lastUrl !== location.href) {
-      lastUrl = location.href;
-      hide();
+      checkUrl();
       return;
     }
-    if (!current) return;
     if (popup && topDialog() !== dialog) {
-      hide();
-      return;
+      if (popup.isPinned) {
+        dialog = topDialog();
+        popup.mount();
+      } else {
+        hide();
+        return;
+      }
     }
+    if (popup?.isPinned && !popup.host.isConnected) popup.mount();
+    if (!current) return;
     if (!current.anchor.isConnected) {
       if (!popup?.isPinned) hide();
       return;
@@ -333,13 +418,6 @@ observer.observe(document.body, {
   attributes: true,
   attributeFilter: ["class", "href", "src", "aria-label", "open", "hidden"],
 });
-void readSettings()
-  .then((s) => {
-    settings = s;
-    overlays.setSettings(s);
-    if (!settings.enabled) hide();
-  })
-  .catch(() => {});
 chrome.storage.onChanged.addListener((changes, area) => {
   if (
     area === "local" &&
@@ -354,9 +432,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
     settings = parseSettings(changes[SETTINGS_KEY].newValue);
     overlays.setSettings(settings);
     if (!settings.enabled) hide();
-    else if (popup && current && activeRequest) {
+    else if (popup) {
       popup.setSettings(settings);
-      loadHeaderSignals(popup, current, activeRequest.signal);
+      if (current && activeRequest)
+        loadHeaderSignals(popup, current, activeRequest.signal);
+    } else if (pinnedState.pinned) {
+      createView(null);
     }
   }
   if (

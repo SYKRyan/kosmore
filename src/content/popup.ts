@@ -29,8 +29,14 @@ import { el, button, note } from "./ui";
 import { sellPath } from "../kosmora/selling";
 import { readTradeMatches, type TradeMatches } from "../shared/trade-matches";
 import { CardNotes } from "./card-notes";
+import {
+  resizedBounds,
+  type PopupBounds,
+  type PopupLayoutChange,
+} from "../shared/popup-layout";
+import { lastSaleSummary } from "../shared/last-sale";
 type PopupTab = "market" | "trade" | "notes";
-interface PopupPlacement {
+export interface PopupPlacement {
   left: number;
   top: number;
   tab: PopupTab;
@@ -52,7 +58,11 @@ export class Popup {
   private market = el("section", "market-history");
   private tradeArea = el("section", "trade-panel");
   private notesArea = el("section", "card-notes-panel");
-  private notes: CardNotes;
+  private notes?: CardNotes;
+  private lastSold = el("p", "last-sold");
+  private layoutStatus = el("p", "layout-status");
+  private resizeBounds?: PopupBounds;
+  private finishInteraction?: () => void;
   private marketTab = button("Market", () => this.selectTab("market"), "tab");
   private tradeTab = button("Trade", () => this.selectTab("trade"), "tab");
   private notesTab = button("Notes", () => this.selectTab("notes"), "tab");
@@ -84,7 +94,7 @@ export class Popup {
   private pinButton = button("", () => this.togglePin(), "icon pin-button");
   private reposition: ResizeObserver;
   constructor(
-    readonly context: CardContext,
+    readonly context: CardContext | null,
     private client: KosmoraClient,
     onRefresh: () => void,
     onClose: () => void,
@@ -96,14 +106,20 @@ export class Popup {
     private settings: Settings = defaults(),
     placement?: PopupPlacement,
     private onPinChange: () => void = () => {},
+    private onLayoutChange: (change: PopupLayoutChange) => void = () => {},
   ) {
     this.placement = placement ? { ...placement } : undefined;
-    this.notes = new CardNotes(this.notesArea, context.subjectId, client);
+    if (context)
+      this.notes = new CardNotes(this.notesArea, context.subjectId, client);
     this.hidden = new Set(FINISHES.filter((f) => !finishes.includes(f)));
     this.host.id = HOST_ID;
     this.host.popover = "manual";
     this.host.setAttribute("role", "dialog");
-    this.host.setAttribute("aria-label", `KosMore · ${context.name}`);
+    this.host.setAttribute(
+      "aria-label",
+      context ? `KosMore · ${context.name}` : "KosMore · No Card Selected",
+    );
+    this.host.toggleAttribute("data-empty", !context);
     const style = el("style");
     style.textContent = statCss + css;
     this.shadow.append(style);
@@ -117,9 +133,9 @@ export class Popup {
           this.selectedTab === "trade"
             ? this.refreshTrade(true)
             : this.selectedTab === "notes"
-              ? this.notes.refresh()
+              ? this.notes?.refresh()
               : onRefresh(),
-        "icon",
+        "icon refresh-button",
       ),
       this.pinButton,
       button("×", onClose, "icon"),
@@ -172,15 +188,18 @@ export class Popup {
     this.sellButton.append(gavel);
     const titleActions = el("div", "title-actions");
     titleActions.append(this.headerSignals, this.sellButton);
-    titleRow.append(el("h2", "", context.name), titleActions);
+    titleRow.append(el("h2", "", context?.name ?? ""), titleActions);
     top.append(
       brand,
       titleRow,
       el(
         "p",
         "subtitle",
-        `No. ${context.subjectId} · ${context.variant.fullArt ? "Full art" : context.variant.veil ? "Shiny" : "Standard"}`,
+        context
+          ? `No. ${context.subjectId} · ${context.variant.fullArt ? "Full art" : context.variant.veil ? "Shiny" : "Standard"}`
+          : "",
       ),
+      this.lastSold,
     );
     const tabs = el("div", "tabs");
     tabs.setAttribute("role", "tablist");
@@ -226,14 +245,20 @@ export class Popup {
       button("Settings", openSettings, "link"),
     );
     body.append(footer);
-    this.shadow.append(top, body);
+    const empty = el("div", "empty-state", "No Card Selected");
+    empty.setAttribute("role", "status");
+    this.layoutStatus.setAttribute("role", "status");
+    this.shadow.append(top, empty, body, this.layoutStatus);
+    this.enableResizing();
     this.metrics.setAttribute("aria-live", "polite");
     this.albumArea.setAttribute("aria-live", "polite");
     this.tradeArea.setAttribute("aria-live", "polite");
     this.selectTab(this.placement?.tab ?? "market");
-    this.renderMetrics();
-    this.renderMarket();
-    this.albumArea.append(note("Loading your albums…"));
+    if (context) {
+      this.renderMetrics();
+      this.renderMarket();
+      this.albumArea.append(note("Loading your albums…"));
+    }
     (topDialog() ?? document.body).append(this.host);
     this.host.showPopover();
     for (const event of [
@@ -261,9 +286,10 @@ export class Popup {
     this.position();
   }
   dispose() {
+    this.finishInteraction?.();
     this.closed = true;
     this.tradeRequest?.abort();
-    this.notes.dispose();
+    this.notes?.dispose();
     this.reposition.disconnect();
     this.host.remove();
   }
@@ -280,12 +306,13 @@ export class Popup {
     this.placement = this.placement
       ? undefined
       : {
-          left: bounds.left,
-          top: bounds.top,
+          left: this.settings.popupPosition?.left ?? bounds.left,
+          top: this.settings.popupPosition?.top ?? bounds.top,
           tab: this.selectedTab,
         };
     this.renderPin();
     this.position();
+    this.saveLayout();
     this.onPinChange();
   }
   private renderPin() {
@@ -308,6 +335,151 @@ export class Popup {
       "--popup-height",
       `${this.settings.popupHeight}px`,
     );
+  }
+  private saveLayout() {
+    const position = this.placement
+      ? {
+          left: Math.round(this.placement.left),
+          top: Math.round(this.placement.top),
+        }
+      : undefined;
+    this.settings = {
+      ...this.settings,
+      popupPosition: position ?? this.settings.popupPosition,
+    };
+    this.layoutStatus.textContent = "";
+    this.onLayoutChange({
+      pinned: this.isPinned,
+      ...(position ? { position } : {}),
+      width: this.settings.popupWidth,
+      height: this.settings.popupHeight,
+    });
+  }
+  layoutFailed(error: unknown) {
+    if (!this.closed)
+      this.layoutStatus.textContent = `Could not remember popup layout: ${messageOf(error)}`;
+  }
+  mount() {
+    const parent = topDialog() ?? document.body;
+    if (this.host.parentElement !== parent) {
+      if (this.host.matches(":popover-open")) this.host.hidePopover();
+      parent.append(this.host);
+    }
+    if (!this.host.matches(":popover-open")) this.host.showPopover();
+    this.position();
+  }
+  private enableResizing() {
+    for (const edge of ["n", "e", "s", "w", "ne", "se", "sw", "nw"]) {
+      const handle = el("div", `resize-handle resize-${edge}`);
+      handle.dataset.edge = edge;
+      handle.setAttribute("aria-label", `Resize popup ${edge} edge`);
+      if (edge.length === 1) {
+        handle.tabIndex = 0;
+        handle.setAttribute("role", "separator");
+        handle.setAttribute(
+          "aria-orientation",
+          edge === "n" || edge === "s" ? "horizontal" : "vertical",
+        );
+      }
+      const apply = (bounds: PopupBounds) => {
+        this.resizeBounds = bounds;
+        this.settings = {
+          ...this.settings,
+          popupWidth: Math.max(320, Math.round(bounds.width)),
+          popupHeight: Math.max(480, Math.round(bounds.height)),
+        };
+        if (this.placement) {
+          this.placement.left = bounds.left;
+          this.placement.top = bounds.top;
+        }
+        this.applySize();
+        this.position();
+      };
+      const finish = () => {
+        this.resizeBounds = undefined;
+        this.finishInteraction = undefined;
+        this.host.removeAttribute("data-resizing");
+        this.position();
+        this.saveLayout();
+      };
+      handle.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0 || !event.isPrimary) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const rect = this.host.getBoundingClientRect();
+        const start = {
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height,
+        };
+        const x = event.clientX,
+          y = event.clientY,
+          id = event.pointerId;
+        handle.setPointerCapture(id);
+        this.host.setAttribute("data-resizing", "");
+        const move = (event: PointerEvent) => {
+          if (event.pointerId === id)
+            apply(
+              resizedBounds(start, edge, event.clientX - x, event.clientY - y, {
+                width: innerWidth,
+                height: innerHeight,
+              }),
+            );
+        };
+        const stop = (event: PointerEvent) => {
+          if (event.pointerId === id) this.finishInteraction?.();
+        };
+        this.finishInteraction = () => {
+          handle.removeEventListener("pointermove", move);
+          handle.removeEventListener("pointerup", stop);
+          handle.removeEventListener("pointercancel", stop);
+          handle.removeEventListener("lostpointercapture", stop);
+          if (handle.hasPointerCapture(id)) handle.releasePointerCapture(id);
+          finish();
+        };
+        handle.addEventListener("pointermove", move);
+        handle.addEventListener("pointerup", stop);
+        handle.addEventListener("pointercancel", stop);
+        handle.addEventListener("lostpointercapture", stop);
+      });
+      handle.addEventListener("keydown", (event) => {
+        if (
+          !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
+            event.key,
+          )
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        const rect = this.host.getBoundingClientRect(),
+          step = event.shiftKey ? 50 : 10;
+        apply(
+          resizedBounds(
+            {
+              left: rect.left,
+              top: rect.top,
+              width: rect.width,
+              height: rect.height,
+            },
+            edge,
+            event.key === "ArrowLeft"
+              ? -step
+              : event.key === "ArrowRight"
+                ? step
+                : 0,
+            event.key === "ArrowUp"
+              ? -step
+              : event.key === "ArrowDown"
+                ? step
+                : 0,
+            { width: innerWidth, height: innerHeight },
+          ),
+        );
+        finish();
+      });
+      this.shadow.append(handle);
+    }
   }
   private enableDragging(header: HTMLElement) {
     let drag:
@@ -332,18 +504,35 @@ export class Popup {
       };
       header.setPointerCapture(event.pointerId);
       this.host.toggleAttribute("data-dragging", true);
+      this.finishInteraction = () => {
+        drag = undefined;
+        this.finishInteraction = undefined;
+        this.host.removeAttribute("data-dragging");
+        this.saveLayout();
+      };
       event.preventDefault();
     });
     header.addEventListener("pointermove", (event) => {
       if (!drag || drag.id !== event.pointerId || !this.placement) return;
-      this.placement.left = drag.left + event.clientX - drag.x;
-      this.placement.top = drag.top + event.clientY - drag.y;
+      this.placement.left = Math.max(
+        12,
+        Math.min(
+          drag.left + event.clientX - drag.x,
+          innerWidth - this.host.offsetWidth - 12,
+        ),
+      );
+      this.placement.top = Math.max(
+        12,
+        Math.min(
+          drag.top + event.clientY - drag.y,
+          innerHeight - this.host.offsetHeight - 12,
+        ),
+      );
       this.position();
     });
     const stop = (event: PointerEvent) => {
       if (drag?.id !== event.pointerId) return;
-      drag = undefined;
-      this.host.removeAttribute("data-dragging");
+      this.finishInteraction?.();
       if (header.hasPointerCapture(event.pointerId))
         header.releasePointerCapture(event.pointerId);
     };
@@ -353,19 +542,25 @@ export class Popup {
   }
   position() {
     if (this.closed) return;
+    if (this.resizeBounds) {
+      this.host.style.left = `${this.resizeBounds.left}px`;
+      this.host.style.top = `${this.resizeBounds.top}px`;
+      return;
+    }
     if (this.placement) {
-      this.placement.left = Math.max(
+      const left = Math.max(
         12,
         Math.min(this.placement.left, innerWidth - this.host.offsetWidth - 12),
       );
-      this.placement.top = Math.max(
+      const top = Math.max(
         12,
         Math.min(this.placement.top, innerHeight - this.host.offsetHeight - 12),
       );
-      this.host.style.left = `${this.placement.left}px`;
-      this.host.style.top = `${this.placement.top}px`;
+      this.host.style.left = `${left}px`;
+      this.host.style.top = `${top}px`;
       return;
     }
+    if (!this.context) return;
     const r = this.context.anchor.getBoundingClientRect(),
       w = this.host.offsetWidth,
       h = this.host.offsetHeight;
@@ -377,6 +572,7 @@ export class Popup {
     this.host.style.top = `${top}px`;
   }
   setInsights(details: CardInsights) {
+    if (!this.context) return;
     this.details = details;
     this.insightError = undefined;
     const sub = this.shadow.querySelector(".subtitle");
@@ -389,7 +585,7 @@ export class Popup {
   insightsFailed(error: unknown) {
     this.insightError = messageOf(error);
     this.renderMetrics();
-    if (!this.account) this.notes.failed(error);
+    if (!this.account) this.notes?.failed(error);
     this.renderTrade();
   }
   setHistory(finish: Finish, result: MarketHistory | Error) {
@@ -404,7 +600,7 @@ export class Popup {
   }
   setAccount(account: Account, pinned: string[]) {
     this.account = account;
-    this.notes.setAccount(account);
+    this.notes?.setAccount(account);
     this.pinned = pinned;
     this.renderAlbums();
     this.refreshTrade();
@@ -432,7 +628,7 @@ export class Popup {
       button.tabIndex = name === tab ? 0 : -1;
     }
     if (tab === "trade") void this.loadTrade();
-    if (tab === "notes") this.notes.activate();
+    if (tab === "notes") this.notes?.activate();
   }
   private async loadTrade(fresh = false) {
     this.renderTrade();
@@ -577,9 +773,18 @@ export class Popup {
     return h;
   }
   setSettings(settings: Settings) {
+    if (this.resizeBounds) {
+      this.settings = {
+        ...settings,
+        popupWidth: this.settings.popupWidth,
+        popupHeight: this.settings.popupHeight,
+      };
+      return;
+    }
     this.settings = settings;
     this.applySize();
     this.position();
+    if (!this.context) return;
     this.renderMetrics();
     if (this.account)
       this.pinned = settings.pinnedAlbums[this.account.key] ?? [];
@@ -615,6 +820,12 @@ export class Popup {
       : "";
   }
   private renderMarket() {
+    const lastSale = lastSaleSummary(
+      this.histories,
+      FINISHES.filter((f) => !this.hidden.has(f)),
+    );
+    this.lastSold.textContent = lastSale.label;
+    this.lastSold.title = lastSale.title;
     this.market.replaceChildren(
       this.heading("Market history", "30-day window"),
     );
@@ -935,6 +1146,7 @@ export class Popup {
             : "Open the sell form for this owned copy";
   }
   private async sell() {
+    if (!this.context) return;
     const copy = this.selectedCopy();
     if (!copy || !this.account || this.selling || this.pending) return;
     const sourceUrl = location.href;
@@ -965,6 +1177,7 @@ export class Popup {
     }
   }
   private async add(id: string, copy?: OwnedCopy) {
+    if (!this.context) return;
     if (!copy || !this.account || this.pending) return;
     this.pending = true;
     this.status.className = "album-status";

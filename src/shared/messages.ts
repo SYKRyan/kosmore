@@ -1,5 +1,12 @@
 import type { Account, Album } from "./types";
+import {
+  isPopupLayoutChange,
+  type PopupLayoutChange,
+  type PopupState,
+} from "./popup-layout";
 export type Request =
+  | { requestId: string; op: "popupState" }
+  | { requestId: string; op: "popupLayout"; change: PopupLayoutChange }
   | { requestId: string; op: "sessions" }
   | { requestId: string; op: "albums"; tabId: number; accountKey: string }
   | { requestId: string; op: "openOptions" };
@@ -20,7 +27,8 @@ export function isRequest(x: unknown): x is Request {
   const r = x as Request;
   return (
     validId(r.requestId) &&
-    (["sessions", "openOptions"].includes(r.op) ||
+    (["sessions", "openOptions", "popupState"].includes(r.op) ||
+      (r.op === "popupLayout" && isPopupLayoutChange(r.change)) ||
       (r.op === "albums" &&
         Number.isInteger(r.tabId) &&
         r.tabId >= 0 &&
@@ -36,9 +44,9 @@ export function isTabRequest(x: unknown): x is TabRequest {
       (r.op === "listAlbums" && /^[a-z0-9_]{1,24}$/.test(r.accountKey)))
   );
 }
-export async function request<T extends Session[] | Album[] | null>(
-  message: Omit<Request, "requestId"> & Record<string, unknown>,
-): Promise<T> {
+export async function request<
+  T extends Session[] | Album[] | PopupState | null,
+>(message: Omit<Request, "requestId"> & Record<string, unknown>): Promise<T> {
   const requestId = crypto.randomUUID();
   const r = (await chrome.runtime.sendMessage({
     ...message,

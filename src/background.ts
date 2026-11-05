@@ -1,5 +1,15 @@
 import { isRequest, type Result, type Session } from "./shared/messages";
 import { messageOf } from "./shared/types";
+import {
+  parsePopupPosition,
+  parsePopupState,
+  POPUP_SESSION_PREFIX,
+} from "./shared/popup-layout";
+import { readSettings, saveSettings } from "./shared/settings";
+let layoutWrites = Promise.resolve();
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void chrome.storage.session.remove(`${POPUP_SESSION_PREFIX}${tabId}`);
+});
 chrome.action.onClicked.addListener(() => {
   void chrome.runtime.openOptionsPage();
 });
@@ -7,6 +17,53 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id || !isRequest(message)) return false;
   const isOptions = sender.url === chrome.runtime.getURL("options.html");
   const isGame = !!sender.tab && sender.url?.startsWith("https://kosmora.io/");
+  if (
+    (message.op === "popupState" || message.op === "popupLayout") &&
+    isGame &&
+    sender.tab?.id !== undefined &&
+    sender.frameId === 0
+  ) {
+    const key = `${POPUP_SESSION_PREFIX}${sender.tab.id}`;
+    const result = layoutWrites.then(async () => {
+      const state = parsePopupState(
+        (await chrome.storage.session.get(key))[key],
+      );
+      if (message.op === "popupState") return state;
+      const change = message.change;
+      if (change.pinned !== undefined) state.pinned = change.pinned;
+      if (change.position) state.position = parsePopupPosition(change.position);
+      await chrome.storage.session.set({ [key]: state });
+      if (
+        change.position ||
+        change.width !== undefined ||
+        change.height !== undefined
+      ) {
+        const settings = await readSettings();
+        if (change.position)
+          settings.popupPosition = parsePopupPosition(change.position);
+        if (change.width !== undefined)
+          settings.popupWidth = Math.round(change.width);
+        if (change.height !== undefined)
+          settings.popupHeight = Math.round(change.height);
+        await saveSettings(settings);
+      }
+      return state;
+    });
+    layoutWrites = result.then(
+      () => {},
+      () => {},
+    );
+    void result.then(
+      (data) => respond({ requestId: message.requestId, ok: true, data }),
+      (error) =>
+        respond({
+          requestId: message.requestId,
+          ok: false,
+          error: messageOf(error),
+        }),
+    );
+    return true;
+  }
   if (message.op === "openOptions" && isGame) {
     void chrome.runtime
       .openOptionsPage()

@@ -1,5 +1,6 @@
 import {
   cardOverlayTargets,
+  cardOverlaysAllowed,
   contextKey,
   OVERLAY_ATTR,
   resolveCard,
@@ -180,6 +181,7 @@ export class CardOverlays {
       generation === this.generation &&
       this.entries.get(entry.root) === entry &&
       entry.root.isConnected &&
+      cardOverlaysAllowed(entry.root) &&
       !!context &&
       contextKey(context) === entry.key
     );

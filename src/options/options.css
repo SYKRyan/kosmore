@@ -295,6 +295,37 @@ h2 {
   font-size: 13px;
   color: #c8b7d9;
 }
+.hotkey-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+.hotkey-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #ffffff0b;
+  border-radius: 9px;
+  padding: 10px 12px;
+}
+.hotkey-label {
+  font-size: 13px;
+}
+.hotkey-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.shortcut-record {
+  min-width: 150px;
+  font-size: 12px;
+}
+.shortcut-record[aria-pressed="true"] {
+  border-color: #e7cb84;
+  color: #ffe8af;
+}
 .hint {
   color: #b09bc4;
   font-size: 12px;
@@ -307,6 +338,14 @@ h2 {
   color: #e7ddf0;
 }
 @media (max-width: 720px) {
+  .hotkey-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .save-actions {
+    flex-wrap: wrap;
+  }
   main {
     padding: 30px 18px;
   }

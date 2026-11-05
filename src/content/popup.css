@@ -47,6 +47,120 @@
 :host([data-pinned]) {
   animation: none;
 }
+:host([data-resizing]) {
+  animation: none;
+  user-select: none;
+}
+.empty-state {
+  display: none;
+}
+:host([data-empty]) .body,
+:host([data-empty]) .title-row,
+:host([data-empty]) .subtitle,
+:host([data-empty]) .last-sold,
+:host([data-empty]) .refresh-button {
+  display: none;
+}
+:host([data-empty]) .brand {
+  margin-bottom: 0;
+}
+:host([data-empty]) .empty-state {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  place-items: center;
+  text-align: center;
+  padding: 24px;
+  color: #c3b2d4;
+  font-size: 18px;
+}
+.layout-status:empty {
+  display: none;
+}
+.layout-status {
+  flex: 0 0 auto;
+  padding: 8px 18px;
+  color: #f1aab5;
+  font-size: 11px;
+}
+.last-sold {
+  margin-top: 8px;
+  color: #f4dba1;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.resize-handle {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+}
+.resize-handle:focus-visible {
+  outline: 2px solid #f6d386;
+  outline-offset: -3px;
+}
+.resize-n,
+.resize-s {
+  height: 7px;
+  left: 14px;
+  right: 14px;
+  cursor: ns-resize;
+}
+.resize-n {
+  top: 0;
+}
+.resize-s {
+  bottom: 0;
+}
+.resize-e,
+.resize-w {
+  width: 7px;
+  top: 14px;
+  bottom: 14px;
+  cursor: ew-resize;
+}
+.resize-e {
+  right: 0;
+}
+.resize-w {
+  left: 0;
+}
+.resize-ne,
+.resize-nw,
+.resize-se,
+.resize-sw {
+  width: 14px;
+  height: 14px;
+}
+.resize-ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+.resize-nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+.resize-se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+.resize-se::after {
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid #d4b87599;
+  border-bottom: 1px solid #d4b87599;
+}
+.resize-sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
 * {
   box-sizing: border-box;
 }
@@ -454,7 +568,7 @@ h3 {
 }
 .albums {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
 }
 .albums button {
