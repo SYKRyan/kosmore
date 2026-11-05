@@ -270,8 +270,8 @@ const listingPriceOverlay = overlayPriceToggle(
 );
 const onSaleOverlay = overlayToggle(
   "on-sale-overlay",
-  "Show On Sale label on cards",
-  "Red label · you have a copy listed on the market",
+  "Show For Sale label on cards",
+  "Black and white label · you have a copy listed on the market",
   (checked) => {
     draft.showOnSaleOverlay = checked;
   },
@@ -563,7 +563,7 @@ app.append(
   el(
     "p",
     "bottom",
-    "KosMore 0.2.1 · Settings stay in this browser. Card and market data come from Kosmora.",
+    "KosMore 0.2.2 · Settings stay in this browser. Card and market data come from Kosmora.",
   ),
 );
 function renderSettings() {

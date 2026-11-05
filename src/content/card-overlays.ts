@@ -29,7 +29,7 @@ const STYLE = `
 .badge-price{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 ${SIGNAL_BADGE_CSS}
 .market-link{pointer-events:auto;cursor:pointer;text-decoration:none}.market-link:hover{filter:brightness(1.2)}.market-link:focus-visible{outline:2px solid #e7cb84;outline-offset:2px}
-.on-sale{width:auto;margin-right:auto;padding:0 6px;border-radius:5px;background:#a82439;border-color:#ff7185;color:#fff1f3;white-space:nowrap}
+.on-sale{width:auto;margin-right:auto;padding:0 6px;border-radius:5px;background:#000;border-color:#fff;color:#fff;white-space:nowrap}
 svg{display:block;flex-shrink:0}
 @container (max-width:150px){.on-sale{font-size:9px;padding:0 4px}.bottom-row{gap:3px}.signal-badge.with-price{padding:0 4px;gap:3px;font-size:9px}}
 `;
@@ -276,12 +276,12 @@ export class CardOverlays {
     const top = el("div", "top-row"),
       bottom = el("div", "bottom-row");
     if (this.settings!.showOnSaleOverlay && signals.onSale) {
-      const label = el("span", "on-sale", "On Sale");
+      const label = el("span", "on-sale", "For Sale");
       label.setAttribute(
         "aria-label",
-        "You have this card on sale on the market",
+        "You have this card for sale on the market",
       );
-      label.title = "You have this card on sale on the market";
+      label.title = "You have this card for sale on the market";
       top.append(label);
     }
     const badges = signalBadges(

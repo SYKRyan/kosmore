@@ -104,6 +104,10 @@ for (const path of files) {
   contents.set(path, data);
 }
 contents.set("README.txt", await readFile(resolve(root, "README.txt")));
+const releaseNotes = await readFile(
+  resolve(root, "docs", "release-notes", `${version}.txt`),
+);
+contents.set("RELEASE-NOTES.txt", releaseNotes);
 // Fixed ZIP timestamps make the same build/input bytes reproducible.
 const archive = zipSync(
   Object.fromEntries(
@@ -129,6 +133,10 @@ const hash = createHash("sha256").update(archive).digest("hex");
 await mkdir(releases, { recursive: true });
 await writeFile(resolve(releases, name), archive);
 await writeFile(resolve(releases, `${name}.sha256`), `${hash}  ${name}\n`);
+await writeFile(
+  resolve(releases, `KosMore-${version}-release-notes.txt`),
+  releaseNotes,
+);
 console.log(
   `Created releases/${name} (${contents.size} files, ${(archive.length / 1024).toFixed(1)} KiB)`,
 );

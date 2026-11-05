@@ -62,6 +62,7 @@ export class Popup {
   private notesArea = el("section", "card-notes-panel");
   private notes?: CardNotes;
   private familyBadges = el("div", "family-badges");
+  private headerPrices = el("div", "header-prices");
   private lastSold = el("p", "last-sold market-badge sale");
   private listedFor = el("a", "listed-for market-badge auction");
   private lowestListingPrice?: string | Error | null;
@@ -209,10 +210,9 @@ export class Popup {
       this.familyBadges,
     );
     headerDetails.append(identity, titleActions);
-    const headerPrices = el("div", "header-prices");
-    headerPrices.append(this.lastSold, this.listedFor);
+    this.headerPrices.append(this.lastSold, this.listedFor);
     enableMarketLink(this.listedFor);
-    top.append(titleRow, headerDetails, headerPrices);
+    top.append(titleRow, headerDetails, this.headerPrices);
     const tabs = el("div", "tabs");
     tabs.setAttribute("role", "tablist");
     tabs.setAttribute("aria-label", "Card insights");
@@ -959,16 +959,22 @@ export class Popup {
   private renderHeaderPrices() {
     const marketName = this.details?.name ?? this.context?.name;
     if (marketName) this.listedFor.href = marketSearchPath(marketName);
-    const lastSale = lastSaleSummary(
-      this.histories,
-      FINISHES.filter((f) => !this.hidden.has(f)),
-    );
+    const finishes = FINISHES.filter((f) => !this.hidden.has(f));
+    const lastSale = lastSaleSummary(this.histories, finishes);
+    this.lastSold.hidden =
+      !finishes.length ||
+      finishes.every((finish) => {
+        const history = this.histories[finish];
+        return history && !(history instanceof Error) && history.count === 0;
+      });
     this.lastSold.replaceChildren(
       cardIcon("sale"),
       el("span", "market-badge-label", lastSale.label),
     );
     this.lastSold.title = lastSale.title;
     const price = this.lowestListingPrice;
+    this.listedFor.hidden = price === null;
+    this.headerPrices.hidden = this.lastSold.hidden && this.listedFor.hidden;
     const label =
       price instanceof Error
         ? "Unavailable"

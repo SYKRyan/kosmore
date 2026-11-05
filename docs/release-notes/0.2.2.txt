@@ -1,0 +1,123 @@
+KosMore 0.2.2 - Tester Release
+November 5, 2026
+
+This release updates market insights, pinned album actions, card overlays,
+sale-screen pricing shortcuts, and settings.
+
+HOVER TOOLTIP
+- Hovering and focusing cards works in long-press multi-select mode while
+  preserving the game's selection controls.
+- Card names now sit at the top left, followed by rarity, card ID, finish,
+  and a badge for each family the card belongs to.
+- KosMore's icon and name move to the footer. The Sell action is also in
+  the footer, alongside Settings.
+- The header shows matching gold Last Sale and red Listed For badges.
+  Last Sale follows the selected finishes; Listed For uses all finishes.
+- Last Sale is hidden when the selected finishes have no past sales,
+  or when all finishes are deselected. Listed For is hidden when there
+  are no active listings. If both are absent, their entire row disappears.
+  Badges return when refreshed data supports them. Loading and unavailable
+  states remain distinct from a confirmed absence of sales or listings.
+- Clicking Listed For opens the market with the card's name filled in.
+- Header indicators now match card-overlay colors and show only applicable
+  quest and friend-interest icons, without duplicate market icons.
+- The new Active Auctions stat counts this card's open, unexpired listings
+  across all finishes.
+- Cards with no returned sales history show a centered, bold
+  "No Market History" message instead of an empty graph and sales table.
+
+PINNED ALBUMS
+- Already Added album buttons now have a small red trash icon on the right.
+  Clicking it removes the card from that album and refreshes its status.
+- Fixed the removal request format that could produce an HTTP 400 error.
+- Added "Close Unpinned Tooltips When Added to Album", off by default.
+  It closes an unpinned tooltip after a successful album addition.
+- Its "Also Close Pinned Tooltips" subsetting is also off by default and
+  is editable only while the main setting is enabled.
+- Failed additions keep the tooltip open. Removing a card keeps it open.
+
+CARD OVERLAYS
+- A black For Sale label with white text and border appears at the top left
+  for cards you currently have listed, including a copy in another finish.
+- History and red gavel badges appear at the top right. History identifies
+  completed sales; the gavel identifies active auctions.
+- Prices appear to the right of their icons: the last sale for history,
+  and the lowest current listing price for the gavel.
+- Each price has its own default-on subsetting. Turning off a price leaves
+  its applicable icon visible.
+- Clicking the red listing badge opens a market search for that card.
+  It also works in multi-select without changing the card's selection.
+- Quest and friend-interest icons appear at the bottom right, with quest
+  immediately to the left of friends when both apply.
+- Narrow cards wrap market badges to avoid overlapping the For Sale label.
+
+SINGLE AND MULTIPLE CARD SALES
+- Both the single sell screen and Sell Several Cards show gold Last Sale
+  and red Lowest Listed badges beneath the card's starting-price controls.
+- A history badge appears only when past sales are confirmed; a red badge
+  appears only when active listings are confirmed.
+- Clicking a price fills that card's starting price. It does not submit
+  the sale or change another card's price, selected copy, or reserve.
+- The new Sales Overlay settings group controls both sale screens, with
+  separate switches for each badge and each click-to-set action.
+- Each clickable price supports a positive or negative Kosmo adjustment,
+  defaulting to 0. Use -1 to fill one Kosmo below the reference price.
+  Adjustments support up to six decimal places.
+- Adjustments producing zero or a negative price are rejected without
+  changing the input. Fixed, disabled, and read-only prices stay unchanged.
+- Sales overlays, both price badges, and click-to-set actions start enabled.
+
+SETTINGS
+- Settings now appear in this order: Hover tooltip, Pinned albums,
+  Tooltip stat boxes, Card overlays, Sales Overlay, Navigation hotkeys,
+  and Connected account.
+- A fixed navigation menu on the left jumps to each settings group.
+- Connected account is now a separate group at the bottom.
+- Feature-group enable controls are toggles aligned with the group heading
+  at the top right. Navigation hotkeys, card overlays, stat boxes, pinned
+  albums, and sales overlays have default-on master controls.
+- Saving a disabled group turns off its functionality. Its controls become
+  read-only and visibly dimmed, with a Disabled indicator. Saved choices
+  are retained for when the group is enabled again.
+- The settings heading is now "Hover tooltip", and settings language uses
+  "tooltip" consistently. Pin, drag, resize, and page-navigation guidance
+  appears directly below that heading.
+- Save each settings group after making changes.
+
+PRICE DEFINITIONS
+- Prices shown with a dollar prefix are Kosmo amounts.
+- Last Sale uses the newest returned completed sale in Kosmora's 30-day
+  history. Card and sale-screen overlays compare all finishes; the tooltip
+  compares its selected finishes. This is not a lifetime sales history.
+- Lowest Listed / Listed For is the lowest current price among this card's
+  active listings across all finishes: highest bid, or starting price when
+  a listing has no bids. Market reads are cached briefly, so use Refresh
+  in the tooltip when checking for recent changes.
+
+INSTALL OR UPDATE
+- New testers: extract the ZIP to a permanent folder, open
+  chrome://extensions, enable Developer mode, and choose Load unpacked.
+  Select the extracted folder containing manifest.json.
+- Existing testers: replace the files in your existing extension folder,
+  click Reload on KosMore at chrome://extensions, then refresh Kosmora
+  tabs and reopen settings. Keep the existing extension installed to
+  preserve local settings and notes. Unpacked builds do not auto-update.
+- No Node.js, pnpm, or source repository is needed. README.txt inside the
+  ZIP includes the installation and update steps.
+
+SUGGESTED TESTER CHECKS
+- Compare cards with no market activity, past sales only, listings only,
+  and both. Check tooltip badge visibility and the empty-history message.
+- Follow red market badges and check the populated card-name search.
+- Add to and remove from pinned albums, including both close settings.
+- Try price filling on both sale screens with 0, -1, and positive offsets.
+- Disable and re-enable settings groups and verify their behavior in
+  already-open Kosmora tabs after saving.
+- Check narrow cards, tooltip pinning/resizing, and multi-select hovering.
+- When reporting an issue, include version 0.2.2, the page, steps to
+  reproduce, expected and actual behavior, and a screenshot if useful.
+
+TESTING SCOPE
+Automated tests cover these behaviors using synthetic Kosmora responses
+and browser fixtures. Real album changes and real sale submissions were
+not performed as part of release verification.

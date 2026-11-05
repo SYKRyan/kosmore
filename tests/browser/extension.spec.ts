@@ -2125,7 +2125,7 @@ test("card market indicators remain independent while tooltip headers use price 
     await page.unroute("**/api/cards/*/prices?**");
   }
 });
-test("On Sale marks only your listed cards on the left, stays aligned and honors overlay settings", async () => {
+test("For Sale marks only your listed cards on the left, stays aligned and honors overlay settings", async () => {
   await worker.evaluate(async () => {
     const saved = (await chrome.storage.local.get("kosmore.settings"))[
       "kosmore.settings"
@@ -2172,7 +2172,7 @@ test("On Sale marks only your listed cards on the left, stays aligned and honors
       (html) => {
         document.querySelector("main")!.innerHTML = html;
       },
-      '<h1>On Sale overlay</h1><div style="display:flex;gap:20px">' +
+      '<h1>For Sale overlay</h1><div style="display:flex;gap:20px">' +
         ["42", "43"]
           .map(
             (id) =>
@@ -2183,10 +2183,10 @@ test("On Sale marks only your listed cards on the left, stays aligned and honors
     );
     const own = page.locator("#card-42"),
       label = own.locator("[data-kosmore-card-overlays] .on-sale");
-    await expect(label).toHaveText("On Sale");
+    await expect(label).toHaveText("For Sale");
     await expect(label).toHaveAttribute(
       "aria-label",
-      "You have this card on sale on the market",
+      "You have this card for sale on the market",
     );
     await expect(
       own.locator("[data-kosmore-card-overlays] .signal-badge"),
@@ -2244,7 +2244,13 @@ test("On Sale marks only your listed cards on the left, stays aligned and honors
       ).toBeLessThanOrEqual(1);
       expect(
         await label.evaluate((el) => getComputedStyle(el).backgroundColor),
-      ).toBe("rgb(168, 36, 57)");
+      ).toBe("rgb(0, 0, 0)");
+      expect(await label.evaluate((el) => getComputedStyle(el).color)).toBe(
+        "rgb(255, 255, 255)",
+      );
+      expect(
+        await label.evaluate((el) => getComputedStyle(el).borderColor),
+      ).toBe("rgb(255, 255, 255)");
     };
     for (const width of [200, 160, 144]) {
       await own.evaluate((el, width) => (el.style.width = `${width}px`), width);
@@ -2252,7 +2258,7 @@ test("On Sale marks only your listed cards on the left, stays aligned and honors
     }
     await mkdir("test-results/screenshots", { recursive: true });
     await page.screenshot({
-      path: "test-results/screenshots/on-sale-overlay.png",
+      path: "test-results/screenshots/for-sale-overlay.png",
     });
     // Overlay elements must not intercept the card's normal hover behavior.
     const labelBox = (await label.boundingBox())!;
@@ -2264,7 +2270,7 @@ test("On Sale marks only your listed cards on the left, stays aligned and honors
       "Northern Lights",
     );
     await options.goto(`chrome-extension://${extensionId}/options.html`);
-    const toggle = options.getByLabel("Show On Sale label on cards", {
+    const toggle = options.getByLabel("Show For Sale label on cards", {
       exact: true,
     });
     await expect(toggle).toBeChecked();
@@ -3470,7 +3476,12 @@ test("tooltip header shows family badges and matching inline market prices indep
     await expect(listed).toHaveText("Listed For: Unavailable");
     mode = "none";
     await popup.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(listed).toHaveText("Listed For: —");
+    await expect(listed).toBeHidden();
+    await expect(last).toBeVisible();
+    mode = "listed";
+    await popup.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(listed).toBeVisible();
+    await expect(listed).toHaveText("Listed For: $6");
     await page.evaluate(
       (html) => (document.querySelector("main")!.innerHTML = html),
       face("46", "Andromeda"),
@@ -3482,6 +3493,64 @@ test("tooltip header shows family badges and matching inline market prices indep
     expect(writeRequests).toBe(0);
   } finally {
     await page.unroute("**/api/collection/*");
+    await page.unroute("**/api/auctions?**");
+  }
+});
+test("tooltip price badges hide independently for absent history and listings and return after refresh", async () => {
+  let hasHistory = false,
+    hasListings = false;
+  await page.route("**/api/cards/*/prices?**", (route) =>
+    route.fulfill({ json: prices(hasHistory ? 3 : 0) }),
+  );
+  await page.route("**/api/auctions?**", (route) =>
+    route.fulfill({
+      json: {
+        items: hasListings ? [auction(1, "42", { startPrice: "8000000" })] : [],
+        nextOffset: null,
+      },
+    }),
+  );
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await page.locator(".kc-article").hover();
+    const popup = page.locator("#kosmore-root"),
+      last = popup.locator(".last-sold"),
+      listed = popup.locator(".listed-for"),
+      row = popup.locator(".header-prices"),
+      refresh = popup.getByRole("button", { name: "Refresh", exact: true });
+    await expect(last).toBeHidden();
+    await expect(listed).toBeHidden();
+    await expect(row).toBeHidden();
+    await mkdir("test-results/screenshots", { recursive: true });
+    await popup.screenshot({
+      path: "test-results/screenshots/tooltip-no-price-badges.png",
+    });
+    hasListings = true;
+    await refresh.click();
+    await expect(listed).toBeVisible();
+    await expect(listed).toHaveText("Listed For: $8");
+    await expect(last).toBeHidden();
+    await expect(row).toBeVisible();
+    hasHistory = true;
+    hasListings = false;
+    await refresh.click();
+    await expect(last).toBeVisible();
+    await expect(last).toHaveText("Last Sale: $12.00");
+    await expect(listed).toBeHidden();
+    await expect(row).toBeVisible();
+    hasListings = true;
+    await refresh.click();
+    await expect(last).toBeVisible();
+    await expect(listed).toBeVisible();
+    hasHistory = false;
+    hasListings = false;
+    await refresh.click();
+    await expect(last).toBeHidden();
+    await expect(listed).toBeHidden();
+    await expect(row).toBeHidden();
+    expect(writeRequests).toBe(0);
+  } finally {
+    await page.unroute("**/api/cards/*/prices?**");
     await page.unroute("**/api/auctions?**");
   }
 });
@@ -3517,6 +3586,7 @@ test("empty market history is a centered bold message while pending and failed h
     release();
     const empty = market.locator("strong");
     await expect(empty).toHaveText("No Market History");
+    await expect(popup.locator(".last-sold")).toBeHidden();
     await expect(
       market.locator(".chart,.stats,.sales,.legend,.section-head"),
     ).toHaveCount(0);
@@ -3543,6 +3613,10 @@ test("empty market history is a centered bold message while pending and failed h
     fail = true;
     await popup.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(market).toContainText("503");
+    await expect(popup.locator(".last-sold")).toBeVisible();
+    await expect(popup.locator(".last-sold")).toHaveText(
+      "Last Sale: Unavailable",
+    );
     await expect(
       market.getByText("No Market History", { exact: true }),
     ).toHaveCount(0);
@@ -3593,7 +3667,7 @@ test("the header shows the newest completed sale across selected variants", asyn
     await popup.getByLabel("Shiny", { exact: true }).uncheck();
     await expect(popup.locator(".last-sold")).toHaveText("Last Sale: $2.00");
     await popup.getByLabel("Standard", { exact: true }).uncheck();
-    await expect(popup.locator(".last-sold")).toHaveText("Last Sale: —");
+    await expect(popup.locator(".last-sold")).toBeHidden();
   } finally {
     await page.unroute("**/api/cards/*/prices*");
   }
