@@ -7,7 +7,9 @@ import {
   type HistoryState,
 } from "../shared/stat-catalog";
 import { statBox } from "./stat-box";
-import { signalBadges } from "./signal-badges";
+import { SIGNAL_BADGE_CSS, signalBadges } from "./signal-badges";
+import { cardIcon } from "./icons";
+import { enableMarketLink, marketSearchPath } from "./market-links";
 import type { CardSignals } from "./card-signals";
 import type { Settings } from "../shared/types";
 import {
@@ -59,7 +61,10 @@ export class Popup {
   private tradeArea = el("section", "trade-panel");
   private notesArea = el("section", "card-notes-panel");
   private notes?: CardNotes;
-  private lastSold = el("p", "last-sold");
+  private familyBadges = el("div", "family-badges");
+  private lastSold = el("p", "last-sold market-badge sale");
+  private listedFor = el("a", "listed-for market-badge auction");
+  private lowestListingPrice?: string | Error | null;
   private layoutStatus = el("p", "layout-status");
   private resizeBounds?: PopupBounds;
   private finishInteraction?: () => void;
@@ -76,7 +81,7 @@ export class Popup {
   private tradePending = false;
   private albumArea = el("section", "pinned-albums");
   private filterStatus = el("p", "note error filter-status");
-  private sellButton = button("", () => void this.sell(), "icon sell-button");
+  private sellButton = button("", () => void this.sell(), "sell-button");
   private status = el("p", "album-status");
   private histories: HistoryState = {};
   private hidden = new Set<Finish>();
@@ -123,7 +128,7 @@ export class Popup {
     );
     this.host.toggleAttribute("data-empty", !context);
     const style = el("style");
-    style.textContent = statCss + css;
+    style.textContent = statCss + css + SIGNAL_BADGE_CSS;
     this.shadow.append(style);
     const top = el("header", "top"),
       actions = el("div", "actions");
@@ -186,11 +191,14 @@ export class Popup {
       "m14 13-8.5 8.5a2.12 2.12 0 0 1-3-3L11 10 M16 16l6-6 M8 8l6-6 M9 7l8 8 M21 11l-8-8",
     );
     gavel.append(path);
-    this.sellButton.append(gavel);
+    this.sellButton.append(gavel, el("span", "", "Sell"));
     const titleActions = el("div", "title-actions");
-    titleActions.append(this.headerSignals, this.sellButton);
-    const headerDetails = el("div", "header-details");
-    headerDetails.append(
+    titleActions.append(this.headerSignals);
+    const headerDetails = el("div", "header-details"),
+      identity = el("div", "header-identity");
+    this.familyBadges.setAttribute("role", "list");
+    this.familyBadges.setAttribute("aria-label", "Card families");
+    identity.append(
       el(
         "p",
         "subtitle",
@@ -198,9 +206,13 @@ export class Popup {
           ? `No. ${context.subjectId} · ${context.variant.fullArt ? "Full art" : context.variant.veil ? "Shiny" : "Standard"}`
           : "",
       ),
-      titleActions,
+      this.familyBadges,
     );
-    top.append(titleRow, headerDetails, this.lastSold);
+    headerDetails.append(identity, titleActions);
+    const headerPrices = el("div", "header-prices");
+    headerPrices.append(this.lastSold, this.listedFor);
+    enableMarketLink(this.listedFor);
+    top.append(titleRow, headerDetails, headerPrices);
     const tabs = el("div", "tabs");
     tabs.setAttribute("role", "tablist");
     tabs.setAttribute("aria-label", "Card insights");
@@ -242,6 +254,7 @@ export class Popup {
     const footer = el("footer", "footer");
     footer.append(
       el("span", "brand", "✦ KosMore"),
+      this.sellButton,
       button("Settings", openSettings, "link"),
     );
     body.append(footer);
@@ -579,19 +592,20 @@ export class Popup {
     const sub = this.shadow.querySelector(".subtitle");
     if (sub)
       sub.textContent = `${details.rarity} · No. ${details.subjectId} · ${this.context.variant.fullArt ? "Full art" : this.context.variant.veil ? "Shiny" : "Standard"}`;
+    this.familyBadges.replaceChildren(
+      ...(details.families ?? []).map((family) => {
+        const badge = el("span", "family-badge", family.name);
+        badge.setAttribute("role", "listitem");
+        return badge;
+      }),
+    );
     this.renderMetrics();
     this.renderAlbums();
     this.refreshTrade();
     void this.loadActiveAuctions(fresh);
   }
   private async loadActiveAuctions(fresh = false) {
-    if (
-      this.closed ||
-      !this.details ||
-      !this.settings.statBoxesEnabled ||
-      !this.settings.stats.some((p) => p.id === "activeAuctions" && p.enabled)
-    )
-      return;
+    if (this.closed || !this.details) return;
     if (!fresh && (this.auctionRequest || this.activeAuctions !== undefined))
       return;
     this.auctionRequest?.abort();
@@ -604,22 +618,44 @@ export class Popup {
         request.signal,
         fresh,
       );
-      if (!this.closed && !request.signal.aborted) this.activeAuctions = count;
+      if (this.closed || request.signal.aborted) return;
+      this.activeAuctions = count;
+      if (count === 0) this.lowestListingPrice = null;
+      else {
+        try {
+          const price = await this.client.lowestListingPrice(
+            this.details.subjectId,
+            this.details.name,
+            request.signal,
+          );
+          if (!this.closed && !request.signal.aborted)
+            this.lowestListingPrice =
+              price ?? new Error("The lowest listing price is unavailable.");
+        } catch (error) {
+          if (!this.closed && !request.signal.aborted)
+            this.lowestListingPrice = new Error(messageOf(error));
+        }
+      }
     } catch (error) {
-      if (!this.closed && !request.signal.aborted)
+      if (!this.closed && !request.signal.aborted) {
         this.activeAuctions = new Error(messageOf(error));
+        this.lowestListingPrice = new Error(messageOf(error));
+      }
     } finally {
       if (this.auctionRequest === request) {
         this.auctionRequest = undefined;
         if (!this.closed) {
           this.renderMetrics();
           this.renderHeaderSignals();
+          this.renderHeaderPrices();
         }
       }
     }
   }
   insightsFailed(error: unknown) {
     this.insightError = messageOf(error);
+    this.lowestListingPrice = new Error(this.insightError);
+    this.renderHeaderPrices();
     this.renderMetrics();
     if (!this.account) this.notes?.failed(error);
     this.renderTrade();
@@ -826,15 +862,7 @@ export class Popup {
       this.pinned = settings.pinnedAlbums[this.account.key] ?? [];
     this.renderAlbums();
     this.renderHeaderSignals();
-    if (
-      settings.statBoxesEnabled &&
-      settings.stats.some((p) => p.id === "activeAuctions" && p.enabled)
-    )
-      void this.loadActiveAuctions();
-    else {
-      this.auctionRequest?.abort();
-      this.auctionRequest = undefined;
-    }
+    void this.loadActiveAuctions();
   }
   setSignals(signals?: CardSignals) {
     this.signals = signals;
@@ -843,17 +871,8 @@ export class Popup {
   private renderHeaderSignals() {
     this.headerSignals.replaceChildren(
       ...(this.signals
-        ? signalBadges(
-            {
-              ...this.signals,
-              // A freshly loaded metric is newer than the cached overlay signal.
-              activeAuctions:
-                this.activeAuctions !== undefined
-                  ? typeof this.activeAuctions === "number" &&
-                    this.activeAuctions > 0
-                  : this.signals.activeAuctions,
-            },
-            this.settings,
+        ? signalBadges(this.signals, this.settings).filter((badge) =>
+            badge.matches(".friend,.quest"),
           )
         : []),
     );
@@ -881,12 +900,22 @@ export class Popup {
       : "";
   }
   private renderMarket() {
-    const lastSale = lastSaleSummary(
-      this.histories,
-      FINISHES.filter((f) => !this.hidden.has(f)),
-    );
-    this.lastSold.textContent = lastSale.label;
-    this.lastSold.title = lastSale.title;
+    this.renderHeaderPrices();
+    const allEmpty = FINISHES.every((finish) => {
+      const h = this.histories[finish];
+      return h && !(h instanceof Error) && h.count === 0;
+    });
+    this.market.toggleAttribute("data-empty-history", allEmpty);
+    const noHistory = () => {
+      const empty = el("div", "no-market-history");
+      empty.setAttribute("role", "status");
+      empty.append(el("strong", "", "No Market History"));
+      return empty;
+    };
+    if (allEmpty) {
+      this.market.replaceChildren(noHistory());
+      return;
+    }
     this.market.replaceChildren(
       this.heading("Market history", "30-day window"),
     );
@@ -914,6 +943,55 @@ export class Popup {
       legend.append(label);
     }
     this.market.append(legend, this.filterStatus);
+    const selected = FINISHES.filter((f) => !this.hidden.has(f));
+    if (
+      selected.length &&
+      selected.every((f) => {
+        const h = this.histories[f];
+        return h && !(h instanceof Error) && h.count === 0;
+      })
+    ) {
+      this.market.append(noHistory());
+      return;
+    }
+    this.renderMarketHistory();
+  }
+  private renderHeaderPrices() {
+    const marketName = this.details?.name ?? this.context?.name;
+    if (marketName) this.listedFor.href = marketSearchPath(marketName);
+    const lastSale = lastSaleSummary(
+      this.histories,
+      FINISHES.filter((f) => !this.hidden.has(f)),
+    );
+    this.lastSold.replaceChildren(
+      cardIcon("sale"),
+      el("span", "market-badge-label", lastSale.label),
+    );
+    this.lastSold.title = lastSale.title;
+    const price = this.lowestListingPrice;
+    const label =
+      price instanceof Error
+        ? "Unavailable"
+        : price === null
+          ? "—"
+          : price === undefined
+            ? "Loading…"
+            : `$${formatKosmo(price)}`;
+    this.listedFor.replaceChildren(
+      cardIcon("auction"),
+      el("span", "market-badge-label", `Listed For: ${label}`),
+    );
+    this.listedFor.title =
+      price instanceof Error
+        ? price.message
+        : price === null
+          ? "No active listings for this card."
+          : price === undefined
+            ? "Loading the lowest listing price."
+            : `Lowest current listing price across all finishes: ${formatKosmo(price)} Kosmo.`;
+    if (marketName) this.listedFor.title += ` Find ${marketName} at Market.`;
+  }
+  private renderMarketHistory() {
     const available = FINISHES.filter((f) => !this.hidden.has(f)).flatMap(
       (f) => {
         const h = this.histories[f];

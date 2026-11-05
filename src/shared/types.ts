@@ -28,6 +28,7 @@ export interface OwnedCopy {
   id: string;
   subjectId: string;
   state: string;
+  auctionId?: string;
   variant: Variant;
   serial?: number;
   acquiredAt?: string;
@@ -90,6 +91,13 @@ export interface Settings {
   enabled: boolean;
   navigationHotkeysEnabled: boolean;
   cardOverlaysEnabled: boolean;
+  salesOverlaysEnabled: boolean;
+  showSalesLastSale: boolean;
+  salesLastSaleSetsPrice: boolean;
+  salesLastSaleAdjustment: number;
+  showSalesLowestListing: boolean;
+  salesLowestListingSetsPrice: boolean;
+  salesLowestListingAdjustment: number;
   statBoxesEnabled: boolean;
   pinnedAlbumsEnabled: boolean;
   closeTooltipWhenAddedToAlbum: boolean;
@@ -100,7 +108,10 @@ export interface Settings {
   popupHeight: number;
   popupPosition: import("./popup-layout").PopupPosition | null;
   showSaleHistoryOverlay: boolean;
+  showLastSalePriceOverlay: boolean;
   showActiveAuctionsOverlay: boolean;
+  showLowestListingPriceOverlay: boolean;
+  showOnSaleOverlay: boolean;
   showFriendInterestOverlay: boolean;
   showQuestOverlay: boolean;
   stats: import("./stat-catalog").StatPreference[];
@@ -126,6 +137,12 @@ export interface KosmoraClient {
     signal?: AbortSignal,
     fresh?: boolean,
   ): Promise<number>;
+  lowestListingPrice(
+    subjectId: string,
+    name: string,
+    signal?: AbortSignal,
+    fresh?: boolean,
+  ): Promise<string | undefined>;
   history(
     subjectId: string,
     finish: Finish,

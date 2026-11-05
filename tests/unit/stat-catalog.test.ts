@@ -141,8 +141,9 @@ it("distinguishes zero active auctions from unavailable counts independently of 
   expect(failed.value).toBe("—");
   expect(failed.title).toBe("Market unavailable");
 });
-it("uses the same enabled and positive-only indicator badges in popup headers and on cards", () => {
+it("renders only enabled positive indicator badges with shared icons", () => {
   const signals = {
+    onSale: false,
     activeAuctions: true,
     saleHistory: true,
     quest: true,
@@ -177,6 +178,7 @@ it("uses the same enabled and positive-only indicator badges in popup headers an
   expect(
     signalBadges(
       {
+        onSale: false,
         activeAuctions: false,
         saleHistory: false,
         quest: false,

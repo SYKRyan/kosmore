@@ -3,6 +3,7 @@ import "../content/stat-box.css";
 import { StatSettings } from "./stat-settings";
 import { HotkeySettings } from "./hotkey-settings";
 import { settingsNavigation } from "./settings-navigation";
+import { SalesSettings, SALES_SETTINGS_KEYS } from "./sales-settings";
 import { hotkeyConflict } from "../shared/hotkeys";
 import { button, el, note } from "../content/ui";
 import {
@@ -158,6 +159,7 @@ function sectionToggle(
     | "enabled"
     | "navigationHotkeysEnabled"
     | "cardOverlaysEnabled"
+    | "salesOverlaysEnabled"
     | "statBoxesEnabled"
     | "pinnedAlbumsEnabled",
   label: string,
@@ -227,20 +229,68 @@ function overlayToggle(
   overlays.append(el("div", "rule"), row);
   return input;
 }
+function overlayPriceToggle(
+  parent: HTMLInputElement,
+  id: string,
+  label: string,
+  hint: string,
+  update: (checked: boolean) => void,
+) {
+  const row = el("div", "row settings-subsetting"),
+    input = el("input", "section-switch price-switch"),
+    text = el("label", "label settings-toggle", label);
+  input.type = "checkbox";
+  input.id = id;
+  input.setAttribute("role", "switch");
+  text.prepend(input);
+  row.append(text, el("span", "hint", hint));
+  parent.addEventListener("change", () => {
+    input.disabled = !parent.checked;
+  });
+  input.addEventListener("change", () => update(input.checked));
+  overlays.append(row);
+  return input;
+}
 const auctionOverlay = overlayToggle(
   "active-auctions-overlay",
   "Show active auctions icon on cards",
-  "Gavel · currently listed on the market",
+  "Red gavel · active listings at the top right",
   (checked) => {
     draft.showActiveAuctionsOverlay = checked;
+  },
+);
+const listingPriceOverlay = overlayPriceToggle(
+  auctionOverlay,
+  "lowest-listing-price-overlay",
+  "Show lowest listed price",
+  "Lowest current listing price across all finishes: highest bid, or starting price when there are no bids.",
+  (checked) => {
+    draft.showLowestListingPriceOverlay = checked;
+  },
+);
+const onSaleOverlay = overlayToggle(
+  "on-sale-overlay",
+  "Show On Sale label on cards",
+  "Red label · you have a copy listed on the market",
+  (checked) => {
+    draft.showOnSaleOverlay = checked;
   },
 );
 const saleOverlay = overlayToggle(
   "sale-history-overlay",
   "Show sale history icon on cards",
-  "History · completed sales in the last 30 days",
+  "History · completed sales in the last 30 days, at the top right",
   (checked) => {
     draft.showSaleHistoryOverlay = checked;
+  },
+);
+const lastSalePriceOverlay = overlayPriceToggle(
+  saleOverlay,
+  "last-sale-price-overlay",
+  "Show last sale price",
+  "Last sale price across all finishes in Kosmora’s 30-day history.",
+  (checked) => {
+    draft.showLastSalePriceOverlay = checked;
   },
 );
 const friendOverlay = overlayToggle(
@@ -258,6 +308,14 @@ const questOverlay = overlayToggle(
   (checked) => {
     draft.showQuestOverlay = checked;
   },
+);
+const salesSettings = new SalesSettings((update) =>
+  Object.assign(draft, update),
+);
+const salesEnabled = sectionToggle(
+  salesSettings.host,
+  "salesOverlaysEnabled",
+  "Enable sales overlay",
 );
 const statSettings = new StatSettings((preferences) => {
   draft.stats = preferences;
@@ -424,7 +482,10 @@ groupControls({
   keys: [
     "cardOverlaysEnabled",
     "showSaleHistoryOverlay",
+    "showLastSalePriceOverlay",
     "showActiveAuctionsOverlay",
+    "showLowestListingPriceOverlay",
+    "showOnSaleOverlay",
     "showFriendInterestOverlay",
     "showQuestOverlay",
   ],
@@ -435,6 +496,13 @@ groupControls({
   name: "stat layout",
   keys: ["statBoxesEnabled", "stats"],
   render: renderSettings,
+});
+groupControls({
+  host: salesSettings.host,
+  name: "sales overlay settings",
+  keys: [...SALES_SETTINGS_KEYS],
+  render: renderSettings,
+  validate: () => salesSettings.validate(draft),
 });
 groupControls({
   host: albumSettings,
@@ -471,6 +539,12 @@ const settingsGroups = [
     path: "M7 3h14v14H7Z M3 7v14h14 M12 7h4 M12 11h4",
   },
   {
+    id: "sales-overlay",
+    label: "Sales Overlay",
+    host: salesSettings.host,
+    path: "M4 4h7l9 9-7 7-9-9V4Z M8 8h.01 M12 12l4 4",
+  },
+  {
     id: "navigation-hotkeys",
     label: "Navigation hotkeys",
     host: hotkeySettings.host,
@@ -495,6 +569,7 @@ app.append(
 function renderSettings() {
   hotkeysEnabled.checked = draft.navigationHotkeysEnabled;
   overlaysEnabled.checked = draft.cardOverlaysEnabled;
+  salesEnabled.checked = draft.salesOverlaysEnabled;
   statsEnabled.checked = draft.statBoxesEnabled;
   albumsEnabled.checked = draft.pinnedAlbumsEnabled;
   enabled.checked = draft.enabled;
@@ -505,16 +580,23 @@ function renderSettings() {
   for (const { field, input } of popupInputs)
     input.value = String(draft[field]);
   saleOverlay.checked = draft.showSaleHistoryOverlay;
+  lastSalePriceOverlay.checked = draft.showLastSalePriceOverlay;
+  lastSalePriceOverlay.disabled = !draft.showSaleHistoryOverlay;
   auctionOverlay.checked = draft.showActiveAuctionsOverlay;
+  listingPriceOverlay.checked = draft.showLowestListingPriceOverlay;
+  listingPriceOverlay.disabled = !draft.showActiveAuctionsOverlay;
+  onSaleOverlay.checked = draft.showOnSaleOverlay;
   friendOverlay.checked = draft.showFriendInterestOverlay;
   questOverlay.checked = draft.showQuestOverlay;
   statSettings.render(draft.stats);
   hotkeySettings.render(draft.hotkeys);
+  salesSettings.render(draft);
   for (const host of [
     general,
     albumSettings,
     statSettings.host,
     overlays,
+    salesSettings.host,
     hotkeySettings.host,
   ])
     renderGroupState(host);

@@ -1,12 +1,63 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
   countActiveAuctions,
+  activeAuctionSummary,
   parseAuctionPage,
 } from "../../src/kosmora/auctions";
 import { GameClient } from "../../src/kosmora/client";
 import { auction, auctionPage } from "../fixtures/auctions";
 
 afterEach(() => vi.restoreAllMocks());
+
+it("finds the lowest current listing price using bids before starting prices and exact active subjects", async () => {
+  const read = vi
+    .fn()
+    .mockResolvedValueOnce({
+      items: [
+        auction(1, "42", { startPrice: "1000000", bestBid: "25000000" }),
+        auction(2, "43", { startPrice: "1" }),
+        auction(3, "42", { startPrice: "1", state: "sold" }),
+        auction(4, "42", {
+          startPrice: "1",
+          endsAt: new Date(Date.now() - 1000).toISOString(),
+        }),
+      ],
+      nextOffset: 4,
+    })
+    .mockResolvedValueOnce({
+      items: [
+        auction(5, "42", { startPrice: "12000000", bestBid: null }),
+        auction(6, "42", { startPrice: "9007199254740993123456" }),
+      ],
+      nextOffset: null,
+    });
+  expect(await activeAuctionSummary("42", "Card", read)).toEqual({
+    count: 3,
+    lowestPrice: "12000000",
+  });
+});
+it("keeps counts but omits a lowest price when any matching active listing has unavailable pricing", async () => {
+  for (const price of [undefined, null, "hidden", -1]) {
+    expect(
+      await activeAuctionSummary("42", "Card", async () => ({
+        items: [auction(1), auction(2, "42", { startPrice: price })],
+        nextOffset: null,
+      })),
+    ).toEqual({ count: 2 });
+  }
+  expect(
+    await activeAuctionSummary("42", "Card", async () => ({
+      items: [],
+      nextOffset: null,
+    })),
+  ).toEqual({ count: 0 });
+  expect(
+    await activeAuctionSummary("42", "Card", async () => ({
+      items: [auction(1, "42", { startPrice: "0" })],
+      nextOffset: null,
+    })),
+  ).toEqual({ count: 1, lowestPrice: "0" });
+});
 
 it("counts exact-card open listings across all pages and finishes without counting unrelated search matches or duplicate auctions", async () => {
   const read = vi
@@ -79,6 +130,7 @@ it("caches auction reads for 30 seconds, refreshes explicitly, and isolates acco
   const client = new GameClient(fetcher as typeof fetch);
   await client.account();
   expect(await client.activeAuctions("42", "Card")).toBe(2);
+  expect(await client.lowestListingPrice("42", "Card")).toBe("10000000");
   await client.activeAuctions("42", "Card");
   expect(fetcher).toHaveBeenCalledTimes(2);
   await client.activeAuctions("42", "Card", undefined, true);

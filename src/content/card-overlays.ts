@@ -8,7 +8,7 @@ import {
 import { ApiError } from "../kosmora/client";
 import type { CardContext, KosmoraClient, Settings } from "../shared/types";
 import { CardSignalProvider, type CardSignals } from "./card-signals";
-import { signalBadges } from "./signal-badges";
+import { SIGNAL_BADGE_CSS, signalBadges } from "./signal-badges";
 import { el } from "./ui";
 interface Entry {
   root: HTMLElement;
@@ -19,7 +19,20 @@ interface Entry {
   host?: HTMLElement;
   positioned?: { value: string; priority: string };
 }
-const STYLE = `:host{all:initial;position:absolute;inset:6px 6px auto auto;display:flex;gap:4px;z-index:20;pointer-events:none;user-select:none}span{box-sizing:border-box;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:#171027ed;border:1px solid #b6955a;box-shadow:0 1px 5px #0009;color:#f4d68c}.friend{color:#d1b7fc;border-color:#9a7fc6}svg{display:block}`;
+const STYLE = `
+:host{all:initial;position:absolute;inset:6px;container-type:inline-size;z-index:20;pointer-events:none;user-select:none;font:600 10px/1 system-ui,sans-serif}
+.top-row,.bottom-row{position:absolute;left:0;right:0;display:flex;align-items:center;gap:4px;min-width:0}
+.top-row{top:0;justify-content:flex-end;align-items:flex-start}.bottom-row{bottom:0;justify-content:flex-end}
+.icons{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:4px;min-width:0;max-width:100%;margin-left:auto}
+.signal-badge,.on-sale{box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#171027ed;border:1px solid #b6955a;box-shadow:0 1px 5px #0009;color:#f4d68c}
+.signal-badge.with-price{flex-shrink:1;width:auto;min-width:22px;max-width:100%;border-radius:6px;padding:0 5px;gap:4px}
+.badge-price{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+${SIGNAL_BADGE_CSS}
+.market-link{pointer-events:auto;cursor:pointer;text-decoration:none}.market-link:hover{filter:brightness(1.2)}.market-link:focus-visible{outline:2px solid #e7cb84;outline-offset:2px}
+.on-sale{width:auto;margin-right:auto;padding:0 6px;border-radius:5px;background:#a82439;border-color:#ff7185;color:#fff1f3;white-space:nowrap}
+svg{display:block;flex-shrink:0}
+@container (max-width:150px){.on-sale{font-size:9px;padding:0 4px}.bottom-row{gap:3px}.signal-badge.with-price{padding:0 4px;gap:3px;font-size:9px}}
+`;
 export class CardOverlays {
   private provider: CardSignalProvider;
   private settings?: Settings;
@@ -76,10 +89,15 @@ export class CardOverlays {
   setSettings(settings: Settings) {
     const changed =
       this.settings?.cardOverlaysEnabled !== settings.cardOverlaysEnabled ||
+      this.settings?.showOnSaleOverlay !== settings.showOnSaleOverlay ||
       this.settings?.showActiveAuctionsOverlay !==
         settings.showActiveAuctionsOverlay ||
       this.settings?.showSaleHistoryOverlay !==
         settings.showSaleHistoryOverlay ||
+      this.settings?.showLastSalePriceOverlay !==
+        settings.showLastSalePriceOverlay ||
+      this.settings?.showLowestListingPriceOverlay !==
+        settings.showLowestListingPriceOverlay ||
       this.settings?.showFriendInterestOverlay !==
         settings.showFriendInterestOverlay ||
       this.settings?.showQuestOverlay !== settings.showQuestOverlay;
@@ -111,6 +129,7 @@ export class CardOverlays {
     return (
       this.settings?.cardOverlaysEnabled &&
       (this.settings?.showSaleHistoryOverlay ||
+        this.settings?.showOnSaleOverlay ||
         this.settings?.showActiveAuctionsOverlay ||
         this.settings?.showFriendInterestOverlay ||
         this.settings?.showQuestOverlay)
@@ -241,6 +260,7 @@ export class CardOverlays {
   }
   private render(entry: Entry, signals: CardSignals) {
     if (
+      !signals.onSale &&
       !signals.activeAuctions &&
       !signals.saleHistory &&
       !signals.interestedFriends &&
@@ -253,7 +273,37 @@ export class CardOverlays {
       style = el("style");
     style.textContent = STYLE;
     shadow.append(style);
-    shadow.append(...signalBadges(signals, this.settings!));
+    const top = el("div", "top-row"),
+      bottom = el("div", "bottom-row");
+    if (this.settings!.showOnSaleOverlay && signals.onSale) {
+      const label = el("span", "on-sale", "On Sale");
+      label.setAttribute(
+        "aria-label",
+        "You have this card on sale on the market",
+      );
+      label.title = "You have this card on sale on the market";
+      top.append(label);
+    }
+    const badges = signalBadges(
+      signals,
+      this.settings!,
+      true,
+      signals.marketName ?? entry.context.name,
+    );
+    if (badges.length) {
+      const icons = el("div", "icons");
+      for (const kind of ["sale", "auction"])
+        icons.append(
+          ...badges.filter((badge) => badge.classList.contains(kind)),
+        );
+      if (icons.children.length) top.append(icons);
+      for (const kind of ["quest", "friend"])
+        bottom.append(
+          ...badges.filter((badge) => badge.classList.contains(kind)),
+        );
+    }
+    if (top.children.length) shadow.append(top);
+    if (bottom.children.length) shadow.append(bottom);
     if (getComputedStyle(entry.root).position === "static") {
       entry.positioned = {
         value: entry.root.style.getPropertyValue("position"),

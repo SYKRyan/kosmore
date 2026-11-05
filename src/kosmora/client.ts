@@ -2,7 +2,7 @@ import { ReadCache } from "../shared/cache";
 import { parseFamilyChoices } from "./families";
 import { parseFriends } from "./friends";
 import { parseQuestSubjects } from "./quests";
-import { countActiveAuctions } from "./auctions";
+import { activeAuctionSummary } from "./auctions";
 import type {
   Account,
   Album,
@@ -119,7 +119,23 @@ export class GameClient implements KosmoraClient {
       fresh,
     );
   }
-  activeAuctions(
+  async activeAuctions(
+    id: string,
+    name: string,
+    signal?: AbortSignal,
+    fresh = false,
+  ) {
+    return (await this.auctionSummary(id, name, signal, fresh)).count;
+  }
+  async lowestListingPrice(
+    id: string,
+    name: string,
+    signal?: AbortSignal,
+    fresh = false,
+  ) {
+    return (await this.auctionSummary(id, name, signal, fresh)).lowestPrice;
+  }
+  private auctionSummary(
     id: string,
     name: string,
     signal?: AbortSignal,
@@ -131,7 +147,7 @@ export class GameClient implements KosmoraClient {
       () => {
         const timeout = AbortSignal.timeout(15_000);
         const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
-        return countActiveAuctions(id, name, (path) =>
+        return activeAuctionSummary(id, name, (path) =>
           this.read(path, combined),
         );
       },

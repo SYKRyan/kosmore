@@ -241,12 +241,30 @@ function f(e) {
 	}
 	return t;
 }
+// src/shared/sales-prices.ts
+function p(e) {
+	if (typeof e != "number" || !Number.isFinite(e)) return;
+	let t = String(e).match(/^(-?)(\d+)(?:\.(\d{1,6}))?$/);
+	if (!t) return;
+	let n = BigInt(t[2]) * 1000000n + BigInt((t[3] ?? "").padEnd(6, "0"));
+	if (!(n > BigInt(2 ** 53 - 1))) return t[1] ? -n : n;
+}
+function m(e) {
+	return p(e) !== void 0;
+}
 // src/shared/settings.ts
-var p = "kosmore.settings", m = () => ({
+var h = "kosmore.settings", g = () => ({
 	schemaVersion: 1,
 	enabled: !0,
 	navigationHotkeysEnabled: !0,
 	cardOverlaysEnabled: !0,
+	salesOverlaysEnabled: !0,
+	showSalesLastSale: !0,
+	salesLastSaleSetsPrice: !0,
+	salesLastSaleAdjustment: 0,
+	showSalesLowestListing: !0,
+	salesLowestListingSetsPrice: !0,
+	salesLowestListingAdjustment: 0,
 	statBoxesEnabled: !0,
 	pinnedAlbumsEnabled: !0,
 	closeTooltipWhenAddedToAlbum: !1,
@@ -257,15 +275,18 @@ var p = "kosmore.settings", m = () => ({
 	popupHeight: 900,
 	popupPosition: null,
 	showSaleHistoryOverlay: !0,
+	showLastSalePriceOverlay: !0,
 	showActiveAuctionsOverlay: !0,
+	showLowestListingPriceOverlay: !0,
+	showOnSaleOverlay: !0,
 	showFriendInterestOverlay: !0,
 	showQuestOverlay: !0,
 	stats: c(),
 	hotkeys: {},
 	pinnedAlbums: {}
 });
-function h(e) {
-	let n = m();
+function _(e) {
+	let n = g();
 	if (!e || typeof e != "object") return n;
 	let r = e;
 	if (r.schemaVersion !== 1) return n;
@@ -273,10 +294,16 @@ function h(e) {
 	for (let e of [
 		"navigationHotkeysEnabled",
 		"cardOverlaysEnabled",
+		"salesOverlaysEnabled",
+		"showSalesLastSale",
+		"salesLastSaleSetsPrice",
+		"showSalesLowestListing",
+		"salesLowestListingSetsPrice",
 		"statBoxesEnabled",
 		"pinnedAlbumsEnabled"
 	]) typeof r[e] == "boolean" && (n[e] = r[e]);
-	typeof r.closeTooltipWhenAddedToAlbum == "boolean" && (n.closeTooltipWhenAddedToAlbum = r.closeTooltipWhenAddedToAlbum), typeof r.applyCloseBehaviorToPinnedTooltips == "boolean" && (n.applyCloseBehaviorToPinnedTooltips = r.applyCloseBehaviorToPinnedTooltips), typeof r.showSaleHistoryOverlay == "boolean" && (n.showSaleHistoryOverlay = r.showSaleHistoryOverlay), typeof r.showActiveAuctionsOverlay == "boolean" && (n.showActiveAuctionsOverlay = r.showActiveAuctionsOverlay), typeof r.showFriendInterestOverlay == "boolean" && (n.showFriendInterestOverlay = r.showFriendInterestOverlay), typeof r.showQuestOverlay == "boolean" && (n.showQuestOverlay = r.showQuestOverlay), typeof r.hoverDelayMs == "number" && Number.isFinite(r.hoverDelayMs) && (n.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(r.hoverDelayMs))));
+	for (let e of ["salesLastSaleAdjustment", "salesLowestListingAdjustment"]) m(r[e]) && (n[e] = r[e]);
+	typeof r.closeTooltipWhenAddedToAlbum == "boolean" && (n.closeTooltipWhenAddedToAlbum = r.closeTooltipWhenAddedToAlbum), typeof r.applyCloseBehaviorToPinnedTooltips == "boolean" && (n.applyCloseBehaviorToPinnedTooltips = r.applyCloseBehaviorToPinnedTooltips), typeof r.showSaleHistoryOverlay == "boolean" && (n.showSaleHistoryOverlay = r.showSaleHistoryOverlay), typeof r.showLastSalePriceOverlay == "boolean" && (n.showLastSalePriceOverlay = r.showLastSalePriceOverlay), typeof r.showActiveAuctionsOverlay == "boolean" && (n.showActiveAuctionsOverlay = r.showActiveAuctionsOverlay), typeof r.showLowestListingPriceOverlay == "boolean" && (n.showLowestListingPriceOverlay = r.showLowestListingPriceOverlay), typeof r.showOnSaleOverlay == "boolean" && (n.showOnSaleOverlay = r.showOnSaleOverlay), typeof r.showFriendInterestOverlay == "boolean" && (n.showFriendInterestOverlay = r.showFriendInterestOverlay), typeof r.showQuestOverlay == "boolean" && (n.showQuestOverlay = r.showQuestOverlay), typeof r.hoverDelayMs == "number" && Number.isFinite(r.hoverDelayMs) && (n.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(r.hoverDelayMs))));
 	for (let [e, t, i] of [
 		[
 			"dismissDelayMs",
@@ -300,14 +327,14 @@ function h(e) {
 	if (r.pinnedAlbums && typeof r.pinnedAlbums == "object") for (let [e, t] of Object.entries(r.pinnedAlbums)) /^[a-z0-9_]{1,24}$/.test(e) && Array.isArray(t) && (n.pinnedAlbums[e] = [...new Set(t.filter((e) => typeof e == "string" && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(e)))].slice(0, 200));
 	return n;
 }
-async function g() {
-	return h((await chrome.storage.local.get(p))[p]);
+async function v() {
+	return _((await chrome.storage.local.get(h))[h]);
 }
-async function _(e) {
-	await chrome.storage.local.set({ [p]: h(e) });
+async function y(e) {
+	await chrome.storage.local.set({ [h]: _(e) });
 }
 // src/background.ts
-var v = Promise.resolve();
+var b = Promise.resolve();
 chrome.tabs.onRemoved.addListener((t) => {
 	chrome.storage.session.remove(`${e}${t}`);
 }), chrome.action.onClicked.addListener(() => {
@@ -316,17 +343,17 @@ chrome.tabs.onRemoved.addListener((t) => {
 	if (i.id !== chrome.runtime.id || !a(r)) return !1;
 	let c = i.url === chrome.runtime.getURL("options.html"), l = !!i.tab && i.url?.startsWith("https://kosmora.io/");
 	if ((r.op === "popupState" || r.op === "popupLayout") && l && i.tab?.id !== void 0 && i.frameId === 0) {
-		let a = `${e}${i.tab.id}`, c = v.then(async () => {
+		let a = `${e}${i.tab.id}`, c = b.then(async () => {
 			let e = n((await chrome.storage.session.get(a))[a]);
 			if (r.op === "popupState") return e;
 			let i = r.change;
 			if (i.pinned !== void 0 && (e.pinned = i.pinned), i.position && (e.position = t(i.position)), await chrome.storage.session.set({ [a]: e }), i.position || i.width !== void 0 || i.height !== void 0) {
-				let e = await g();
-				i.position && (e.popupPosition = t(i.position)), i.width !== void 0 && (e.popupWidth = Math.round(i.width)), i.height !== void 0 && (e.popupHeight = Math.round(i.height)), await _(e);
+				let e = await v();
+				i.position && (e.popupPosition = t(i.position)), i.width !== void 0 && (e.popupWidth = Math.round(i.width)), i.height !== void 0 && (e.popupHeight = Math.round(i.height)), await y(e);
 			}
 			return e;
 		});
-		return v = c.then(() => {}, () => {}), c.then((e) => s({
+		return b = c.then(() => {}, () => {}), c.then((e) => s({
 			requestId: r.requestId,
 			ok: !0,
 			data: e

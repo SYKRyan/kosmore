@@ -97,6 +97,7 @@ export function parseInsights(v: unknown): CardInsights {
         id: uuid(c.id),
         subjectId: id,
         state: text(c.state),
+        auctionId: c.auction_id == null ? undefined : uuid(c.auction_id),
         variant: variantOf(c),
         serial: typeof c.serial === "number" ? c.serial : undefined,
         acquiredAt:

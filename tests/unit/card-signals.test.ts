@@ -5,6 +5,11 @@ import { parseHistory, parseInsights } from "../../src/kosmora/contracts";
 import { ApiError } from "../../src/kosmora/client";
 import { card, prices } from "../fixtures/data";
 import type { Finish } from "../../src/shared/types";
+const iconSettings = () => ({
+  ...defaults(),
+  showLastSalePriceOverlay: false,
+  showLowestListingPriceOverlay: false,
+});
 afterEach(() => vi.unstubAllGlobals());
 function harness() {
   const data: Record<string, unknown> = {
@@ -25,6 +30,9 @@ function harness() {
   });
   const client = {
     activeAuctions: vi.fn(async () => 0),
+    lowestListingPrice: vi.fn(
+      async (): Promise<string | undefined> => undefined,
+    ),
     account: vi.fn(async () => ({
       key: "fixtureplayer",
       handle: "FixturePlayer",
@@ -41,7 +49,7 @@ function harness() {
 it("keeps current listings and completed sales independent, including ordinary auction failures", async () => {
   const h = harness();
   const settings = {
-    ...defaults(),
+    ...iconSettings(),
     showFriendInterestOverlay: false,
     showQuestOverlay: false,
   };
@@ -50,6 +58,7 @@ it("keeps current listings and completed sales independent, including ordinary a
     parseHistory(prices(0), finish),
   );
   expect(await h.provider.get("42", settings, "plain")).toMatchObject({
+    onSale: false,
     activeAuctions: true,
     saleHistory: false,
   });
@@ -59,20 +68,166 @@ it("keeps current listings and completed sales independent, including ordinary a
     parseHistory(prices(3), finish),
   );
   expect(await h.provider.get("42", settings, "plain")).toMatchObject({
+    onSale: false,
     activeAuctions: false,
     saleHistory: true,
   });
   h.provider.reset();
   h.client.activeAuctions.mockResolvedValue(2);
   expect(await h.provider.get("42", settings, "plain")).toMatchObject({
+    onSale: false,
     activeAuctions: true,
     saleHistory: true,
   });
   h.provider.reset();
   h.client.activeAuctions.mockRejectedValue(new ApiError("Unavailable", 503));
   expect(await h.provider.get("42", settings, "plain")).toMatchObject({
+    onSale: false,
     activeAuctions: false,
     saleHistory: true,
+  });
+});
+it("uses the latest returned sale across every finish and loads listing prices only when requested", async () => {
+  const h = harness();
+  const settings = {
+    ...defaults(),
+    showOnSaleOverlay: false,
+    showFriendInterestOverlay: false,
+    showQuestOverlay: false,
+  };
+  h.client.activeAuctions.mockResolvedValue(2);
+  h.client.lowestListingPrice.mockResolvedValue("8000000");
+  h.client.history.mockImplementation(async (_id, finish) => {
+    const data = prices(1);
+    data.prices.sales[0].price = finish === "veil" ? "99000000" : "12000000";
+    data.prices.sales[0].soldAt =
+      finish === "veil" ? "2026-11-05T12:00:00Z" : "2026-11-04T12:00:00Z";
+    return parseHistory(data, finish);
+  });
+  const result = await h.provider.get("42", settings, "plain");
+  expect(result.lastSale).toMatchObject({ finish: "veil", price: "99000000" });
+  expect(result.lowestListingPrice).toBe("8000000");
+  expect(h.client.history.mock.calls.map((call) => call[1])).toEqual([
+    "plain",
+    "veil",
+    "fullart",
+  ]);
+  expect(h.client.lowestListingPrice).toHaveBeenCalledTimes(1);
+  h.provider.reset();
+  const withoutPrices = await h.provider.get(
+    "42",
+    {
+      ...settings,
+      showLastSalePriceOverlay: false,
+      showLowestListingPriceOverlay: false,
+    },
+    "plain",
+  );
+  expect(withoutPrices).toMatchObject({
+    saleHistory: true,
+    activeAuctions: true,
+  });
+  expect(withoutPrices.lastSale).toBeUndefined();
+  expect(withoutPrices.lowestListingPrice).toBeUndefined();
+  expect(h.client.lowestListingPrice).toHaveBeenCalledTimes(1);
+});
+it("retains confirmed icons but hides uncertain prices after history or listing-price failures", async () => {
+  const h = harness();
+  h.client.history.mockImplementation(async (_id, finish) => {
+    if (finish === "veil") throw new ApiError("Unavailable", 503);
+    return parseHistory(prices(1), finish);
+  });
+  h.client.activeAuctions.mockResolvedValue(2);
+  h.client.lowestListingPrice.mockRejectedValue(
+    new ApiError("Unavailable", 503),
+  );
+  const result = await h.provider.get(
+    "42",
+    {
+      ...defaults(),
+      showOnSaleOverlay: false,
+      showFriendInterestOverlay: false,
+      showQuestOverlay: false,
+    },
+    "plain",
+  );
+  expect(result.saleHistory).toBe(true);
+  expect(result.activeAuctions).toBe(true);
+  expect(result.lastSale).toBeUndefined();
+  expect(result.lowestListingPrice).toBeUndefined();
+});
+it("shows On Sale only for your own listed copies, independently of public auction counts", async () => {
+  const h = harness();
+  const settings = {
+    ...iconSettings(),
+    showSaleHistoryOverlay: false,
+    showFriendInterestOverlay: false,
+    showQuestOverlay: false,
+  };
+  h.client.activeAuctions.mockResolvedValue(2);
+  expect(await h.provider.get("42", settings, "plain")).toMatchObject({
+    onSale: false,
+    activeAuctions: true,
+  });
+  h.provider.reset();
+  const source = card();
+  h.client.insights.mockResolvedValue(
+    parseInsights({
+      ...source,
+      copies: [
+        {
+          ...source.copies[0],
+          state: "escrow",
+          auction_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        },
+      ],
+    }),
+  );
+  h.client.activeAuctions.mockResolvedValue(0);
+  expect(await h.provider.get("42", settings, "veil")).toMatchObject({
+    onSale: true,
+    activeAuctions: false,
+  });
+  expect(h.client.insights).toHaveBeenLastCalledWith(
+    "42",
+    expect.any(AbortSignal),
+    true,
+  );
+  h.provider.reset();
+  h.client.account.mockResolvedValue({
+    key: "otherplayer",
+    handle: "OtherPlayer",
+  });
+  h.client.insights.mockResolvedValue(parseInsights({ ...source, copies: [] }));
+  expect((await h.provider.get("42", settings, "plain")).onSale).toBe(false);
+});
+it("can check On Sale by itself and skips the check when its toggle is off", async () => {
+  const h = harness();
+  const settings = {
+    ...iconSettings(),
+    showActiveAuctionsOverlay: false,
+    showSaleHistoryOverlay: false,
+    showFriendInterestOverlay: false,
+    showQuestOverlay: false,
+  };
+  await h.provider.get("42", settings, "plain");
+  expect(h.client.insights).toHaveBeenCalledTimes(1);
+  expect(h.client.activeAuctions).not.toHaveBeenCalled();
+  expect(h.client.history).not.toHaveBeenCalled();
+  h.provider.reset();
+  await h.provider.get(
+    "42",
+    { ...settings, showOnSaleOverlay: false },
+    "plain",
+  );
+  expect(h.client.insights).toHaveBeenCalledTimes(1);
+  h.provider.reset();
+  h.client.insights.mockRejectedValue(new ApiError("Unavailable", 503));
+  expect((await h.provider.get("42", settings, "plain")).onSale).toBe(false);
+  h.provider.reset();
+  h.client.insights.mockRejectedValue(new ApiError("Sign in", 401));
+  await expect(h.provider.get("42", settings, "plain")).rejects.toMatchObject({
+    status: 401,
   });
 });
 it("honors the auction toggle independently and propagates market throttling", async () => {
@@ -80,7 +235,7 @@ it("honors the auction toggle independently and propagates market throttling", a
   h.client.activeAuctions.mockResolvedValue(3);
   await h.provider.get(
     "42",
-    { ...defaults(), showActiveAuctionsOverlay: false },
+    { ...iconSettings(), showActiveAuctionsOverlay: false },
     "plain",
   );
   expect(h.client.activeAuctions).not.toHaveBeenCalled();
@@ -88,24 +243,26 @@ it("honors the auction toggle independently and propagates market throttling", a
   h.client.activeAuctions.mockRejectedValue(
     new ApiError("Slow down", 429, 123),
   );
-  await expect(h.provider.get("42", defaults(), "plain")).rejects.toMatchObject(
-    { status: 429, retryAt: 123 },
-  );
+  await expect(
+    h.provider.get("42", iconSettings(), "plain"),
+  ).rejects.toMatchObject({ status: 429, retryAt: 123 });
 });
 it("deduplicates card checks and stops sale-history reads after the first confirmed positive", async () => {
   const h = harness();
   const result = await Promise.all([
-    h.provider.get("42", defaults(), "plain"),
-    h.provider.get("42", defaults(), "veil"),
+    h.provider.get("42", iconSettings(), "plain"),
+    h.provider.get("42", iconSettings(), "veil"),
   ]);
   expect(result).toEqual([
     {
+      onSale: false,
       activeAuctions: false,
       saleHistory: true,
       interestedFriends: 1,
       quest: true,
     },
     {
+      onSale: false,
       activeAuctions: false,
       saleHistory: true,
       interestedFriends: 1,
@@ -121,10 +278,11 @@ it("does no game reads when the overlay section is disabled even with individual
   expect(
     await h.provider.get(
       "42",
-      { ...defaults(), cardOverlaysEnabled: false },
+      { ...iconSettings(), cardOverlaysEnabled: false },
       "plain",
     ),
   ).toEqual({
+    onSale: false,
     activeAuctions: false,
     saleHistory: false,
     interestedFriends: 0,
@@ -139,6 +297,9 @@ it("does no game reads when all overlays are disabled", async () => {
       "42",
       {
         cardOverlaysEnabled: true,
+        showLastSalePriceOverlay: false,
+        showLowestListingPriceOverlay: false,
+        showOnSaleOverlay: false,
         showActiveAuctionsOverlay: false,
         showSaleHistoryOverlay: false,
         showFriendInterestOverlay: false,
@@ -147,6 +308,7 @@ it("does no game reads when all overlays are disabled", async () => {
       "plain",
     ),
   ).toEqual({
+    onSale: false,
     activeAuctions: false,
     saleHistory: false,
     interestedFriends: 0,
@@ -162,6 +324,9 @@ it("honors each toggle and skips card details when friends have no family prefer
       "42",
       {
         cardOverlaysEnabled: true,
+        showLastSalePriceOverlay: false,
+        showLowestListingPriceOverlay: false,
+        showOnSaleOverlay: false,
         showActiveAuctionsOverlay: false,
         showSaleHistoryOverlay: false,
         showFriendInterestOverlay: true,
@@ -170,6 +335,7 @@ it("honors each toggle and skips card details when friends have no family prefer
       "plain",
     ),
   ).toEqual({
+    onSale: false,
     activeAuctions: false,
     saleHistory: false,
     interestedFriends: 0,
@@ -186,6 +352,9 @@ it("honors each toggle and skips card details when friends have no family prefer
       "42",
       {
         cardOverlaysEnabled: true,
+        showLastSalePriceOverlay: false,
+        showLowestListingPriceOverlay: false,
+        showOnSaleOverlay: false,
         showActiveAuctionsOverlay: false,
         showSaleHistoryOverlay: true,
         showFriendInterestOverlay: false,
@@ -194,6 +363,7 @@ it("honors each toggle and skips card details when friends have no family prefer
       "veil",
     ),
   ).toEqual({
+    onSale: false,
     activeAuctions: false,
     saleHistory: false,
     interestedFriends: 0,
@@ -209,7 +379,8 @@ it("honors each toggle and skips card details when friends have no family prefer
 it("does not invent sale signals on failures, and keeps a failed friend lookup separate", async () => {
   const h = harness();
   h.client.history.mockRejectedValue(new ApiError("Unavailable", 503));
-  expect(await h.provider.get("42", defaults(), "plain")).toEqual({
+  expect(await h.provider.get("42", iconSettings(), "plain")).toEqual({
+    onSale: false,
     activeAuctions: false,
     saleHistory: false,
     interestedFriends: 1,
@@ -220,7 +391,8 @@ it("does not invent sale signals on failures, and keeps a failed friend lookup s
     parseHistory(prices(3), finish),
   );
   h.client.friends.mockRejectedValue(new ApiError("Unavailable", 503));
-  expect(await h.provider.get("42", defaults(), "plain")).toEqual({
+  expect(await h.provider.get("42", iconSettings(), "plain")).toEqual({
+    onSale: false,
     activeAuctions: false,
     saleHistory: true,
     interestedFriends: 0,
@@ -233,16 +405,16 @@ it("propagates server cooldowns instead of probing the remaining finishes", asyn
   h.client.history.mockRejectedValue(
     new ApiError("Rate limited", 429, retryAt),
   );
-  await expect(h.provider.get("42", defaults(), "plain")).rejects.toMatchObject(
-    { status: 429, retryAt },
-  );
+  await expect(
+    h.provider.get("42", iconSettings(), "plain"),
+  ).rejects.toMatchObject({ status: 429, retryAt });
   expect(h.client.history).toHaveBeenCalledTimes(1);
   expect(h.client.friends).not.toHaveBeenCalled();
 });
 it("resetting for a different account never reuses the prior account's friend matches", async () => {
   const h = harness();
   expect(
-    (await h.provider.get("42", defaults(), "plain")).interestedFriends,
+    (await h.provider.get("42", iconSettings(), "plain")).interestedFriends,
   ).toBe(1);
   h.provider.reset();
   h.client.account.mockResolvedValue({
@@ -250,7 +422,7 @@ it("resetting for a different account never reuses the prior account's friend ma
     handle: "OtherPlayer",
   });
   expect(
-    (await h.provider.get("42", defaults(), "plain")).interestedFriends,
+    (await h.provider.get("42", iconSettings(), "plain")).interestedFriends,
   ).toBe(0);
   expect(h.client.insights).toHaveBeenCalledTimes(2);
 });
@@ -259,12 +431,16 @@ it("reuses the quest catalog across cards, honors its toggle and keeps failures 
   const h = harness();
   const questOnly = {
     cardOverlaysEnabled: true,
+    showLastSalePriceOverlay: false,
+    showLowestListingPriceOverlay: false,
+    showOnSaleOverlay: false,
     showActiveAuctionsOverlay: false,
     showSaleHistoryOverlay: false,
     showFriendInterestOverlay: false,
     showQuestOverlay: true,
   };
   expect(await h.provider.get("42", questOnly, "plain")).toEqual({
+    onSale: false,
     activeAuctions: false,
     saleHistory: false,
     interestedFriends: 0,
@@ -278,7 +454,8 @@ it("reuses the quest catalog across cards, honors its toggle and keeps failures 
   h.client.questSubjects.mockRejectedValue(
     new ApiError("Quest catalog unavailable", 403),
   );
-  expect(await h.provider.get("42", defaults(), "plain")).toEqual({
+  expect(await h.provider.get("42", iconSettings(), "plain")).toEqual({
+    onSale: false,
     activeAuctions: false,
     saleHistory: true,
     interestedFriends: 1,
@@ -290,9 +467,9 @@ it("pauses on quest throttling and discards a canceled catalog after reset", asy
   h.client.questSubjects.mockRejectedValueOnce(
     new ApiError("Slow down", 429, 123),
   );
-  await expect(h.provider.get("42", defaults(), "plain")).rejects.toMatchObject(
-    { status: 429, retryAt: 123 },
-  );
+  await expect(
+    h.provider.get("42", iconSettings(), "plain"),
+  ).rejects.toMatchObject({ status: 429, retryAt: 123 });
   expect(h.client.history).not.toHaveBeenCalled();
   h.provider.reset();
   let release!: (ids: string[]) => void;
@@ -305,7 +482,8 @@ it("pauses on quest throttling and discards a canceled catalog after reset", asy
   const pending = h.provider.get(
     "42",
     {
-      ...defaults(),
+      ...iconSettings(),
+      showOnSaleOverlay: false,
       showActiveAuctionsOverlay: false,
       showSaleHistoryOverlay: false,
       showFriendInterestOverlay: false,
@@ -316,5 +494,7 @@ it("pauses on quest throttling and discards a canceled catalog after reset", asy
   h.provider.reset();
   release(["42"]);
   await expect(pending).rejects.toThrow();
-  expect((await h.provider.get("42", defaults(), "plain")).quest).toBe(true);
+  expect((await h.provider.get("42", iconSettings(), "plain")).quest).toBe(
+    true,
+  );
 });

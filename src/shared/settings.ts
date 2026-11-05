@@ -2,12 +2,20 @@ import type { Settings } from "./types";
 import { defaultStats, parseStats } from "./stat-catalog";
 import { parseHotkeys } from "./hotkeys";
 import { parsePopupPosition } from "./popup-layout";
+import { validSaleAdjustment } from "./sales-prices";
 export const SETTINGS_KEY = "kosmore.settings";
 export const defaults = (): Settings => ({
   schemaVersion: 1,
   enabled: true,
   navigationHotkeysEnabled: true,
   cardOverlaysEnabled: true,
+  salesOverlaysEnabled: true,
+  showSalesLastSale: true,
+  salesLastSaleSetsPrice: true,
+  salesLastSaleAdjustment: 0,
+  showSalesLowestListing: true,
+  salesLowestListingSetsPrice: true,
+  salesLowestListingAdjustment: 0,
   statBoxesEnabled: true,
   pinnedAlbumsEnabled: true,
   closeTooltipWhenAddedToAlbum: false,
@@ -18,7 +26,10 @@ export const defaults = (): Settings => ({
   popupHeight: 900,
   popupPosition: null,
   showSaleHistoryOverlay: true,
+  showLastSalePriceOverlay: true,
   showActiveAuctionsOverlay: true,
+  showLowestListingPriceOverlay: true,
+  showOnSaleOverlay: true,
   showFriendInterestOverlay: true,
   showQuestOverlay: true,
   stats: defaultStats(),
@@ -37,18 +48,34 @@ export function parseSettings(value: unknown): Settings {
   for (const key of [
     "navigationHotkeysEnabled",
     "cardOverlaysEnabled",
+    "salesOverlaysEnabled",
+    "showSalesLastSale",
+    "salesLastSaleSetsPrice",
+    "showSalesLowestListing",
+    "salesLowestListingSetsPrice",
     "statBoxesEnabled",
     "pinnedAlbumsEnabled",
   ] as const)
     if (typeof v[key] === "boolean") d[key] = v[key];
+  for (const key of [
+    "salesLastSaleAdjustment",
+    "salesLowestListingAdjustment",
+  ] as const)
+    if (validSaleAdjustment(v[key])) d[key] = v[key];
   if (typeof v.closeTooltipWhenAddedToAlbum === "boolean")
     d.closeTooltipWhenAddedToAlbum = v.closeTooltipWhenAddedToAlbum;
   if (typeof v.applyCloseBehaviorToPinnedTooltips === "boolean")
     d.applyCloseBehaviorToPinnedTooltips = v.applyCloseBehaviorToPinnedTooltips;
   if (typeof v.showSaleHistoryOverlay === "boolean")
     d.showSaleHistoryOverlay = v.showSaleHistoryOverlay;
+  if (typeof v.showLastSalePriceOverlay === "boolean")
+    d.showLastSalePriceOverlay = v.showLastSalePriceOverlay;
   if (typeof v.showActiveAuctionsOverlay === "boolean")
     d.showActiveAuctionsOverlay = v.showActiveAuctionsOverlay;
+  if (typeof v.showLowestListingPriceOverlay === "boolean")
+    d.showLowestListingPriceOverlay = v.showLowestListingPriceOverlay;
+  if (typeof v.showOnSaleOverlay === "boolean")
+    d.showOnSaleOverlay = v.showOnSaleOverlay;
   if (typeof v.showFriendInterestOverlay === "boolean")
     d.showFriendInterestOverlay = v.showFriendInterestOverlay;
   if (typeof v.showQuestOverlay === "boolean")

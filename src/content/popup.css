@@ -57,7 +57,7 @@
 :host([data-empty]) .body,
 :host([data-empty]) .title-row h2,
 :host([data-empty]) .header-details,
-:host([data-empty]) .last-sold,
+:host([data-empty]) .header-prices,
 :host([data-empty]) .refresh-button {
   display: none;
 }
@@ -80,11 +80,86 @@
   color: #f1aab5;
   font-size: 11px;
 }
-.last-sold {
-  margin-top: 8px;
-  color: #f4dba1;
-  font-size: 12px;
+.header-prices {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  margin-top: 10px;
+  min-width: 0;
+}
+.market-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 3px 6px;
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+.market-badge svg {
+  flex: 0 0 auto;
+}
+.market-badge-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.market-badge[href] {
+  cursor: pointer;
+  text-decoration: none;
+}
+.market-badge[href]:hover {
+  filter: brightness(1.2);
+}
+.market-badge[href]:focus-visible {
+  outline: 2px solid #e7cb84;
+  outline-offset: 2px;
+}
+.family-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 4px;
+  margin-top: 6px;
+}
+.family-badges:empty {
+  display: none;
+}
+.family-badge {
+  border: 1px solid #6b5180;
+  border-radius: 6px;
+  padding: 2px 6px;
+  background: #21182f;
+  color: #d4bde9;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.header-identity {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+.no-market-history {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  text-align: center;
+  color: #e6d6b6;
+  font-size: 14px;
+}
+.market-history[data-empty-history]:not([hidden]) {
+  display: grid;
+  place-items: center;
+  flex: 1;
+}
+.tab-content:has(> .market-history[data-empty-history]:not([hidden])) {
+  display: flex;
+  flex-direction: column;
 }
 .resize-handle {
   position: absolute;
@@ -278,6 +353,7 @@ h3 {
   padding: 18px 18px 14px;
   background: linear-gradient(120deg, #34214966, transparent);
   border-bottom: 1px solid #ffffff0e;
+  text-align: left;
 }
 .brand {
   color: #e2bf76;
@@ -304,7 +380,7 @@ h3 {
 }
 .header-details {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   margin-top: 5px;
 }
@@ -420,8 +496,11 @@ h3 {
 }
 .sell-button {
   flex: 0 0 auto;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  font-size: 11px;
 }
 .stat-area {
   display: grid;
@@ -693,6 +772,9 @@ h3 {
   gap: 8px;
   flex: 0 0 auto;
 }
+.title-actions:has(.header-signals:empty) {
+  display: none;
+}
 .header-signals {
   display: flex;
   gap: 4px;
@@ -709,10 +791,6 @@ h3 {
   background: #171027ed;
   border: 1px solid #b6955a;
   color: #f4d68c;
-}
-.signal-badge.friend {
-  color: #d1b7fc;
-  border-color: #9a7fc6;
 }
 .signal-badge svg {
   display: block;

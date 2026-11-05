@@ -43,6 +43,23 @@ it("handles unknown schemas and bounds the delay", () => {
     parseSettings({ schemaVersion: 1, hoverDelayMs: 0 }).hoverDelayMs,
   ).toBe(100);
 });
+it("defaults overlay prices on and preserves independent price choices when their parent icons are disabled", () => {
+  for (const key of [
+    "showLastSalePriceOverlay",
+    "showLowestListingPriceOverlay",
+  ] as const) {
+    expect(parseSettings({ schemaVersion: 1 })[key]).toBe(true);
+    expect(parseSettings({ schemaVersion: 1, [key]: "false" })[key]).toBe(true);
+    expect(parseSettings({ schemaVersion: 1, [key]: false })[key]).toBe(false);
+  }
+  const saved = parseSettings({
+    schemaVersion: 1,
+    showSaleHistoryOverlay: false,
+    showActiveAuctionsOverlay: false,
+  });
+  expect(saved.showLastSalePriceOverlay).toBe(true);
+  expect(saved.showLowestListingPriceOverlay).toBe(true);
+});
 it("defaults closing after album additions off and accepts only saved boolean preferences", () => {
   expect(parseSettings(undefined).closeTooltipWhenAddedToAlbum).toBe(false);
   expect(parseSettings({ schemaVersion: 1 }).closeTooltipWhenAddedToAlbum).toBe(
@@ -117,6 +134,7 @@ it("enables new indicators for older settings without changing pins", () => {
   });
   expect(s.showSaleHistoryOverlay).toBe(true);
   expect(s.showActiveAuctionsOverlay).toBe(true);
+  expect(s.showOnSaleOverlay).toBe(true);
   expect(s.showFriendInterestOverlay).toBe(true);
   expect(s.showQuestOverlay).toBe(true);
   expect(s.pinnedAlbums.alice).toEqual([ALBUM_A]);
@@ -127,12 +145,14 @@ it("keeps the indicator preferences independent of hover popups", () => {
     enabled: false,
     showSaleHistoryOverlay: false,
     showActiveAuctionsOverlay: false,
+    showOnSaleOverlay: false,
     showFriendInterestOverlay: true,
     showQuestOverlay: false,
   });
   expect(s.enabled).toBe(false);
   expect(s.showSaleHistoryOverlay).toBe(false);
   expect(s.showActiveAuctionsOverlay).toBe(false);
+  expect(s.showOnSaleOverlay).toBe(false);
   expect(s.showFriendInterestOverlay).toBe(true);
   expect(s.showQuestOverlay).toBe(false);
 });

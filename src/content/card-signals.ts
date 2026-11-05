@@ -7,21 +7,29 @@ import {
   type Friend,
   type KosmoraClient,
   type Settings,
+  type Sale,
 } from "../shared/types";
 import { matchFriends, readFriendPreferences } from "../shared/trade-matches";
 import type { FriendReminder } from "../shared/friend-reminders";
 import { ApiError } from "../kosmora/client";
 export interface CardSignals {
+  onSale: boolean;
   activeAuctions: boolean;
   saleHistory: boolean;
   interestedFriends: number;
   quest: boolean;
+  lastSale?: Sale;
+  lowestListingPrice?: string;
+  marketName?: string;
 }
 export type OverlaySettings = Pick<
   Settings,
   | "cardOverlaysEnabled"
+  | "showOnSaleOverlay"
   | "showActiveAuctionsOverlay"
+  | "showLowestListingPriceOverlay"
   | "showSaleHistoryOverlay"
+  | "showLastSalePriceOverlay"
   | "showFriendInterestOverlay"
   | "showQuestOverlay"
 >;
@@ -42,6 +50,7 @@ export class CardSignalProvider {
       | "insights"
       | "questSubjects"
       | "activeAuctions"
+      | "lowestListingPrice"
     >,
   ) {}
   reset() {
@@ -76,11 +85,13 @@ export class CardSignalProvider {
     if (
       !settings.cardOverlaysEnabled ||
       (!settings.showSaleHistoryOverlay &&
+        !settings.showOnSaleOverlay &&
         !settings.showActiveAuctionsOverlay &&
         !settings.showFriendInterestOverlay &&
         !settings.showQuestOverlay)
     )
       return {
+        onSale: false,
         activeAuctions: false,
         saleHistory: false,
         interestedFriends: 0,
@@ -96,14 +107,36 @@ export class CardSignalProvider {
     }
     const account = await this.account;
     return this.cache.get(
-      `${account.key}:${id}:${settings.showActiveAuctionsOverlay}:${settings.showSaleHistoryOverlay}:${settings.showFriendInterestOverlay}:${settings.showQuestOverlay}`,
+      `${account.key}:${id}:${settings.showOnSaleOverlay}:${settings.showActiveAuctionsOverlay}:${settings.showLowestListingPriceOverlay}:${settings.showSaleHistoryOverlay}:${settings.showLastSalePriceOverlay}:${settings.showFriendInterestOverlay}:${settings.showQuestOverlay}`,
       async () => {
-        let activeAuctions = false,
+        let onSale = false,
+          activeAuctions = false,
           saleHistory = false,
           interestedFriends = 0,
           quest = false;
+        let lastSale: Sale | undefined,
+          lowestListingPrice: string | undefined,
+          marketName: string | undefined,
+          historyFailed = false;
         let details: Promise<CardInsights> | undefined;
-        const insights = () => (details ??= this.client.insights(id, signal));
+        const insights = () =>
+          (details ??= this.client.insights(
+            id,
+            signal,
+            settings.showOnSaleOverlay,
+          ));
+        if (settings.showOnSaleOverlay) {
+          try {
+            const card = await insights();
+            onSale = card.copies.some((copy) => !!copy.auctionId);
+          } catch (error) {
+            if (
+              error instanceof ApiError &&
+              (error.status === 429 || error.status === 401)
+            )
+              throw error;
+          }
+        }
         if (settings.showQuestOverlay) {
           const subjects = await (this.quests ??= this.client
             .questSubjects(signal)
@@ -124,11 +157,19 @@ export class CardSignalProvider {
             ...FINISHES.filter((f) => f !== displayedFinish),
           ]) {
             try {
-              if ((await this.client.history(id, finish, signal)).count > 0) {
+              const history = await this.client.history(id, finish, signal);
+              if (history.count > 0) {
                 saleHistory = true;
-                break;
+                if (!settings.showLastSalePriceOverlay) break;
               }
+              for (const sale of history.sales)
+                if (
+                  !lastSale ||
+                  Date.parse(sale.soldAt) > Date.parse(lastSale.soldAt)
+                )
+                  lastSale = sale;
             } catch (error) {
+              historyFailed = true;
               if (
                 error instanceof ApiError &&
                 (error.status === 429 || error.status === 401)
@@ -136,12 +177,21 @@ export class CardSignalProvider {
                 throw error;
             }
           }
+          if (historyFailed || !settings.showLastSalePriceOverlay)
+            lastSale = undefined;
         }
         if (settings.showActiveAuctionsOverlay) {
           try {
             const card = await insights();
             activeAuctions =
               (await this.client.activeAuctions(id, card.name, signal)) > 0;
+            if (activeAuctions) marketName = card.name;
+            if (activeAuctions && settings.showLowestListingPriceOverlay)
+              lowestListingPrice = await this.client.lowestListingPrice(
+                id,
+                card.name,
+                signal,
+              );
           } catch (error) {
             if (
               error instanceof ApiError &&
@@ -174,7 +224,16 @@ export class CardSignalProvider {
           }
         }
         signal.throwIfAborted();
-        return { activeAuctions, saleHistory, interestedFriends, quest };
+        return {
+          onSale,
+          activeAuctions,
+          saleHistory,
+          interestedFriends,
+          quest,
+          ...(lastSale ? { lastSale } : {}),
+          ...(lowestListingPrice !== undefined ? { lowestListingPrice } : {}),
+          ...(marketName ? { marketName } : {}),
+        };
       },
     );
   }

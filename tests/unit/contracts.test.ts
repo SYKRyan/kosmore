@@ -8,6 +8,24 @@ import {
 } from "../../src/kosmora/contracts";
 import { albums, card, opening, prices } from "../fixtures/data";
 describe("observed game contracts", () => {
+  it("preserves auction identifiers only on the signed-in account's listed copies", () => {
+    const listed = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const source = card();
+    const copies = [
+      { ...source.copies[0], state: "escrow", auction_id: listed },
+      { ...source.copies[0], auction_id: null },
+      source.copies[0],
+    ];
+    expect(
+      parseInsights({ ...source, copies }).copies.map((c) => c.auctionId),
+    ).toEqual([listed, undefined, undefined]);
+    expect(() =>
+      parseInsights({
+        ...source,
+        copies: [{ ...source.copies[0], auction_id: "unverified" }],
+      }),
+    ).toThrow();
+  });
   it("preserves fractional recorded medians and rejects a changed reporting window", () => {
     const d = card();
     d.popularity.medianDailyViews = 20.5;

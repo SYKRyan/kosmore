@@ -1,25 +1,66 @@
 import type { CardSignals, OverlaySettings } from "./card-signals";
 import { cardIcon } from "./icons";
 import { el } from "./ui";
+import { formatKosmo } from "../kosmora/contracts";
+import { enableMarketLink, marketSearchPath } from "./market-links";
 
-export function signalBadges(signals: CardSignals, settings: OverlaySettings) {
+export const MARKET_BADGE_CSS = `.sale{background:#171027ed;border-color:#b6955a;color:#f4d68c}.auction{background:#8d2034ed;border-color:#ff7185;color:#fff1f3}`;
+export const SIGNAL_BADGE_CSS = `${MARKET_BADGE_CSS}.signal-badge.quest{background:#171027ed;border-color:#b6955a;color:#f4d68c}.signal-badge.friend{background:#171027ed;border-color:#9a7fc6;color:#d1b7fc}`;
+
+export function signalBadges(
+  signals: CardSignals,
+  settings: OverlaySettings,
+  showPrices = false,
+  marketName?: string,
+) {
   const badges: HTMLElement[] = [];
   if (!settings.cardOverlaysEnabled) return badges;
   const icon = (
     kind: "auction" | "sale" | "friend" | "quest",
     label: string,
+    price?: string,
   ) => {
-    const badge = el("span", `signal-badge ${kind}`);
-    badge.setAttribute("role", "img");
-    badge.setAttribute("aria-label", label);
-    badge.title = label;
+    const badge =
+      kind === "auction" && marketName
+        ? el("a", `signal-badge ${kind} market-link`)
+        : el("span", `signal-badge ${kind}`);
+    if (badge instanceof HTMLAnchorElement) {
+      badge.href = marketSearchPath(marketName!);
+      enableMarketLink(badge);
+    } else badge.setAttribute("role", "img");
+    const description =
+      price !== undefined
+        ? `${label}. ${kind === "sale" ? "Last sale" : "Lowest current listing price"}: ${formatKosmo(price)} Kosmo, across all finishes.`
+        : label;
+    const accessibleDescription =
+      badge instanceof HTMLAnchorElement
+        ? `${description} Find ${marketName} at Market.`
+        : description;
+    badge.setAttribute("aria-label", accessibleDescription);
+    badge.title = accessibleDescription;
     badge.append(cardIcon(kind));
+    if (price !== undefined) {
+      badge.classList.add("with-price");
+      badge.append(el("span", "badge-price", `$${formatKosmo(price)}`));
+    }
     badges.push(badge);
   };
   if (settings.showActiveAuctionsOverlay && signals.activeAuctions)
-    icon("auction", "Active auctions on the market");
+    icon(
+      "auction",
+      "Active auctions on the market",
+      showPrices && settings.showLowestListingPriceOverlay
+        ? signals.lowestListingPrice
+        : undefined,
+    );
   if (settings.showSaleHistoryOverlay && signals.saleHistory)
-    icon("sale", "Completed sales in the last 30 days");
+    icon(
+      "sale",
+      "Completed sales in the last 30 days",
+      showPrices && settings.showLastSalePriceOverlay
+        ? signals.lastSale?.price
+        : undefined,
+    );
   if (settings.showQuestOverlay && signals.quest)
     icon("quest", "Part of a quest");
   if (settings.showFriendInterestOverlay && signals.interestedFriends)

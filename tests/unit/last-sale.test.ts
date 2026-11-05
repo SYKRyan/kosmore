@@ -21,29 +21,29 @@ it("uses newest date rather than highest price and respects selected variants", 
     veil: history("veil", "12345000", "2026-11-02T00:00:00Z"),
   };
   expect(lastSaleSummary(histories, ["plain", "veil"]).label).toBe(
-    "Last Sold: $12.35",
+    "Last Sale: $12.35",
   );
-  expect(lastSaleSummary(histories, ["plain"]).label).toBe("Last Sold: $99.00");
+  expect(lastSaleSummary(histories, ["plain"]).label).toBe("Last Sale: $99.00");
   expect(
     lastSaleSummary({ plain: history("plain", "0", "2026-11-01T00:00:00Z") }, [
       "plain",
     ]).label,
-  ).toBe("Last Sold: $0.00");
+  ).toBe("Last Sale: $0.00");
 });
 it("distinguishes pending, no sales, failed and partial histories", () => {
-  expect(lastSaleSummary({}, []).label).toBe("Last Sold: —");
-  expect(lastSaleSummary({}, ["plain"]).label).toBe("Last Sold: Loading…");
+  expect(lastSaleSummary({}, []).label).toBe("Last Sale: —");
+  expect(lastSaleSummary({}, ["plain"]).label).toBe("Last Sale: Loading…");
   const empty = {
     ...history("plain", "0", "2026-11-01T00:00:00Z"),
     sales: [],
     count: 0,
   };
   expect(lastSaleSummary({ plain: empty }, ["plain"]).label).toBe(
-    "Last Sold: No sales",
+    "Last Sale: No sales",
   );
   expect(
     lastSaleSummary({ plain: new Error("unavailable") }, ["plain"]).label,
-  ).toBe("Last Sold: Unavailable");
+  ).toBe("Last Sale: Unavailable");
   expect(
     lastSaleSummary(
       {
@@ -52,5 +52,5 @@ it("distinguishes pending, no sales, failed and partial histories", () => {
       },
       ["plain", "veil"],
     ).label,
-  ).toBe("Last Sold: $1,234.57 (partial)");
+  ).toBe("Last Sale: $1,234.57 (partial)");
 });

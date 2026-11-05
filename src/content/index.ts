@@ -28,11 +28,14 @@ import { Popup } from "./popup";
 import { SocialReminders } from "./social";
 import { CardOverlays } from "./card-overlays";
 import { NavigationHotkeys } from "./navigation";
+import { SalesOverlays } from "./sales-overlays";
 
 const client = new GameClient();
 new SocialReminders(client).start();
 const overlays = new CardOverlays(client);
 overlays.start();
+const salesOverlays = new SalesOverlays(client);
+salesOverlays.start();
 let settings = defaults();
 let pinnedState: PopupState = { pinned: false, position: null };
 const navigationHotkeys = new NavigationHotkeys(
@@ -57,6 +60,7 @@ const preferencesReady = Promise.all([
   navigationHotkeys.start();
   pinnedState = state;
   overlays.setSettings(settings);
+  salesOverlays.setSettings(settings);
   if (!settings.enabled) hide();
   else if (pinnedState.pinned && !popup && !current) createView(null);
 });
@@ -437,6 +441,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     settings = parseSettings(changes[SETTINGS_KEY].newValue);
     navigationHotkeys.settingsChanged();
     overlays.setSettings(settings);
+    salesOverlays.setSettings(settings);
     if (!settings.enabled) hide();
     else if (popup) {
       popup.setSettings(settings);

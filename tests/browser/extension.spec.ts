@@ -14,7 +14,11 @@ import { launchTestBrowser } from "./browser";
 import { socialFixture } from "../fixtures/social";
 import { familyCatalog } from "../fixtures/families";
 import { NAVIGATION } from "../../src/shared/hotkeys";
-import { sellManyFixture } from "../fixtures/sell-many";
+import {
+  batchSellRow,
+  sellManyFixture,
+  singleSellFixture,
+} from "../fixtures/sell-many";
 import { multiSelectFixture } from "../fixtures/multi-select";
 import { auction, auctionPage } from "../fixtures/auctions";
 import {
@@ -166,6 +170,13 @@ test.beforeAll(async () => {
       });
       return;
     }
+    if (path === "/market/sell") {
+      await route.fulfill({
+        contentType: "text/html",
+        body: singleSellFixture(url.searchParams.get("subject") ?? "42"),
+      });
+      return;
+    }
     if (path === "/market" && sellMany) {
       await route.fulfill({
         contentType: "text/html; charset=utf-8",
@@ -221,6 +232,7 @@ test.beforeEach(async () => {
           hoverDelayMs: 100,
           showSaleHistoryOverlay: false,
           showActiveAuctionsOverlay: false,
+          showOnSaleOverlay: false,
           showFriendInterestOverlay: false,
           showQuestOverlay: false,
           pinnedAlbums: { fixtureplayer: [a, b] },
@@ -743,6 +755,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Pinned albums",
       "Tooltip stat boxes",
       "Card overlays",
+      "Sales Overlay",
       "Navigation hotkeys",
       "Connected account",
     ]);
@@ -754,6 +767,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Pinned albums",
       "Tooltip stat boxes",
       "Card overlays",
+      "Sales Overlay",
       "Navigation hotkeys",
       "Connected account",
     ]);
@@ -768,13 +782,19 @@ test("settings groups are ordered with separate account controls and a fixed anc
     for (const label of [
       "Enable navigation hotkey",
       "Enable card overlays",
+      "Enable sales overlay",
       "Enable stat boxes",
       "Enable pinned albums",
     ])
       await expect(options.getByLabel(label, { exact: true })).toBeChecked();
-    await expect(options.getByRole("switch")).toHaveCount(5);
+    await expect(
+      options.locator(".settings-group-heading").getByRole("switch"),
+    ).toHaveCount(6);
     const checkSwitchLayout = async () => {
-      for (const input of await options.getByRole("switch").all()) {
+      for (const input of await options
+        .locator(".settings-group-heading")
+        .getByRole("switch")
+        .all()) {
         const alignment = await input.evaluate((input) => {
           const row = input.parentElement!.getBoundingClientRect(),
             control = input.getBoundingClientRect(),
@@ -801,6 +821,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       ["Pinned albums", "pinned-albums"],
       ["Tooltip stat boxes", "stat-boxes"],
       ["Card overlays", "card-overlays"],
+      ["Sales Overlay", "sales-overlay"],
       ["Navigation hotkeys", "navigation-hotkeys"],
       ["Connected account", "connected-account"],
     ]) {
@@ -872,6 +893,12 @@ test("disabled settings groups are visibly read-only and can be enabled or cance
       "Show sale history icon on cards",
     ],
     [
+      "sales-overlay",
+      "Enable sales overlay",
+      "sales overlay settings",
+      "Show Last Sale price",
+    ],
+    [
       "navigation-hotkeys",
       "Enable navigation hotkey",
       "hotkeys",
@@ -890,7 +917,9 @@ test("disabled settings groups are visibly read-only and can be enabled or cance
         "Disabled",
       );
       await expect(group.locator(".settings-group-state")).toBeVisible();
-      await expect(group.getByRole("switch")).toBeEnabled();
+      await expect(
+        group.locator(".settings-group-heading").getByRole("switch"),
+      ).toBeEnabled();
       const controls = await group
         .locator("fieldset")
         .locator("input,button,select")
@@ -908,7 +937,7 @@ test("disabled settings groups are visibly read-only and can be enabled or cance
         .getByRole("button", { name: `Save ${name}`, exact: true })
         .click();
       await expect(group.getByRole("status")).toContainText("Saved.");
-      await group.getByRole("switch").check();
+      await group.getByRole("switch", { name: label, exact: true }).check();
       await expect(group.getByLabel(editable, { exact: true })).toBeEnabled();
       await expect(group.locator(".settings-group-state")).toBeHidden();
       await group
@@ -979,7 +1008,7 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
   await expect(
     page.locator("[data-kosmore-card-overlays] .sale"),
   ).toBeVisible();
-  await expect(popup.locator(".header-signals .sale")).toBeVisible();
+  await expect(popup.locator(".header-prices .sale")).toBeVisible();
   await popup.getByLabel("Owned copy").selectOption(COPY_A);
   const original = await worker.evaluate(
     async () =>
@@ -1054,7 +1083,7 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
     await expect(
       page.locator("[data-kosmore-card-overlays] .sale"),
     ).toBeVisible();
-    await expect(popup.locator(".header-signals .sale")).toBeVisible();
+    await expect(popup.locator(".header-signals .sale")).toHaveCount(0);
     await set("Enable pinned albums", "album shortcuts", true);
     await expect(popup.locator(".album-add")).toHaveCount(2);
     await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_A);
@@ -1208,7 +1237,7 @@ test("Active Auctions counts exact-card listings, refreshes and keeps failures d
     const popup = page.locator("#kosmore-root"),
       metric = popup.locator('[data-stat-id="activeAuctions"]');
     await expect(metric.locator("strong")).toHaveText("2");
-    await expect(popup.locator(".header-signals .auction")).toBeVisible();
+    await expect(popup.locator(".listed-for")).toContainText("Listed For: $");
     await expect(metric.locator("span")).toHaveText("Active Auctions");
     await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
     await popup.getByLabel("Shiny", { exact: true }).uncheck();
@@ -1268,7 +1297,9 @@ test("Active Auctions can be hidden and enabled in an open popup through stat se
       "18",
     );
     await expect(metric).toHaveCount(0);
-    expect(reads).toBe(0);
+    // The independent header fetches its price even while the metric is hidden.
+    await expect(popup.locator(".listed-for")).toHaveText("Listed For: $10");
+    expect(reads).toBe(1);
     await options.goto(`chrome-extension://${extensionId}/options.html`);
     await options.getByLabel("Show Active Auctions", { exact: true }).check();
     await options
@@ -2001,7 +2032,7 @@ test("card notes persist per subject while switching tabs never resizes the popu
   await expect(input).toHaveValue("Keep one copy for trading.");
   expect(writeRequests).toBe(0);
 });
-test("auction gavels and sale-history icons appear independently on cards and popup headers", async () => {
+test("card market indicators remain independent while tooltip headers use price badges", async () => {
   await worker.evaluate(async () => {
     const saved = (await chrome.storage.local.get("kosmore.settings"))[
       "kosmore.settings"
@@ -2065,30 +2096,23 @@ test("auction gavels and sale-history icons appear independently on cards and po
       await expect(
         card.locator("[data-kosmore-card-overlays] .sale"),
       ).toHaveCount(history ? 1 : 0);
-      await expect(popup.locator(".header-signals .auction")).toHaveCount(
-        auctions ? 1 : 0,
+      await expect(
+        popup.locator(".header-signals .auction,.header-signals .sale"),
+      ).toHaveCount(0);
+      await expect(popup.locator(".last-sold")).toHaveText(
+        history ? "Last Sale: $12.00" : "Last Sale: No sales",
       );
-      await expect(popup.locator(".header-signals .sale")).toHaveCount(
-        history ? 1 : 0,
+      await expect(popup.locator(".listed-for")).toHaveText(
+        auctions ? "Listed For: $10" : "Listed For: —",
       );
-      if (auctions)
-        await expect(popup.locator(".header-signals .auction")).toHaveAttribute(
-          "aria-label",
-          "Active auctions on the market",
-        );
-      if (history)
-        await expect(popup.locator(".header-signals .sale")).toHaveAttribute(
-          "aria-label",
-          "Completed sales in the last 30 days",
-        );
       await page.keyboard.press("Escape");
       await page.mouse.move(10, 10);
     }
     await page.locator("#card-46").hover();
-    await expect(popup.locator(".header-signals .sale")).toBeVisible();
-    await expect(popup.locator(".header-signals .auction")).toBeVisible();
+    await expect(popup.locator(".header-prices .sale")).toBeVisible();
+    await expect(popup.locator(".header-prices .auction")).toBeVisible();
     const paths = await popup
-      .locator(".header-signals svg path")
+      .locator(".header-prices svg path")
       .evaluateAll((elements) => elements.map((e) => e.getAttribute("d")));
     expect(new Set(paths).size).toBe(2);
     await mkdir("test-results/screenshots", { recursive: true });
@@ -2099,6 +2123,353 @@ test("auction gavels and sale-history icons appear independently on cards and po
   } finally {
     await page.unroute("**/api/auctions?**");
     await page.unroute("**/api/cards/*/prices?**");
+  }
+});
+test("On Sale marks only your listed cards on the left, stays aligned and honors overlay settings", async () => {
+  await worker.evaluate(async () => {
+    const saved = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...saved,
+        showOnSaleOverlay: true,
+        showSaleHistoryOverlay: true,
+        showActiveAuctionsOverlay: true,
+        showFriendInterestOverlay: true,
+        showQuestOverlay: true,
+      },
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        notes: "",
+        families: ["Astronomy"],
+      },
+    });
+  });
+  await page.route("**/api/collection/*", async (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    const source = card(id);
+    await route.fulfill({
+      json: {
+        ...source,
+        copies:
+          id === "42"
+            ? [
+                {
+                  ...source.copies[0],
+                  state: "escrow",
+                  auction_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                },
+              ]
+            : source.copies,
+      },
+    });
+  });
+  const options = await context.newPage();
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await page.evaluate(
+      (html) => {
+        document.querySelector("main")!.innerHTML = html;
+      },
+      '<h1>On Sale overlay</h1><div style="display:flex;gap:20px">' +
+        ["42", "43"]
+          .map(
+            (id) =>
+              `<a id="card-${id}" href="/card/${id}" style="display:block;width:200px">${face(id)}</a>`,
+          )
+          .join("") +
+        "</div>",
+    );
+    const own = page.locator("#card-42"),
+      label = own.locator("[data-kosmore-card-overlays] .on-sale");
+    await expect(label).toHaveText("On Sale");
+    await expect(label).toHaveAttribute(
+      "aria-label",
+      "You have this card on sale on the market",
+    );
+    await expect(
+      own.locator("[data-kosmore-card-overlays] .signal-badge"),
+    ).toHaveCount(4);
+    await expect(
+      page.locator("#card-43 [data-kosmore-card-overlays] .auction"),
+    ).toBeVisible();
+    await expect(
+      page.locator("#card-43 [data-kosmore-card-overlays] .on-sale"),
+    ).toHaveCount(0);
+    const checkAlignment = async () => {
+      const bounds = (await own
+          .locator("[data-kosmore-card-overlays]")
+          .boundingBox())!,
+        sale = (await label.boundingBox())!,
+        icons = await own
+          .locator("[data-kosmore-card-overlays] .top-row .signal-badge")
+          .all();
+      expect(Math.abs(sale.x - bounds.x)).toBeLessThanOrEqual(1);
+      for (const icon of icons) {
+        const box = (await icon.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(bounds.x);
+        expect(box.x + box.width).toBeLessThanOrEqual(
+          bounds.x + bounds.width + 1,
+        );
+        expect(box.y).toBeGreaterThanOrEqual(bounds.y);
+        expect(box.y + box.height).toBeLessThan(bounds.y + bounds.height / 2);
+        if (box.y < sale.y + sale.height)
+          expect(box.x).toBeGreaterThanOrEqual(sale.x + sale.width + 3);
+      }
+      expect(
+        await own
+          .locator(".top-row .signal-badge")
+          .evaluateAll((badges) =>
+            badges.map((b) =>
+              [...b.classList].find((c) =>
+                ["quest", "sale", "auction"].includes(c),
+              ),
+            ),
+          ),
+      ).toEqual(["sale", "auction"]);
+      const friend = (await own.locator(".bottom-row .friend").boundingBox())!;
+      const quest = (await own.locator(".bottom-row .quest").boundingBox())!;
+      expect(quest.x + quest.width).toBeLessThan(friend.x);
+      expect(Math.abs(quest.y - friend.y)).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(friend.x + friend.width - bounds.x - bounds.width),
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(friend.y + friend.height - bounds.y - bounds.height),
+      ).toBeLessThanOrEqual(1);
+      const right = (await icons.at(-1)!.boundingBox())!;
+      expect(
+        Math.abs(bounds.x + bounds.width - (right.x + right.width)),
+      ).toBeLessThanOrEqual(1);
+      expect(
+        await label.evaluate((el) => getComputedStyle(el).backgroundColor),
+      ).toBe("rgb(168, 36, 57)");
+    };
+    for (const width of [200, 160, 144]) {
+      await own.evaluate((el, width) => (el.style.width = `${width}px`), width);
+      await checkAlignment();
+    }
+    await mkdir("test-results/screenshots", { recursive: true });
+    await page.screenshot({
+      path: "test-results/screenshots/on-sale-overlay.png",
+    });
+    // Overlay elements must not intercept the card's normal hover behavior.
+    const labelBox = (await label.boundingBox())!;
+    await page.mouse.move(
+      labelBox.x + labelBox.width / 2,
+      labelBox.y + labelBox.height / 2,
+    );
+    await expect(page.locator("#kosmore-root h2")).toHaveText(
+      "Northern Lights",
+    );
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    const toggle = options.getByLabel("Show On Sale label on cards", {
+      exact: true,
+    });
+    await expect(toggle).toBeChecked();
+    await toggle.uncheck();
+    await options
+      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .click();
+    await expect(label).toHaveCount(0);
+    await expect(
+      own.locator("[data-kosmore-card-overlays] .auction"),
+    ).toBeVisible();
+    await toggle.check();
+    await options
+      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .click();
+    await expect(label).toBeVisible();
+    await options.getByLabel("Enable card overlays", { exact: true }).uncheck();
+    await options
+      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .click();
+    await expect(page.locator("[data-kosmore-card-overlays]")).toHaveCount(0);
+    await expect(toggle).toBeDisabled();
+    expect(writeRequests).toBe(0);
+  } finally {
+    await options.close();
+    await page.unroute("**/api/collection/*");
+  }
+});
+test("market overlays show sale and listing prices at top right and quest before friends at bottom right with independent price switches", async () => {
+  await worker.evaluate(async () => {
+    const saved = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...saved,
+        showSaleHistoryOverlay: true,
+        showActiveAuctionsOverlay: true,
+        showFriendInterestOverlay: true,
+        showQuestOverlay: true,
+      },
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        notes: "",
+        families: ["Astronomy"],
+      },
+    });
+  });
+  await page.route("**/api/cards/*/prices?**", async (route) => {
+    const finish = new URL(route.request().url()).searchParams.get("finish");
+    const data = prices(1);
+    data.prices.sales[0].price = finish === "veil" ? "99000000" : "12000000";
+    data.prices.sales[0].soldAt = new Date(
+      Date.now() - (finish === "veil" ? 3600000 : 86400000),
+    ).toISOString();
+    await route.fulfill({ json: data });
+  });
+  await page.route("**/api/auctions?**", async (route) => {
+    await route.fulfill({
+      json: {
+        items: [
+          auction(1, "42", { startPrice: "1000000", bestBid: "25000000" }),
+          auction(2, "42", { startPrice: "8000000" }),
+          auction(3, "43", { startPrice: "1" }),
+          auction(4, "42", { startPrice: "1", state: "sold" }),
+        ],
+        nextOffset: null,
+      },
+    });
+  });
+  const options = await context.newPage();
+  try {
+    await page.goto("https://kosmora.io/collection");
+    const card = page.locator(".kc-article"),
+      overlay = card.locator("[data-kosmore-card-overlays]"),
+      sale = overlay.locator(".top-row .sale"),
+      gavel = overlay.locator(".top-row .auction");
+    await expect(sale.locator(".badge-price")).toHaveText("$99");
+    await expect(gavel.locator(".badge-price")).toHaveText("$8");
+    await expect(overlay.locator(".bottom-row .quest")).toHaveCount(1);
+    await expect(
+      overlay.locator(
+        ".bottom-row .sale,.bottom-row .auction,.top-row .friend,.top-row .quest",
+      ),
+    ).toHaveCount(0);
+    const alignment = async () => {
+      const bounds = (await overlay.boundingBox())!,
+        history = (await sale.boundingBox())!,
+        auction = (await gavel.boundingBox())!;
+      const quest = (await overlay
+        .locator(".bottom-row .quest")
+        .boundingBox())!;
+      expect(Math.abs(history.y - bounds.y)).toBeLessThanOrEqual(1);
+      expect(auction.x).toBeGreaterThan(history.x + history.width);
+      expect(Math.abs(history.y - auction.y)).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(auction.x + auction.width - bounds.x - bounds.width),
+      ).toBeLessThanOrEqual(1);
+      const friend = (await overlay
+        .locator(".bottom-row .friend")
+        .boundingBox())!;
+      expect(quest.x + quest.width).toBeLessThan(friend.x);
+      expect(Math.abs(quest.y - friend.y)).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(friend.x + friend.width - bounds.x - bounds.width),
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(friend.y + friend.height - bounds.y - bounds.height),
+      ).toBeLessThanOrEqual(1);
+      for (const icon of await overlay.locator(".top-row .signal-badge").all())
+        expect(
+          Math.abs((await icon.boundingBox())!.y - bounds.y),
+        ).toBeLessThanOrEqual(1);
+      expect(
+        await gavel.evaluate((el) => getComputedStyle(el).borderColor),
+      ).toBe("rgb(255, 113, 133)");
+    };
+    await mkdir("test-results/screenshots", { recursive: true });
+    for (const width of [270, 144]) {
+      await page
+        .locator('a[href="/card/42"]')
+        .evaluate((el, width) => (el.style.width = `${width}px`), width);
+      await alignment();
+      await card.screenshot({
+        path: `test-results/screenshots/overlay-prices-${width}.png`,
+      });
+    }
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    const lastPrice = options.getByRole("switch", {
+        name: "Show last sale price",
+        exact: true,
+      }),
+      listingPrice = options.getByRole("switch", {
+        name: "Show lowest listed price",
+        exact: true,
+      }),
+      save = options.getByRole("button", {
+        name: "Save overlay settings",
+        exact: true,
+      });
+    await options
+      .getByRole("link", { name: "Card overlays", exact: true })
+      .click();
+    await options.screenshot({
+      path: "test-results/screenshots/overlay-price-settings.png",
+    });
+    await options.setViewportSize({ width: 390, height: 900 });
+    await options
+      .getByRole("link", { name: "Card overlays", exact: true })
+      .click();
+    await options.screenshot({
+      path: "test-results/screenshots/overlay-price-settings-390.png",
+    });
+    expect(
+      await options.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await options.setViewportSize({ width: 1440, height: 1000 });
+    await expect(lastPrice).toBeChecked();
+    await expect(listingPrice).toBeChecked();
+    await expect(
+      options
+        .locator("#card-overlays")
+        .getByText(
+          "Last sale price across all finishes in Kosmora’s 30-day history.",
+          { exact: true },
+        ),
+    ).toBeVisible();
+    await lastPrice.uncheck();
+    await save.click();
+    await expect(sale.locator(".badge-price")).toHaveCount(0);
+    await expect(gavel.locator(".badge-price")).toHaveText("$8");
+    await listingPrice.uncheck();
+    await save.click();
+    await expect(gavel.locator(".badge-price")).toHaveCount(0);
+    await expect(sale).toBeVisible();
+    await expect(gavel).toBeVisible();
+    await alignment();
+    await options
+      .getByLabel("Show sale history icon on cards", { exact: true })
+      .uncheck();
+    await expect(lastPrice).toBeDisabled();
+    await options
+      .getByLabel("Show active auctions icon on cards", { exact: true })
+      .uncheck();
+    await expect(listingPrice).toBeDisabled();
+    await options
+      .getByRole("button", {
+        name: "Cancel overlay settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(lastPrice).toBeEnabled();
+    await expect(listingPrice).toBeEnabled();
+    await expect(lastPrice).not.toBeChecked();
+    await expect(listingPrice).not.toBeChecked();
+    await options.reload();
+    await expect(lastPrice).not.toBeChecked();
+    await expect(listingPrice).not.toBeChecked();
+    expect(writeRequests).toBe(0);
+  } finally {
+    await options.close();
+    await page.unroute("**/api/cards/*/prices?**");
+    await page.unroute("**/api/auctions?**");
   }
 });
 test("saved settings independently remove the four card overlays in existing tabs", async () => {
@@ -2780,7 +3151,7 @@ test("pinning remembers position across page loads, clears the card, and unpinni
   await page.goto("https://kosmora.io/collection");
   await page.locator(".kc-article").hover();
   const popup = page.locator("#kosmore-root");
-  await expect(popup.locator(".last-sold")).toContainText("Last Sold: $");
+  await expect(popup.locator(".last-sold")).toContainText("Last Sale: $");
   await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
   const header = (await popup.locator(".top").boundingBox())!;
   await page.mouse.move(header.x + 25, header.y + 20);
@@ -2982,6 +3353,205 @@ test("all popup edges resize and autosave dimensions while preserving dirty sett
   }
   expect(writeRequests).toBe(0);
 });
+test("tooltip header shows family badges and matching inline market prices independently of overlay and stat settings", async () => {
+  await worker.evaluate(async () => {
+    const saved = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...saved,
+        statBoxesEnabled: false,
+        cardOverlaysEnabled: false,
+      },
+    });
+  });
+  const families = [
+    { id: "space.astronomy", name: "Astronomy" },
+    { id: "space.exploration", name: "Space Exploration" },
+    {
+      id: "nature.sky",
+      name: "Earth’s Atmosphere and Natural Light Phenomena",
+    },
+  ];
+  await page.route("**/api/collection/*", async (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    await route.fulfill({
+      json: { ...card(id), families: id === "42" ? families : [] },
+    });
+  });
+  let price = "8000000",
+    reads = 0,
+    mode = "listed";
+  await page.route("**/api/auctions?**", async (route) => {
+    reads++;
+    if (mode === "failed") {
+      await route.fulfill({ status: 503, json: { error: "unavailable" } });
+      return;
+    }
+    await route.fulfill({
+      json: {
+        items:
+          mode === "none"
+            ? []
+            : [
+                auction(1, "42", { startPrice: price }),
+                auction(2, "43", { startPrice: "1" }),
+              ],
+        nextOffset: null,
+      },
+    });
+  });
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await page.locator(".kc-article").hover();
+    const popup = page.locator("#kosmore-root"),
+      header = popup.locator(".top"),
+      last = header.locator(".last-sold"),
+      listed = header.locator(".listed-for");
+    await expect(
+      header
+        .getByRole("list", { name: "Card families", exact: true })
+        .getByRole("listitem"),
+    ).toHaveText(families.map((f) => f.name));
+    await expect(last).toHaveText("Last Sale: $12.00");
+    await expect(listed).toHaveText("Listed For: $8");
+    expect(reads).toBe(1);
+    await expect(popup.locator(".metric")).toHaveCount(0);
+    await expect(last.locator("svg")).toHaveCount(1);
+    await expect(listed.locator("svg")).toHaveCount(1);
+    expect(await last.evaluate((el) => getComputedStyle(el).borderColor)).toBe(
+      "rgb(182, 149, 90)",
+    );
+    expect(
+      await listed.evaluate((el) => getComputedStyle(el).borderColor),
+    ).toBe("rgb(255, 113, 133)");
+    await mkdir("test-results/screenshots", { recursive: true });
+    for (const width of [440, 320]) {
+      await worker.evaluate(async (popupWidth) => {
+        const saved = (await chrome.storage.local.get("kosmore.settings"))[
+          "kosmore.settings"
+        ] as object;
+        await chrome.storage.local.set({
+          "kosmore.settings": { ...saved, popupWidth },
+        });
+      }, width);
+      await expect
+        .poll(async () => (await popup.boundingBox())!.width)
+        .toBe(width);
+      const name = (await header.locator("h2").boundingBox())!,
+        subtitle = (await header.locator(".subtitle").boundingBox())!,
+        family = (await header.locator(".family-badge").first().boundingBox())!,
+        lastBox = (await last.boundingBox())!,
+        listedBox = (await listed.boundingBox())!,
+        headerBox = (await header.boundingBox())!;
+      expect(Math.abs(name.x - subtitle.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(subtitle.x - family.x)).toBeLessThanOrEqual(1);
+      expect(family.y).toBeGreaterThanOrEqual(subtitle.y + subtitle.height);
+      expect(lastBox.y).toBeGreaterThan(family.y);
+      expect(Math.abs(lastBox.x - name.x)).toBeLessThanOrEqual(1);
+      expect(listedBox.x).toBeGreaterThan(lastBox.x + lastBox.width);
+      expect(Math.abs(lastBox.y - listedBox.y)).toBeLessThanOrEqual(1);
+      expect(listedBox.x + listedBox.width).toBeLessThan(
+        headerBox.x + headerBox.width,
+      );
+      expect(
+        headerBox.y + headerBox.height - lastBox.y - lastBox.height,
+      ).toBeLessThanOrEqual(15);
+      await header.screenshot({
+        path: `test-results/screenshots/tooltip-header-families-${width}.png`,
+      });
+    }
+    price = "6000000";
+    await popup.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(listed).toHaveText("Listed For: $6");
+    mode = "failed";
+    await popup.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(listed).toHaveText("Listed For: Unavailable");
+    mode = "none";
+    await popup.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(listed).toHaveText("Listed For: —");
+    await page.evaluate(
+      (html) => (document.querySelector("main")!.innerHTML = html),
+      face("46", "Andromeda"),
+    );
+    await page.locator(".kc-article").hover();
+    await expect(popup.locator("h2")).toHaveText("Andromeda");
+    await expect(popup.locator(".subtitle")).toContainText("No. 46");
+    await expect(popup.locator(".family-badge")).toHaveCount(0);
+    expect(writeRequests).toBe(0);
+  } finally {
+    await page.unroute("**/api/collection/*");
+    await page.unroute("**/api/auctions?**");
+  }
+});
+test("empty market history is a centered bold message while pending and failed histories remain distinct", async () => {
+  let release!: () => void,
+    started!: () => void,
+    fail = false;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  await page.route("**/api/cards/*/prices?**", async (route) => {
+    const finish = new URL(route.request().url()).searchParams.get("finish");
+    if (finish === "fullart") {
+      started();
+      await held;
+    }
+    if (fail && finish === "veil")
+      await route.fulfill({ status: 503, json: { error: "unavailable" } });
+    else await route.fulfill({ json: prices(0) });
+  });
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await page.locator(".kc-article").hover();
+    await ready;
+    const popup = page.locator("#kosmore-root"),
+      market = popup.getByRole("tabpanel", { name: "Market", exact: true });
+    await expect(
+      market.getByText("No Market History", { exact: true }),
+    ).toHaveCount(0);
+    release();
+    const empty = market.locator("strong");
+    await expect(empty).toHaveText("No Market History");
+    await expect(
+      market.locator(".chart,.stats,.sales,.legend,.section-head"),
+    ).toHaveCount(0);
+    await expect(market.locator(":scope > *")).toHaveCount(1);
+    expect(
+      Number(await empty.evaluate((el) => getComputedStyle(el).fontWeight)),
+    ).toBeGreaterThanOrEqual(600);
+    const box = (await market.boundingBox())!,
+      message = (await empty.boundingBox())!;
+    expect(
+      Math.abs(box.x + box.width / 2 - message.x - message.width / 2),
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(box.y + box.height / 2 - message.y - message.height / 2),
+    ).toBeLessThanOrEqual(1);
+    await mkdir("test-results/screenshots", { recursive: true });
+    await popup.screenshot({
+      path: "test-results/screenshots/tooltip-no-market-history.png",
+    });
+    await popup.getByRole("tab", { name: "Trade", exact: true }).click();
+    await expect(empty).toBeHidden();
+    await popup.getByRole("tab", { name: "Market", exact: true }).click();
+    await expect(empty).toBeVisible();
+    fail = true;
+    await popup.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(market).toContainText("503");
+    await expect(
+      market.getByText("No Market History", { exact: true }),
+    ).toHaveCount(0);
+    expect(writeRequests).toBe(0);
+  } finally {
+    release();
+    await page.unroute("**/api/cards/*/prices?**");
+  }
+});
 test("the header shows the newest completed sale across selected variants", async () => {
   await page.route("**/api/cards/*/prices*", async (route) => {
     const finish = new URL(route.request().url()).searchParams.get("finish")!;
@@ -3016,14 +3586,14 @@ test("the header shows the newest completed sale across selected variants", asyn
     await page.locator(".kc-article").hover();
     const popup = page.locator("#kosmore-root");
     await expect(popup.locator(".top .last-sold")).toHaveText(
-      "Last Sold: $12.35",
+      "Last Sale: $12.35",
     );
     await popup.getByLabel("Full art", { exact: true }).uncheck();
-    await expect(popup.locator(".last-sold")).toHaveText("Last Sold: $90.00");
+    await expect(popup.locator(".last-sold")).toHaveText("Last Sale: $90.00");
     await popup.getByLabel("Shiny", { exact: true }).uncheck();
-    await expect(popup.locator(".last-sold")).toHaveText("Last Sold: $2.00");
+    await expect(popup.locator(".last-sold")).toHaveText("Last Sale: $2.00");
     await popup.getByLabel("Standard", { exact: true }).uncheck();
-    await expect(popup.locator(".last-sold")).toHaveText("Last Sold: —");
+    await expect(popup.locator(".last-sold")).toHaveText("Last Sale: —");
   } finally {
     await page.unroute("**/api/cards/*/prices*");
   }
@@ -3045,7 +3615,7 @@ test("market activity thumbnails and names open card details in all three sectio
       await expect(popup.locator(".subtitle")).toContainText(
         `No. ${id} · ${variant}`,
       );
-      await expect(popup.locator(".last-sold")).toContainText("Last Sold: $");
+      await expect(popup.locator(".last-sold")).toContainText("Last Sale: $");
       await page.keyboard.press("Escape");
     }
     await row.locator("a").focus();
@@ -3111,7 +3681,7 @@ test("compact market activity thumbnails omit overlays while ordinary cards and 
   await page.getByTestId("dash-turn").locator(".kc-img").hover();
   const popup = page.locator("#kosmore-root");
   await expect(popup.locator("h2")).toHaveText("Northern Lights");
-  await expect(popup.locator(".header-signals .sale")).toBeVisible();
+  await expect(popup.locator(".header-prices .sale")).toBeVisible();
   await expect(popup.locator(".header-signals .friend")).toBeVisible();
   await page.screenshot({
     path: "test-results/screenshots/market-activity-no-overlays.png",
@@ -3215,7 +3785,7 @@ test("Sell Many picker supports hover and focus without selecting cards or closi
       `No. ${id} · ${variant}`,
     );
     await expect(pick).toHaveAttribute("aria-pressed", "false");
-    await expect(popup.locator(".last-sold")).toContainText("Last Sold: $");
+    await expect(popup.locator(".last-sold")).toContainText("Last Sale: $");
     await popup.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(popup.locator(".sales li")).toHaveCount(5);
     await page.keyboard.press("Escape");
@@ -3305,6 +3875,550 @@ test("Sell Many batch thumbnails and names update the pinned popup without chang
     "true",
   );
   expect(writeRequests).toBe(0);
+});
+test("sales badges fill only their own controlled batch price fields with independent adjustments", async () => {
+  await page.route("**/api/auctions?**", async (route) => {
+    const first =
+      new URL(route.request().url()).searchParams.get("q") ===
+      "Northern Lights";
+    await route.fulfill({
+      json: {
+        items: [
+          auction(1, first ? "42" : "46", {
+            startPrice: first ? "8000000" : "20000000",
+          }),
+        ],
+        nextOffset: null,
+      },
+    });
+  });
+  const options = await context.newPage();
+  try {
+    await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
+    const rows = page.locator(".bsell-row"),
+      first = rows.nth(0),
+      second = rows.nth(1);
+    const lastSale = first.getByRole("button", { name: /^Last Sale \$12/ });
+    const lowest = first.getByRole("button", { name: /^Lowest Listed \$8/ });
+    await expect(lastSale).toBeEnabled();
+    await expect(lowest).toBeEnabled();
+    await expect(first.locator("input")).toHaveValue("12.00");
+    const group = (await first.locator(".bsell-prices").boundingBox())!,
+      badges = (await first
+        .locator("[data-kosmore-sales-overlay]")
+        .boundingBox())!;
+    expect(badges.y).toBeGreaterThanOrEqual(group.y + group.height);
+    await lastSale.click();
+    await expect(first.locator("input")).toHaveValue("12");
+    await expect(second.locator("input")).toHaveValue("12.00");
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { priceModel: Record<string, string> })
+            .priceModel["Starting price for Northern Lights"],
+      ),
+    ).toBe("12");
+    await lowest.click();
+    await expect(first.locator("input")).toHaveValue("8");
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    const settings = options.locator("#sales-overlay");
+    await expect(
+      settings.getByLabel("Last Sale price adjustment", { exact: true }),
+    ).toHaveValue("0");
+    await expect(
+      settings.getByLabel("Lowest Listed price adjustment", { exact: true }),
+    ).toHaveValue("0");
+    await settings
+      .getByLabel("Last Sale price adjustment", { exact: true })
+      .fill("-1");
+    await settings
+      .getByLabel("Lowest Listed price adjustment", { exact: true })
+      .fill("2");
+    await settings
+      .getByRole("button", { name: "Save sales overlay settings", exact: true })
+      .click();
+    await expect(settings.getByRole("status")).toContainText("Saved.");
+    await first.getByRole("button", { name: /^Last Sale \$12/ }).click();
+    await expect(first.locator("input")).toHaveValue("11");
+    await second.getByRole("button", { name: /^Lowest Listed \$20/ }).click();
+    await expect(second.locator("input")).toHaveValue("22");
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { priceModel: Record<string, string> })
+            .priceModel["Starting price for Andromeda"],
+      ),
+    ).toBe("22");
+    await expect(first.locator(".price-badge.sale")).toContainText("$12");
+    await expect(second.locator(".price-badge.auction")).toContainText("$20");
+    await mkdir("test-results/screenshots", { recursive: true });
+    await page.screenshot({
+      path: "test-results/screenshots/sales-badges-batch.png",
+    });
+    await options
+      .getByRole("link", { name: "Sales Overlay", exact: true })
+      .click();
+    await options.screenshot({
+      path: "test-results/screenshots/sales-overlay-settings.png",
+    });
+    await options.setViewportSize({ width: 390, height: 900 });
+    await options
+      .getByRole("link", { name: "Sales Overlay", exact: true })
+      .click();
+    await options.screenshot({
+      path: "test-results/screenshots/sales-overlay-settings-390.png",
+    });
+    expect(
+      await options.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await expect(page.locator("body")).not.toHaveAttribute(
+      "data-submitted",
+      "true",
+    );
+    await expect(page.locator("body")).toHaveAttribute("data-copy-clicks", "0");
+    expect(writeRequests).toBe(0);
+  } finally {
+    await options.close();
+    await page.unroute("**/api/auctions?**");
+  }
+});
+test("single-sale badges share settings and respect click toggles, visibility, readonly inputs and nonpositive adjustments", async () => {
+  const options = await context.newPage();
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    const settings = options.locator("#sales-overlay"),
+      save = settings.getByRole("button", {
+        name: "Save sales overlay settings",
+        exact: true,
+      });
+    await settings
+      .getByLabel("Last Sale price adjustment", { exact: true })
+      .fill("-1");
+    await settings
+      .getByLabel("Lowest Listed price adjustment", { exact: true })
+      .fill("2");
+    await save.click();
+    await page.goto(
+      `https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`,
+    );
+    const input = page.getByTestId("sell-start"),
+      widget = page.locator("[data-kosmore-sales-overlay]");
+    await widget.getByRole("button", { name: /^Last Sale \$12/ }).click();
+    await expect(input).toHaveValue("11");
+    await widget.getByRole("button", { name: /^Lowest Listed \$10/ }).click();
+    await expect(input).toHaveValue("12");
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { priceModel: Record<string, string> })
+            .priceModel["Starting price"],
+      ),
+    ).toBe("12");
+    await expect(page.getByTestId("t3-sell-reserve")).toHaveValue("20");
+    await input.evaluate((el) => {
+      (el as HTMLInputElement).readOnly = true;
+    });
+    await expect(
+      widget.getByRole("button", { name: /^Last Sale/ }),
+    ).toBeDisabled();
+    await input.evaluate((el) => {
+      (el as HTMLInputElement).readOnly = false;
+    });
+    await expect(
+      widget.getByRole("button", { name: /^Last Sale/ }),
+    ).toBeEnabled();
+    await mkdir("test-results/screenshots", { recursive: true });
+    await page.screenshot({
+      path: "test-results/screenshots/sales-badges-single.png",
+    });
+    await settings
+      .getByLabel("Last Sale price adjustment", { exact: true })
+      .fill("-20");
+    await save.click();
+    await widget.getByRole("button", { name: /^Last Sale/ }).click();
+    await expect(input).toHaveValue("12");
+    await expect(widget.getByRole("status")).toContainText("greater than 0");
+    await settings
+      .getByRole("switch", {
+        name: "Set price when Last Sale is clicked",
+        exact: true,
+      })
+      .uncheck();
+    await expect(
+      settings.getByLabel("Last Sale price adjustment", { exact: true }),
+    ).toBeDisabled();
+    await save.click();
+    await expect(widget.locator(".sale")).toContainText("$12");
+    await expect(
+      widget.getByRole("button", { name: /^Last Sale/ }),
+    ).toHaveCount(0);
+    await widget.locator(".sale").click();
+    await expect(input).toHaveValue("12");
+    await settings
+      .getByRole("switch", { name: "Show Lowest Listed price", exact: true })
+      .uncheck();
+    await expect(
+      settings.getByRole("switch", {
+        name: "Set price when Lowest Listed is clicked",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await save.click();
+    await expect(widget.locator(".auction")).toHaveCount(0);
+    await settings
+      .getByRole("switch", { name: "Enable sales overlay", exact: true })
+      .uncheck();
+    await expect(settings).toHaveClass(/settings-group-disabled/);
+    await save.click();
+    await expect(widget).toHaveCount(0);
+    await options.reload();
+    await expect(
+      settings.getByLabel("Last Sale price adjustment", { exact: true }),
+    ).toHaveValue("-20");
+    await expect(
+      settings.getByRole("switch", {
+        name: "Enable sales overlay",
+        exact: true,
+      }),
+    ).not.toBeChecked();
+    await expect(page.locator("body")).not.toHaveAttribute(
+      "data-submitted",
+      "true",
+    );
+    expect(writeRequests).toBe(0);
+  } finally {
+    await options.close();
+  }
+});
+test("late sales prices cannot populate a replaced batch row or edit a new card automatically", async () => {
+  let release!: () => void, started!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  await page.route("**/api/collection/42", async (route) => {
+    started();
+    await held;
+    await route.fulfill({ json: card("42") });
+  });
+  await page.route("**/api/cards/*/prices?**", async (route) => {
+    const id = new URL(route.request().url()).pathname.split("/")[3],
+      data = prices(1);
+    data.prices.sales[0].price = id === "42" ? "90000000" : "7000000";
+    await route.fulfill({ json: data });
+  });
+  try {
+    await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
+    await ready;
+    const oldInput = await page
+      .locator(".bsell-row input")
+      .first()
+      .elementHandle();
+    await page
+      .locator(".bsell-row")
+      .first()
+      .evaluate(
+        (row, html) => {
+          row.outerHTML = html;
+        },
+        batchSellRow("47", "Orion Nebula"),
+      );
+    release();
+    const first = page.locator(".bsell-row").first();
+    await expect(first.locator("[data-kosmore-sales-overlay]")).toHaveAttribute(
+      "data-subject",
+      "47",
+    );
+    await expect(
+      first.getByRole("button", { name: /^Last Sale \$7/ }),
+    ).toBeEnabled();
+    await expect(first.locator(".price-badge.sale")).not.toContainText("$90");
+    await expect(first.locator("input")).toHaveValue("12.00");
+    expect(await oldInput!.evaluate((el) => el.isConnected)).toBe(false);
+    await first.getByRole("button", { name: /^Last Sale \$7/ }).click();
+    await expect(first.locator("input")).toHaveValue("7");
+    await expect(
+      page.locator(".bsell-row").nth(1).locator("input"),
+    ).toHaveValue("12.00");
+    await expect(page.locator("body")).not.toHaveAttribute(
+      "data-submitted",
+      "true",
+    );
+    expect(writeRequests).toBe(0);
+  } finally {
+    release();
+    await page.unroute("**/api/collection/42");
+    await page.unroute("**/api/cards/*/prices?**");
+  }
+});
+test("listed-price links open encoded market searches and header indicators match their card overlays", async () => {
+  await worker.evaluate(async () => {
+    const saved = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...saved,
+        showActiveAuctionsOverlay: true,
+        showSaleHistoryOverlay: true,
+        showFriendInterestOverlay: true,
+        showQuestOverlay: true,
+      },
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        notes: "",
+        families: ["Astronomy"],
+      },
+    });
+  });
+  let name = "George Wade",
+    nativeClicks = 0;
+  await page.exposeFunction("recordNativeCardClick", () => {
+    nativeClicks++;
+  });
+  await page.route("**/api/collection/*", async (route) =>
+    route.fulfill({ json: { ...card(), name } }),
+  );
+  await page.route("**/market?**", async (route) => {
+    await route.fulfill({
+      contentType: "text/html",
+      body: "<html><body><h1>Market</h1></body></html>",
+    });
+  });
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await page.evaluate(
+      (html) => {
+        document.body.dataset.nativeClicks = "0";
+        document.querySelector("main")!.innerHTML = html;
+      },
+      `<a href="/card/42" style="display:block;width:270px" onclick="window.recordNativeCardClick()">${face("42", name)}</a>`,
+    );
+    const cardRoot = page.locator(".kc-article"),
+      link = cardRoot.locator("[data-kosmore-card-overlays] a.auction");
+    await expect(link).toHaveAttribute("href", "/market?q=George+Wade");
+    await cardRoot.hover();
+    const popup = page.locator("#kosmore-root");
+    await expect(popup.locator(".header-signals .signal-badge")).toHaveCount(2);
+    await expect(
+      popup.locator(
+        ".header-signals .auction,.header-signals .sale,.top .sell-button",
+      ),
+    ).toHaveCount(0);
+    await expect(
+      popup
+        .locator(".footer")
+        .getByRole("button", { name: "Sell card", exact: true }),
+    ).toBeVisible();
+    for (const kind of ["quest", "friend"]) {
+      const styles = (el: Element) => {
+        const badge = getComputedStyle(el),
+          icon = getComputedStyle(el.querySelector("svg")!);
+        return {
+          color: icon.color,
+          border: badge.borderColor,
+          background: badge.backgroundColor,
+        };
+      };
+      expect(
+        await popup.locator(`.header-signals .${kind}`).evaluate(styles),
+      ).toEqual(
+        await cardRoot
+          .locator(`[data-kosmore-card-overlays] .${kind}`)
+          .evaluate(styles),
+      );
+    }
+    for (const [kind, selector] of [
+      ["sale", ".last-sold"],
+      ["auction", ".listed-for"],
+    ])
+      expect(
+        await popup
+          .locator(selector)
+          .evaluate((el) => getComputedStyle(el.querySelector("svg")!).color),
+      ).toBe(
+        await cardRoot
+          .locator(`[data-kosmore-card-overlays] .${kind} svg`)
+          .evaluate((el) => getComputedStyle(el).color),
+      );
+    await mkdir("test-results/screenshots", { recursive: true });
+    await popup.screenshot({
+      path: "test-results/screenshots/tooltip-market-links.png",
+    });
+    await page.keyboard.press("Escape");
+    await link.click();
+    await expect(page).toHaveURL("https://kosmora.io/market?q=George+Wade");
+    expect(nativeClicks).toBe(0);
+    name = "A & B, C / D?";
+    await page.goto("https://kosmora.io/collection");
+    await page.locator(".kc-article").hover();
+    const listed = page.locator("#kosmore-root .listed-for");
+    await expect(listed).toHaveAttribute(
+      "href",
+      "/market?q=A+%26+B%2C+C+%2F+D%3F",
+    );
+    await listed.focus();
+    await listed.press("Enter");
+    await expect(page).toHaveURL(
+      "https://kosmora.io/market?q=A+%26+B%2C+C+%2F+D%3F",
+    );
+    expect(new URL(page.url()).searchParams.get("q")).toBe(name);
+    expect(writeRequests).toBe(0);
+  } finally {
+    await page.unroute("**/api/collection/*");
+    await page.unroute("**/market?**");
+  }
+});
+test("listed-price links work through multi-select without toggling a card selection", async () => {
+  await worker.evaluate(async () => {
+    const saved = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": { ...saved, showActiveAuctionsOverlay: true },
+    });
+  });
+  await page.route("**/collection", (route) =>
+    route.fulfill({ contentType: "text/html", body: multiSelectFixture() }),
+  );
+  let selection: (string | null)[] = [];
+  await page.exposeFunction(
+    "recordMarketSelection",
+    (values: (string | null)[]) => {
+      selection = values;
+    },
+  );
+  await page.route("**/market?**", async (route) => {
+    await route.fulfill({
+      contentType: "text/html",
+      body: "<html><body><h1>Market</h1></body></html>",
+    });
+  });
+  try {
+    await page.goto("https://kosmora.io/collection");
+    const first = page.locator(".kc-article").first();
+    await first.hover();
+    await page.mouse.down();
+    await page.waitForTimeout(550);
+    await page.mouse.up();
+    await expect(page.locator(".pick-hit").first()).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await page.evaluate(() => {
+      window.addEventListener(
+        "beforeunload",
+        () => {
+          void (
+            window as unknown as {
+              recordMarketSelection: (
+                values: (string | null)[],
+              ) => Promise<void>;
+            }
+          ).recordMarketSelection(
+            [...document.querySelectorAll(".pick-hit")].map((b) =>
+              b.getAttribute("aria-pressed"),
+            ),
+          );
+        },
+        { once: true },
+      );
+    });
+    await page
+      .locator(".pick")
+      .first()
+      .locator("[data-kosmore-card-overlays] a.auction")
+      .click();
+    await expect(page).toHaveURL("https://kosmora.io/market?q=Northern+Lights");
+    await expect.poll(() => selection).toEqual(["true", "false"]);
+    expect(writeRequests).toBe(0);
+  } finally {
+    await page.unroute("**/collection");
+    await page.unroute("**/market?**");
+  }
+});
+test("sale screens show only badges for confirmed market history and active auctions", async () => {
+  let release!: () => void, started!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  await page.route("**/api/cards/*/prices?**", async (route) => {
+    const url = new URL(route.request().url()),
+      id = url.pathname.split("/")[3];
+    if (id === "42" && url.searchParams.get("finish") === "fullart") {
+      started();
+      await held;
+    }
+    await route.fulfill({ json: prices(id === "46" ? 1 : 0) });
+  });
+  await page.route("**/api/auctions?**", async (route) => {
+    const first =
+      new URL(route.request().url()).searchParams.get("q") ===
+      "Northern Lights";
+    await route.fulfill({
+      json: { items: first ? [auction(1)] : [], nextOffset: null },
+    });
+  });
+  try {
+    await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
+    await ready;
+    const first = page.locator(".bsell-row").nth(0),
+      second = page.locator(".bsell-row").nth(1);
+    await expect(first.locator(".price-badge")).toHaveCount(0);
+    release();
+    await expect(first.locator(".price-badge.auction")).toBeVisible();
+    await expect(second.locator(".price-badge.sale")).toBeVisible();
+    await expect(first.locator(".price-badge.sale")).toHaveCount(0);
+    await expect(second.locator(".price-badge.auction")).toHaveCount(0);
+    await expect(first.locator("input")).toHaveValue("12.00");
+    await expect(second.locator("input")).toHaveValue("12.00");
+    await mkdir("test-results/screenshots", { recursive: true });
+    await page.screenshot({
+      path: "test-results/screenshots/sales-badges-confirmed-only.png",
+    });
+    await page.goto(
+      `https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`,
+    );
+    await expect(
+      page.locator("[data-kosmore-sales-overlay] .auction"),
+    ).toBeVisible();
+    await expect(
+      page.locator("[data-kosmore-sales-overlay] .sale"),
+    ).toHaveCount(0);
+    await page.goto(
+      `https://kosmora.io/market/sell?subject=46&instance=${COPY_A}`,
+    );
+    await expect(
+      page.locator("[data-kosmore-sales-overlay] .sale"),
+    ).toBeVisible();
+    await expect(
+      page.locator("[data-kosmore-sales-overlay] .auction"),
+    ).toHaveCount(0);
+    await page.goto(
+      `https://kosmora.io/market/sell?subject=47&instance=${COPY_A}`,
+    );
+    await expect(page.locator("[data-kosmore-sales-overlay]")).toHaveAttribute(
+      "hidden",
+      "",
+    );
+    await expect(page.locator("[data-kosmore-sales-overlay]")).toBeHidden();
+    await expect(
+      page.locator("[data-kosmore-sales-overlay] .price-badge"),
+    ).toHaveCount(0);
+    await expect(page.getByTestId("sell-start")).toHaveValue("12.00");
+    expect(writeRequests).toBe(0);
+  } finally {
+    release();
+    await page.unroute("**/api/cards/*/prices?**");
+    await page.unroute("**/api/auctions?**");
+  }
 });
 test("persisted settings survive a browser restart", async () => {
   await worker.evaluate(async () => {
