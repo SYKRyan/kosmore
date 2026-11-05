@@ -149,7 +149,11 @@ export interface KosmoraClient {
     signal?: AbortSignal,
     fresh?: boolean,
   ): Promise<MarketHistory>;
-  albums(subjectId?: string, signal?: AbortSignal): Promise<Album[]>;
+  albums(
+    subjectId?: string,
+    signal?: AbortSignal,
+    fresh?: boolean,
+  ): Promise<Album[]>;
   resolveCopy(
     context: CardContext,
     copies: OwnedCopy[],

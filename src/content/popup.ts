@@ -58,6 +58,9 @@ export class Popup {
   private signals?: CardSignals;
   private priceScope = el("p", "summary-label price-scope");
   private market = el("section", "market-history");
+  private marketBody = el("div", "market-body");
+  private marketLegend?: HTMLElement;
+  private marketFrame = 0;
   private tradeArea = el("section", "trade-panel");
   private notesArea = el("section", "card-notes-panel");
   private notes?: CardNotes;
@@ -94,6 +97,7 @@ export class Popup {
   private copyProblem?: string;
   private copiesResolved = false;
   private albumError?: string;
+  private albumRequest?: AbortController;
   private showAllSales = false;
   private selling = false;
   private pending = false;
@@ -278,6 +282,7 @@ export class Popup {
       "pointerdown",
       "pointerup",
       "click",
+      "auxclick",
       "dblclick",
       "mousedown",
       "mouseup",
@@ -299,6 +304,8 @@ export class Popup {
     this.position();
   }
   dispose() {
+    cancelAnimationFrame(this.marketFrame);
+    this.albumRequest?.abort();
     this.finishInteraction?.();
     this.closed = true;
     this.tradeRequest?.abort();
@@ -594,9 +601,13 @@ export class Popup {
       sub.textContent = `${details.rarity} · No. ${details.subjectId} · ${this.context.variant.fullArt ? "Full art" : this.context.variant.veil ? "Shiny" : "Standard"}`;
     this.familyBadges.replaceChildren(
       ...(details.families ?? []).map((family) => {
-        const badge = el("span", "family-badge", family.name);
-        badge.setAttribute("role", "listitem");
-        return badge;
+        const item = el("span");
+        item.setAttribute("role", "listitem");
+        const badge = el("a", "family-badge", family.name);
+        badge.href = `/families/${encodeURIComponent(family.id)}`;
+        badge.title = `View ${family.name} in your collection`;
+        item.append(badge);
+        return item;
       }),
     );
     this.renderMetrics();
@@ -662,19 +673,18 @@ export class Popup {
   }
   setHistory(finish: Finish, result: MarketHistory | Error) {
     this.histories[finish] = result;
-    this.renderMetrics();
     this.renderMarket();
   }
   setFinishes(finishes: Finish[]) {
     this.hidden = new Set(FINISHES.filter((f) => !finishes.includes(f)));
-    this.renderMetrics();
     this.renderMarket();
   }
-  setAccount(account: Account, pinned: string[]) {
+  setAccount(account: Account, pinned: string[], fresh = false) {
     this.account = account;
     this.notes?.setAccount(account);
     this.pinned = pinned;
     this.renderAlbums();
+    void this.loadAlbums(fresh);
     this.refreshTrade();
   }
   refreshTrade(fresh = false) {
@@ -834,6 +844,33 @@ export class Popup {
     this.albumError = undefined;
     this.renderAlbums();
   }
+  private async loadAlbums(fresh = false) {
+    if (
+      !this.context ||
+      !this.account ||
+      !this.settings.pinnedAlbumsEnabled ||
+      !this.pinned.length ||
+      (!fresh && (this.albums || this.albumRequest))
+    )
+      return;
+    this.albumRequest?.abort();
+    const request = new AbortController(),
+      account = this.account;
+    this.albumRequest = request;
+    try {
+      const albums = await this.client.albums(
+        this.context.subjectId,
+        request.signal,
+        fresh,
+      );
+      if (!this.closed && !request.signal.aborted && this.account === account)
+        this.setAlbums(account, albums, this.pinned);
+    } catch (error) {
+      if (!this.closed && !request.signal.aborted) this.albumsFailed(error);
+    } finally {
+      if (this.albumRequest === request) this.albumRequest = undefined;
+    }
+  }
   albumsFailed(error: unknown) {
     this.albumError = messageOf(error);
     this.renderAlbums();
@@ -862,6 +899,7 @@ export class Popup {
       this.pinned = settings.pinnedAlbums[this.account.key] ?? [];
     this.renderAlbums();
     this.renderHeaderSignals();
+    void this.loadAlbums();
     void this.loadActiveAuctions();
   }
   setSignals(signals?: CardSignals) {
@@ -900,6 +938,21 @@ export class Popup {
       : "";
   }
   private renderMarket() {
+    if (this.marketFrame || this.closed) return;
+    this.marketFrame = requestAnimationFrame(() => {
+      this.marketFrame = 0;
+      if (this.closed) return;
+      const restoreSalesFocus =
+        this.shadow.activeElement?.matches(".sales-toggle");
+      this.renderMetrics();
+      this.renderMarketNow();
+      if (restoreSalesFocus)
+        this.market
+          .querySelector<HTMLButtonElement>(".sales-toggle")
+          ?.focus({ preventScroll: true });
+    });
+  }
+  private renderMarketNow() {
     this.renderHeaderPrices();
     const allEmpty = FINISHES.every((finish) => {
       const h = this.histories[finish];
@@ -916,33 +969,42 @@ export class Popup {
       this.market.replaceChildren(noHistory());
       return;
     }
-    this.market.replaceChildren(
-      this.heading("Market history", "30-day window"),
-    );
-    const legend = el("div", "legend");
-    for (const finish of FINISHES) {
-      const label = el("label"),
-        check = el("input");
-      check.type = "checkbox";
-      check.checked = !this.hidden.has(finish);
-      check.style.accentColor = COLORS[finish];
-      check.addEventListener("change", () => {
-        if (check.checked) this.hidden.delete(finish);
-        else this.hidden.add(finish);
-        this.renderMetrics();
-        this.renderMarket();
-        this.filterStatus.textContent = "";
-        void this.onFinishesChange(
-          FINISHES.filter((f) => !this.hidden.has(f)),
-        ).catch((error) => {
-          if (!this.closed)
-            this.filterStatus.textContent = `Could not save filters: ${messageOf(error)}`;
+    const legend = this.marketLegend ?? el("div", "legend");
+    if (!this.marketLegend)
+      for (const finish of FINISHES) {
+        const label = el("label"),
+          check = el("input");
+        check.type = "checkbox";
+        check.checked = !this.hidden.has(finish);
+        check.style.accentColor = COLORS[finish];
+        check.addEventListener("change", () => {
+          if (check.checked) this.hidden.delete(finish);
+          else this.hidden.add(finish);
+          this.renderMetrics();
+          this.renderMarket();
+          this.filterStatus.textContent = "";
+          void this.onFinishesChange(
+            FINISHES.filter((f) => !this.hidden.has(f)),
+          ).catch((error) => {
+            if (!this.closed)
+              this.filterStatus.textContent = `Could not save filters: ${messageOf(error)}`;
+          });
         });
-      });
-      label.append(check, document.createTextNode(FINISH_LABEL[finish]));
-      legend.append(label);
-    }
-    this.market.append(legend, this.filterStatus);
+        label.append(check, document.createTextNode(FINISH_LABEL[finish]));
+        legend.append(label);
+      }
+    this.marketLegend = legend;
+    for (const [i, finish] of FINISHES.entries())
+      legend.querySelectorAll<HTMLInputElement>("input")[i].checked =
+        !this.hidden.has(finish);
+    if (!legend.isConnected)
+      this.market.replaceChildren(
+        this.heading("Market history", "30-day window"),
+        legend,
+        this.filterStatus,
+        this.marketBody,
+      );
+    this.marketBody.replaceChildren();
     const selected = FINISHES.filter((f) => !this.hidden.has(f));
     if (
       selected.length &&
@@ -951,7 +1013,7 @@ export class Popup {
         return h && !(h instanceof Error) && h.count === 0;
       })
     ) {
-      this.market.append(noHistory());
+      this.marketBody.append(noHistory());
       return;
     }
     this.renderMarketHistory();
@@ -1007,7 +1069,7 @@ export class Popup {
     const sales = available
       .flatMap((h) => h.sales)
       .sort((a, b) => Date.parse(b.soldAt) - Date.parse(a.soldAt));
-    if (sales.length) this.market.append(this.chart(available));
+    if (sales.length) this.marketBody.append(this.chart(available));
     const table = el("table", "stats");
     table.setAttribute("aria-label", "Market summaries by variant");
     const head = el("tr");
@@ -1041,21 +1103,21 @@ export class Popup {
       tbody.append(row);
     }
     table.append(tbody);
-    this.market.append(table);
+    this.marketBody.append(table);
     for (const f of FINISHES) {
       if (this.hidden.has(f)) continue;
       const h = this.histories[f];
       if (h instanceof Error)
-        this.market.append(note(`${FINISH_LABEL[f]}: ${h.message}`, true));
+        this.marketBody.append(note(`${FINISH_LABEL[f]}: ${h.message}`, true));
     }
     if (available.some((h) => !h.complete))
-      this.market.append(
+      this.marketBody.append(
         note(
           "The chart uses the returned sales sample. Counts and price summaries cover the reported window.",
         ),
       );
     if (sales.length) {
-      this.market.append(
+      this.marketBody.append(
         this.heading(
           "Recent sales",
           `Latest ${this.showAllSales ? sales.length : Math.min(5, sales.length)} of ${sales.length}`,
@@ -1082,7 +1144,7 @@ export class Popup {
         );
         list.append(li);
       }
-      this.market.append(list);
+      this.marketBody.append(list);
       if (sales.length > 5) {
         const expand = button(
           this.showAllSales ? "Show Less" : "Show All",
@@ -1100,10 +1162,10 @@ export class Popup {
         );
         expand.setAttribute("aria-expanded", String(this.showAllSales));
         expand.setAttribute("aria-controls", list.id);
-        this.market.append(expand);
+        this.marketBody.append(expand);
       }
     } else if (available.length)
-      this.market.append(
+      this.marketBody.append(
         note("No completed sales in the available variant histories."),
       );
   }

@@ -5,6 +5,7 @@ import {
   editableSalesInput,
   fillSalesInput,
   salesTargets,
+  salesTarget,
   type SalesTarget,
 } from "../kosmora/sales";
 import { formatKosmo } from "../kosmora/contracts";
@@ -17,6 +18,7 @@ import {
 import { cardIcon } from "./icons";
 import { MARKET_BADGE_CSS } from "./signal-badges";
 import { el } from "./ui";
+import { observePage, affected, type PageChanges } from "./page-changes";
 
 const STYLE = `:host{display:block;margin:6px 0 10px;font:12px/1.4 system-ui,sans-serif;color:#ece7f3}:host([hidden]){display:none}.badges{display:flex;flex-wrap:wrap;gap:6px}.price-badge{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-height:28px;box-sizing:border-box;padding:4px 8px;border:1px solid;border-radius:6px;font:inherit;box-shadow:0 1px 5px #0005}button{cursor:pointer}button:hover{filter:brightness(1.2)}button:focus-visible{outline:2px solid #e7cb84;outline-offset:3px}button:disabled{cursor:default;opacity:.65}svg{display:block;flex-shrink:0}.amount{overflow-wrap:anywhere}.status{font-size:11px;color:#b9dcbc;margin-top:4px}.status:empty{display:none}.status.loading{color:#c3b2d4}.status.error{color:#f3a6b1}${MARKET_BADGE_CSS}`;
 interface Entry {
@@ -26,11 +28,13 @@ interface Entry {
   status: HTMLElement;
   visible: boolean;
   loading: boolean;
+  fetching?: boolean;
   editable: boolean;
   signals?: CardSignals;
   error?: string;
 }
 const KEYS = [
+  "enabled",
   "salesOverlaysEnabled",
   "showSalesLastSale",
   "salesLastSaleSetsPrice",
@@ -47,7 +51,7 @@ export class SalesOverlays {
   private queue = new Set<Entry>();
   private intersection: IntersectionObserver;
   private generation = 0;
-  private running = false;
+  private running = 0;
   private scheduled = false;
   private notBefore = 0;
   private timer?: ReturnType<typeof setTimeout>;
@@ -65,27 +69,14 @@ export class SalesOverlays {
     });
   }
   start() {
-    new MutationObserver(() => this.schedule()).observe(document.body, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: [
-        "class",
-        "src",
-        "href",
-        "disabled",
-        "readonly",
-        "aria-readonly",
-        "hidden",
-      ],
-    });
+    observePage((changes) => this.scan(changes));
     window.addEventListener("popstate", () => this.invalidate());
-    window.addEventListener("focus", () => this.invalidate());
+    window.addEventListener("focus", () => this.invalidate(false));
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) this.invalidate();
+      if (!document.hidden) this.invalidate(false);
     });
     setInterval(() => {
-      if (!document.hidden) this.invalidate();
+      if (!document.hidden) this.invalidate(false);
     }, 300_000);
   }
   setSettings(settings: Settings) {
@@ -97,16 +88,25 @@ export class SalesOverlays {
   }
   private enabled() {
     return (
-      this.settings?.salesOverlaysEnabled &&
+      this.settings?.enabled &&
+      this.settings.salesOverlaysEnabled &&
       (this.settings.showSalesLastSale || this.settings.showSalesLowestListing)
     );
   }
-  private invalidate() {
+  invalidate(clear = true) {
     this.generation++;
     this.provider.reset();
     this.notBefore = 0;
     clearTimeout(this.timer);
-    for (const entry of this.entries.values()) this.remove(entry);
+    for (const entry of this.entries.values()) {
+      if (clear) this.remove(entry);
+      else {
+        entry.loading = true;
+        entry.fetching = false;
+        entry.error = undefined;
+        if (entry.visible) this.queue.add(entry);
+      }
+    }
     this.schedule();
   }
   private remove(entry: Entry) {
@@ -123,12 +123,20 @@ export class SalesOverlays {
       this.scan();
     });
   }
-  private scan() {
-    const targets = this.enabled()
-      ? salesTargets()
-      : new Map<HTMLInputElement, SalesTarget>();
+  private scan(changes?: PageChanges) {
+    const targets = new Map<HTMLInputElement, SalesTarget>();
+    if (this.enabled())
+      for (const scope of !changes || changes.full ? [document] : changes.roots)
+        for (const [input, target] of salesTargets(document, scope))
+          targets.set(input, target);
     for (const [input, entry] of this.entries) {
-      const target = targets.get(input);
+      if (
+        changes &&
+        this.enabled() &&
+        !affected(input.closest(".bsell-row,.deal") ?? input, changes)
+      )
+        continue;
+      const target = this.enabled() ? salesTarget(input) : undefined;
       if (!target || target.key !== entry.target.key) {
         this.remove(entry);
         continue;
@@ -171,7 +179,7 @@ export class SalesOverlays {
     return (
       generation === this.generation &&
       this.entries.get(entry.target.input) === entry &&
-      salesTargets().get(entry.target.input)?.key === entry.target.key &&
+      salesTarget(entry.target.input)?.key === entry.target.key &&
       !!this.enabled()
     );
   }
@@ -189,7 +197,12 @@ export class SalesOverlays {
     };
   }
   private pump() {
-    if (this.running || !this.enabled() || document.hidden || !this.queue.size)
+    if (
+      this.running >= 2 ||
+      !this.enabled() ||
+      document.hidden ||
+      !this.queue.size
+    )
       return;
     if (Date.now() < this.notBefore) {
       if (Number.isFinite(this.notBefore))
@@ -198,13 +211,14 @@ export class SalesOverlays {
     }
     const entry = this.queue.values().next().value!;
     this.queue.delete(entry);
-    if (!entry.visible || !this.valid(entry)) {
+    if (!entry.visible || entry.fetching || !this.valid(entry)) {
       this.pump();
       return;
     }
     const generation = this.generation,
       context = entry.target.context;
-    this.running = true;
+    this.running++;
+    entry.fetching = true;
     void this.provider
       .get(
         context.subjectId,
@@ -214,6 +228,12 @@ export class SalesOverlays {
           : context.variant.veil
             ? "veil"
             : "plain",
+        (signals) => {
+          if (this.valid(entry, generation)) {
+            entry.signals = signals;
+            this.render(entry);
+          }
+        },
       )
       .then(
         (signals) => {
@@ -231,11 +251,13 @@ export class SalesOverlays {
       .finally(() => {
         if (this.valid(entry, generation)) {
           entry.loading = false;
+          entry.fetching = false;
           this.render(entry);
         }
-        this.running = false;
-        this.timer = setTimeout(() => this.pump(), 400);
+        this.running--;
+        this.pump();
       });
+    this.pump();
   }
   private render(entry: Entry) {
     entry.editable = editableSalesInput(entry.target.input);
@@ -276,11 +298,7 @@ export class SalesOverlays {
       const badge = canClick
         ? el("button", `price-badge ${kind}`)
         : el("span", `price-badge ${kind}`);
-      const text = entry.loading
-        ? "Loading…"
-        : price === undefined
-          ? "—"
-          : `$${formatKosmo(price)}`;
+      const text = price === undefined ? "—" : `$${formatKosmo(price)}`;
       badge.append(cardIcon(kind), el("span", "amount", `${label} ${text}`));
       badge.title =
         entry.error ??

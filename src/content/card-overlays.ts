@@ -10,12 +10,15 @@ import type { CardContext, KosmoraClient, Settings } from "../shared/types";
 import { CardSignalProvider, type CardSignals } from "./card-signals";
 import { SIGNAL_BADGE_CSS, signalBadges } from "./signal-badges";
 import { el } from "./ui";
+import { observePage, affected, type PageChanges } from "./page-changes";
 interface Entry {
   root: HTMLElement;
   context: CardContext;
   key: string;
   visible: boolean;
   done: boolean;
+  loading?: boolean;
+  signals?: CardSignals;
   host?: HTMLElement;
   positioned?: { value: string; priority: string };
 }
@@ -39,7 +42,7 @@ export class CardOverlays {
   private entries = new Map<HTMLElement, Entry>();
   private queue = new Set<Entry>();
   private intersection: IntersectionObserver;
-  private running = false;
+  private running = 0;
   private scheduled = false;
   private generation = 0;
   private notBefore = 0;
@@ -58,27 +61,12 @@ export class CardOverlays {
     });
   }
   start() {
-    const observer = new MutationObserver(() => this.schedule());
-    observer.observe(document.body, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: [
-        "class",
-        "href",
-        "src",
-        "hidden",
-        "aria-hidden",
-        "inert",
-        "style",
-      ],
-    });
+    observePage((changes) => this.scan(changes));
     window.addEventListener("resize", () => this.schedule());
     window.addEventListener("popstate", () => this.invalidate());
-    window.addEventListener("focus", () => this.invalidate());
+    window.addEventListener("focus", () => this.invalidate(false));
     document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) this.invalidate();
+      if (!document.hidden) this.invalidate(false);
     });
     const expire = () => {
       if (!document.hidden) this.invalidate();
@@ -88,6 +76,7 @@ export class CardOverlays {
   }
   setSettings(settings: Settings) {
     const changed =
+      this.settings?.enabled !== settings.enabled ||
       this.settings?.cardOverlaysEnabled !== settings.cardOverlaysEnabled ||
       this.settings?.showOnSaleOverlay !== settings.showOnSaleOverlay ||
       this.settings?.showActiveAuctionsOverlay !==
@@ -104,17 +93,28 @@ export class CardOverlays {
     this.settings = settings;
     if (changed) this.invalidate();
   }
-  invalidate() {
+  invalidate(clear = true) {
     this.generation++;
     this.notBefore = 0;
     clearTimeout(this.timer);
     this.provider.reset();
     this.queue.clear();
-    for (const entry of this.entries.values()) this.remove(entry);
-    this.entries.clear();
+    for (const entry of this.entries.values()) {
+      if (clear) this.remove(entry);
+      else {
+        entry.done = false;
+        entry.loading = false;
+        if (entry.visible) this.queue.add(entry);
+      }
+    }
+    if (clear) this.entries.clear();
     this.schedule();
   }
-  signals(context: CardContext, settings: Settings) {
+  signals(
+    context: CardContext,
+    settings: Settings,
+    onProgress?: (signals: CardSignals) => void,
+  ) {
     return this.provider.get(
       context.subjectId,
       settings,
@@ -123,11 +123,14 @@ export class CardOverlays {
         : context.variant.veil
           ? "veil"
           : "plain",
+      onProgress,
+      "foreground",
     );
   }
   private enabled() {
     return (
-      this.settings?.cardOverlaysEnabled &&
+      this.settings?.enabled &&
+      this.settings.cardOverlaysEnabled &&
       (this.settings?.showSaleHistoryOverlay ||
         this.settings?.showOnSaleOverlay ||
         this.settings?.showActiveAuctionsOverlay ||
@@ -143,16 +146,22 @@ export class CardOverlays {
       this.scan();
     });
   }
-  private scan() {
+  private scan(changes?: PageChanges) {
     if (!this.enabled()) return;
-    const targets = cardOverlayTargets();
+    const targets = new Map<HTMLElement, CardContext>();
+    for (const scope of !changes || changes.full ? [document] : changes.roots)
+      for (const [root, context] of cardOverlayTargets(document, scope))
+        targets.set(root, context);
     for (const [root, entry] of this.entries) {
-      const next = targets.get(root);
+      if (changes && !affected(root, changes)) continue;
+      const next =
+        root.isConnected && cardOverlaysAllowed(root)
+          ? resolveCard(root)
+          : null;
       if (
         !next ||
         contextKey(next) !== entry.key ||
-        !root.getClientRects().length ||
-        getComputedStyle(root).visibility === "hidden"
+        root.closest('[hidden],[inert],[aria-hidden="true"]')
       ) {
         this.remove(entry);
         this.entries.delete(root);
@@ -163,12 +172,7 @@ export class CardOverlays {
       }
     }
     for (const [root, context] of targets) {
-      if (
-        this.entries.has(root) ||
-        !root.getClientRects().length ||
-        getComputedStyle(root).visibility === "hidden"
-      )
-        continue;
+      if (this.entries.has(root)) continue;
       const entry: Entry = {
         root,
         context,
@@ -211,7 +215,12 @@ export class CardOverlays {
     );
   }
   private pump() {
-    if (this.running || !this.enabled() || document.hidden || !this.queue.size)
+    if (
+      this.running >= 2 ||
+      !this.enabled() ||
+      document.hidden ||
+      !this.queue.size
+    )
       return;
     if (Date.now() < this.notBefore) {
       if (Number.isFinite(this.notBefore)) {
@@ -222,20 +231,27 @@ export class CardOverlays {
     }
     const entry = this.queue.values().next().value!;
     this.queue.delete(entry);
-    if (!entry.visible || !this.current(entry, this.generation)) {
+    if (
+      !entry.visible ||
+      entry.loading ||
+      !this.current(entry, this.generation)
+    ) {
       this.pump();
       return;
     }
     const generation = this.generation,
       settings = this.settings!;
-    this.running = true;
+    this.running++;
+    entry.loading = true;
     const finish = entry.context.variant.fullArt
       ? "fullart"
       : entry.context.variant.veil
         ? "veil"
         : "plain";
     void this.provider
-      .get(entry.context.subjectId, settings, finish)
+      .get(entry.context.subjectId, settings, finish, (signals) => {
+        if (this.current(entry, generation)) this.render(entry, signals);
+      })
       .then(
         (signals) => {
           if (this.current(entry, generation)) {
@@ -253,26 +269,32 @@ export class CardOverlays {
         },
       )
       .finally(() => {
-        this.running = false;
-        clearTimeout(this.timer);
-        this.timer = setTimeout(() => this.pump(), 400);
+        this.running--;
+        if (generation === this.generation) entry.loading = false;
+        this.pump();
       });
+    this.pump();
   }
   private render(entry: Entry, signals: CardSignals) {
+    if (entry.signals === signals && entry.host?.isConnected) return;
+    entry.signals = signals;
     if (
       !signals.onSale &&
       !signals.activeAuctions &&
       !signals.saleHistory &&
       !signals.interestedFriends &&
       !signals.quest
-    )
+    ) {
+      entry.host?.remove();
+      entry.host = undefined;
       return;
-    const host = el("span");
+    }
+    const host = entry.host ?? el("span");
     host.setAttribute(OVERLAY_ATTR, "");
-    const shadow = host.attachShadow({ mode: "open" }),
+    const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" }),
       style = el("style");
     style.textContent = STYLE;
-    shadow.append(style);
+    shadow.replaceChildren(style);
     const top = el("div", "top-row"),
       bottom = el("div", "bottom-row");
     if (this.settings!.showOnSaleOverlay && signals.onSale) {
@@ -312,6 +334,6 @@ export class CardOverlays {
       entry.root.style.setProperty("position", "relative");
     }
     entry.host = host;
-    entry.root.append(host);
+    if (!host.isConnected) entry.root.append(host);
   }
 }

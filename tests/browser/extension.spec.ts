@@ -758,6 +758,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Sales Overlay",
       "Navigation hotkeys",
       "Connected account",
+      "Backup & restore",
     ]);
     const connection = options.locator("#connected-account"),
       albums = options.locator("#pinned-albums"),
@@ -770,6 +771,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Sales Overlay",
       "Navigation hotkeys",
       "Connected account",
+      "Backup & restore",
     ]);
     await expect(connection.getByLabel("Kosmora account")).toBeVisible();
     await expect(
@@ -824,6 +826,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       ["Sales Overlay", "sales-overlay"],
       ["Navigation hotkeys", "navigation-hotkeys"],
       ["Connected account", "connected-account"],
+      ["Backup & restore", "backup-restore"],
     ]) {
       await nav.getByRole("link", { name: label, exact: true }).click();
       await expect(options).toHaveURL(new RegExp(`#${id}$`));
@@ -3359,6 +3362,59 @@ test("all popup edges resize and autosave dimensions while preserving dirty sett
   }
   expect(writeRequests).toBe(0);
 });
+test("family badge links open your collection's family page by mouse and keyboard", async () => {
+  const families = [
+    { id: "film-television.actors", name: "Film and Television Actors" },
+    { id: "space.astronomy", name: "Astronomy" },
+  ];
+  await page.route("**/api/collection/*", async (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    await route.fulfill({ json: { ...card(id), families } });
+  });
+  await page.route("**/families/*", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<html><body><h1>Family collection</h1></body></html>",
+    }),
+  );
+  try {
+    for (const keyboard of [false, true]) {
+      await page.goto(`https://kosmora.io/packs/open?recap=1&batch=${OPENING}`);
+      await page.locator(".ko-grid > li").first().hover();
+      const popup = page.locator("#kosmore-root");
+      const list = popup.getByRole("list", {
+        name: "Card families",
+        exact: true,
+      });
+      const link = list.getByRole("link", {
+        name: "Film and Television Actors",
+        exact: true,
+      });
+      await expect(link).toHaveAttribute(
+        "href",
+        "/families/film-television.actors",
+      );
+      await expect(
+        list.getByRole("link", { name: "Astronomy", exact: true }),
+      ).toHaveAttribute("href", "/families/space.astronomy");
+      if (keyboard) {
+        await link.focus();
+        await link.press("Enter");
+      } else await link.click();
+      await expect(page).toHaveURL(
+        "https://kosmora.io/families/film-television.actors",
+      );
+      await expect(
+        page.getByRole("heading", { name: "Family collection" }),
+      ).toBeVisible();
+      expect(writeRequests).toBe(0);
+    }
+  } finally {
+    await page.unroute("**/api/collection/*");
+    await page.unroute("**/families/*");
+  }
+});
+
 test("tooltip header shows family badges and matching inline market prices independently of overlay and stat settings", async () => {
   await worker.evaluate(async () => {
     const saved = (await chrome.storage.local.get("kosmore.settings"))[
@@ -4494,6 +4550,208 @@ test("sale screens show only badges for confirmed market history and active auct
     await page.unroute("**/api/auctions?**");
   }
 });
+test("performance: visible cards load concurrently without per-card pauses or full scans for unrelated updates", async () => {
+  await worker.evaluate(async () => {
+    const saved = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": { ...saved, showOnSaleOverlay: true },
+    });
+  });
+  let active = 0,
+    peak = 0,
+    requests = 0,
+    firstRequest = 0;
+  await page.route("**/api/collection/*", async (route) => {
+    if (!firstRequest) firstRequest = Date.now();
+    requests++;
+    peak = Math.max(peak, ++active);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    const data = card(id);
+    await route.fulfill({
+      json: {
+        ...data,
+        copies: data.copies.map((copy) => ({
+          ...copy,
+          auction_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        })),
+      },
+    });
+    active--;
+  });
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await page.mouse.move(0, 0);
+    await page.locator("main").evaluate(
+      (main, html) => {
+        main.innerHTML = html;
+      },
+      '<div id="clock">Loading</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">' +
+        Array.from(
+          { length: 20 },
+          (_, i) =>
+            '<a href="/card/' +
+            (100 + i) +
+            '">' +
+            face(String(100 + i), "Card " + i) +
+            "</a>",
+        ).join("") +
+        "</div><style>.kc-img{height:50px}.kc-name{font-size:12px;margin:0}.kc-article{padding:2px}</style>",
+    );
+    await expect(
+      page.locator("[data-kosmore-card-overlays] .on-sale"),
+    ).toHaveCount(20);
+    const elapsed = Date.now() - firstRequest;
+    expect(peak).toBeGreaterThanOrEqual(2);
+    expect(peak).toBeLessThanOrEqual(3);
+    expect(elapsed).toBeLessThan(4000);
+    expect(requests).toBeGreaterThanOrEqual(20);
+    console.log(
+      JSON.stringify({
+        visibleCards: 20,
+        overlayLoadMs: elapsed,
+        peakConcurrentCardReads: peak,
+      }),
+    );
+    const scans = await page.evaluate(async () => {
+      let scans = 0;
+      const query = Document.prototype.querySelectorAll;
+      Document.prototype.querySelectorAll = function <
+        T extends Element = Element,
+      >(selector: string): NodeListOf<T> {
+        if (selector.includes(".kc-article")) scans++;
+        return query.call(this, selector) as NodeListOf<T>;
+      };
+      try {
+        document.querySelector("#clock")!.textContent = "Updated";
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+        return scans;
+      } finally {
+        Document.prototype.querySelectorAll = query;
+      }
+    });
+    expect(scans).toBe(0);
+    expect(writeRequests).toBe(0);
+  } finally {
+    await page.unroute("**/api/collection/*");
+  }
+});
+
+test("performance: repeat hovers reuse reads and album data loads only when pinned albums need it", async () => {
+  const counts = new Map<string, number>();
+  const count = (request: import("@playwright/test").Request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/"))
+      counts.set(
+        url.pathname + url.search,
+        (counts.get(url.pathname + url.search) ?? 0) + 1,
+      );
+  };
+  page.on("request", count);
+  try {
+    await page.goto("https://kosmora.io/collection");
+    const cardRoot = page.locator(".kc-article");
+    const popup = page.locator("#kosmore-root");
+    await cardRoot.hover();
+    await expect(popup.locator(".listed-for")).toContainText("$10");
+    await expect(popup.locator(".album-add")).toHaveCount(2);
+    await expect(popup.locator(".last-sold")).toContainText("$12");
+    const first = [...counts.entries()];
+    await page.keyboard.press("Escape");
+    await page.mouse.move(0, 0);
+    await cardRoot.hover();
+    await expect(popup.locator(".listed-for")).toContainText("$10");
+    await expect(popup.locator(".album-add")).toHaveCount(2);
+    expect([...counts.entries()]).toEqual(first);
+    await page.keyboard.press("Escape");
+    await worker.evaluate(async () => {
+      const saved = (await chrome.storage.local.get("kosmore.settings"))[
+        "kosmore.settings"
+      ] as object;
+      await chrome.storage.local.set({
+        "kosmore.settings": { ...saved, pinnedAlbums: {} },
+      });
+    });
+    await page.reload();
+    counts.clear();
+    await cardRoot.hover();
+    await expect(
+      popup.getByRole("button", { name: "Choose pinned albums", exact: true }),
+    ).toBeVisible();
+    await expect(popup.locator(".listed-for")).toContainText("$10");
+    expect(
+      [...counts.keys()].some((path) => path.startsWith("/api/albums")),
+    ).toBe(false);
+    // Enabling pins in an already open popup must trigger its deferred album read.
+    await worker.evaluate(async (a) => {
+      const saved = (await chrome.storage.local.get("kosmore.settings"))[
+        "kosmore.settings"
+      ] as object;
+      await chrome.storage.local.set({
+        "kosmore.settings": { ...saved, pinnedAlbums: { fixtureplayer: [a] } },
+      });
+    }, ALBUM_A);
+    await expect(popup.locator(".album-add")).toContainText(
+      "Space & discovery",
+    );
+    expect(
+      [...counts.keys()].some((path) => path.startsWith("/api/albums")),
+    ).toBe(true);
+    expect(writeRequests).toBe(0);
+  } finally {
+    page.off("request", count);
+  }
+});
+
+test("performance: quest badges appear before slow market results and survive a focus refresh", async () => {
+  await worker.evaluate(async () => {
+    const saved = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...saved,
+        showQuestOverlay: true,
+        showActiveAuctionsOverlay: true,
+      },
+    });
+  });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/auctions?**", async (route) => {
+    await held;
+    await route.fulfill({ json: auctionPage() });
+  });
+  try {
+    await page.goto("https://kosmora.io/collection");
+    const quest = page.locator("[data-kosmore-card-overlays] .quest");
+    await expect(quest).toBeVisible();
+    const host = await page
+      .locator("[data-kosmore-card-overlays]")
+      .elementHandle();
+    await expect(
+      page.locator("[data-kosmore-card-overlays] .auction"),
+    ).toHaveCount(0);
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    expect(await host!.evaluate((el) => el.isConnected)).toBe(true);
+    release();
+    await expect(
+      page.locator("[data-kosmore-card-overlays] .auction"),
+    ).toBeVisible();
+    expect(await host!.evaluate((el) => el.isConnected)).toBe(true);
+    expect(writeRequests).toBe(0);
+  } finally {
+    release();
+    await page.unroute("**/api/auctions?**");
+  }
+});
+
 test("persisted settings survive a browser restart", async () => {
   await worker.evaluate(async () => {
     await chrome.storage.local.set({ "kosmore.marketFinishes": ["veil"] });

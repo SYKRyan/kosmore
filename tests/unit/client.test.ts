@@ -22,6 +22,100 @@ it("honors server throttling without retrying or sending further requests during
   await expect(client.account()).rejects.toThrow("rate limiting");
   expect(fetcher).toHaveBeenCalledTimes(1);
 });
+it("briefly caches display account checks while actions still verify the server", async () => {
+  let handle = me.handle;
+  const fetcher = vi.fn(async () => Response.json({ ...me, handle }));
+  const client = new GameClient(fetcher as typeof fetch);
+  await Promise.all([
+    client.account(undefined, false),
+    client.account(undefined, false),
+  ]);
+  await client.account(undefined, false);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  handle = "OtherAccount";
+  expect((await client.account()).key).toBe("otheraccount");
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+it("discards late private reads from an account that changed during loading", async () => {
+  let handle = me.handle;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input) === "/api/me") return Response.json({ ...me, handle });
+    await held;
+    return Response.json(card());
+  });
+  const client = new GameClient(fetcher as typeof fetch);
+  await client.account();
+  const pending = client.insights("42");
+  const rejected = expect(pending).rejects.toThrow("account changed");
+  handle = "OtherAccount";
+  await client.account();
+  release();
+  await rejected;
+  await client.insights("42");
+  expect(
+    fetcher.mock.calls.filter(([path]) =>
+      String(path).startsWith("/api/collection/"),
+    ),
+  ).toHaveLength(2);
+});
+it("bounds concurrent network reads and stops queued fetches after a server cooldown", async () => {
+  const releases: (() => void)[] = [];
+  let active = 0,
+    peak = 0;
+  const fetcher = vi.fn(async () => {
+    peak = Math.max(peak, ++active);
+    await new Promise<void>((resolve) => releases.push(resolve));
+    active--;
+    return Response.json({}, { status: 429, headers: { "Retry-After": "30" } });
+  });
+  const client = new GameClient(fetcher as typeof fetch);
+  const tasks = Promise.allSettled(
+    Array.from({ length: 10 }, (_, i) => client.insights(String(i + 1))),
+  );
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+  for (const release of releases) release();
+  const results = await tasks;
+  expect(results.every((result) => result.status === "rejected")).toBe(true);
+  expect(fetcher).toHaveBeenCalledTimes(3);
+  expect(peak).toBe(3);
+});
+it("album updates retain unrelated price history while refreshing membership before writes", async () => {
+  const h = harness();
+  const client = new GameClient(async (input, init) => {
+    if (String(input).includes("/prices?"))
+      return Response.json({
+        prices: {
+          count: 0,
+          days: 30,
+          low: null,
+          median: null,
+          high: null,
+          sales: [],
+        },
+      });
+    return h.fetcher(input, init);
+  });
+  await client.account();
+  const history = await client.history("42", "plain");
+  await client.albums("42");
+  await client.add(
+    ALBUM_A,
+    {
+      id: COPY_A,
+      subjectId: "42",
+      state: "available",
+      variant: { veil: false, fullArt: false },
+    },
+    "fixtureplayer",
+  );
+  expect(await client.history("42", "plain")).toBe(history);
+  expect((await client.albums("42"))[0].contains).toBe(true);
+  expect(h.posts()).toBe(1);
+});
 function harness({
   contains = false,
   timeout = false,

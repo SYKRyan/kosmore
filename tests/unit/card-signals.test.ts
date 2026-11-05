@@ -11,6 +11,34 @@ const iconSettings = () => ({
   showLowestListingPriceOverlay: false,
 });
 afterEach(() => vi.unstubAllGlobals());
+it("publishes independent badges while market reads are pending and withholds a partial last-sale price", async () => {
+  const h = harness();
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  h.client.history.mockImplementation(async (_id, finish) => {
+    if (finish === "fullart") await held;
+    return parseHistory(prices(1), finish);
+  });
+  const updates = vi.fn();
+  const first = h.provider.get("42", defaults(), "plain", updates);
+  const secondUpdates = vi.fn();
+  const second = h.provider.get("42", defaults(), "veil", secondUpdates);
+  await vi.waitFor(() =>
+    expect(updates).toHaveBeenCalledWith(
+      expect.objectContaining({ quest: true, saleHistory: true }),
+    ),
+  );
+  expect(
+    updates.mock.calls.every(([signals]) => signals.lastSale === undefined),
+  ).toBe(true);
+  release();
+  expect((await first).lastSale).toBeDefined();
+  expect(await second).toEqual(await first);
+  expect(secondUpdates).toHaveBeenLastCalledWith(await first);
+  expect(h.client.history).toHaveBeenCalledTimes(3);
+});
 function harness() {
   const data: Record<string, unknown> = {
     "kosmore.friend.fixtureplayer.batu": {
@@ -191,7 +219,7 @@ it("shows On Sale only for your own listed copies, independently of public aucti
   expect(h.client.insights).toHaveBeenLastCalledWith(
     "42",
     expect.any(AbortSignal),
-    true,
+    false,
   );
   h.provider.reset();
   h.client.account.mockResolvedValue({
@@ -409,7 +437,8 @@ it("propagates server cooldowns instead of probing the remaining finishes", asyn
     h.provider.get("42", iconSettings(), "plain"),
   ).rejects.toMatchObject({ status: 429, retryAt });
   expect(h.client.history).toHaveBeenCalledTimes(1);
-  expect(h.client.friends).not.toHaveBeenCalled();
+  // Independent lookups may have started before the server returned a cooldown.
+  expect(h.client.friends).toHaveBeenCalledTimes(1);
 });
 it("resetting for a different account never reuses the prior account's friend matches", async () => {
   const h = harness();
@@ -470,7 +499,7 @@ it("pauses on quest throttling and discards a canceled catalog after reset", asy
   await expect(
     h.provider.get("42", iconSettings(), "plain"),
   ).rejects.toMatchObject({ status: 429, retryAt: 123 });
-  expect(h.client.history).not.toHaveBeenCalled();
+  expect(h.client.history).toHaveBeenCalledTimes(1);
   h.provider.reset();
   let release!: (ids: string[]) => void;
   h.client.questSubjects.mockImplementationOnce(

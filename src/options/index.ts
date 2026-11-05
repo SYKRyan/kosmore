@@ -4,6 +4,7 @@ import { StatSettings } from "./stat-settings";
 import { HotkeySettings } from "./hotkey-settings";
 import { settingsNavigation } from "./settings-navigation";
 import { SalesSettings, SALES_SETTINGS_KEYS } from "./sales-settings";
+import { BackupSettings } from "./backup-settings";
 import { hotkeyConflict } from "../shared/hotkeys";
 import { button, el, note } from "../content/ui";
 import {
@@ -23,7 +24,8 @@ let saved: Settings = defaults(),
   albums: Album[] = [],
   filter = "",
   sequence = 0,
-  busy = false;
+  busy = false,
+  settingsReady = false;
 const header = el("header", "header"),
   head = el("div");
 head.append(
@@ -513,6 +515,23 @@ groupControls({
     renderAlbums();
   },
 });
+const backupSettings = new BackupSettings({
+  isDirty: () => JSON.stringify(draft) !== JSON.stringify(saved),
+  isBusy: () => busy || !settingsReady,
+  setApplying: (applying) => {
+    busy = applying;
+    for (const group of settingsGroups)
+      if (group.host !== backupSettings.host) group.host.inert = applying;
+  },
+  imported: async () => {
+    saved = await readSettings();
+    draft = structuredClone(saved);
+    renderSettings();
+    renderAlbums();
+    for (const status of app.querySelectorAll(".savebar .status"))
+      status.textContent = "";
+  },
+});
 const settingsGroups = [
   {
     id: "hover-tooltip",
@@ -556,9 +575,19 @@ const settingsGroups = [
     host: connection,
     path: "M20 21v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2 M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
   },
+  {
+    id: "backup-restore",
+    label: "Backup & restore",
+    host: backupSettings.host,
+    path: "M12 3v12 M7 10l5 5 5-5 M4 15v6h16v-6",
+  },
 ];
 app.append(...settingsGroups.map((group) => group.host));
 document.body.prepend(settingsNavigation(settingsGroups));
+for (const event of ["input", "change", "click"])
+  app.addEventListener(event, () =>
+    queueMicrotask(() => backupSettings.refreshControls()),
+  );
 app.append(
   el(
     "p",
@@ -803,6 +832,7 @@ async function persist(
     return;
   }
   busy = true;
+  backupSettings.refreshControls();
   save.disabled = true;
   const values = Object.fromEntries(
     group.keys.map((key) => [key, structuredClone(draft[key])]),
@@ -821,6 +851,7 @@ async function persist(
   } finally {
     busy = false;
     save.disabled = false;
+    backupSettings.refreshControls();
   }
 }
 void readSettings()
@@ -829,9 +860,13 @@ void readSettings()
     draft = structuredClone(s);
     renderSettings();
     renderAlbums();
+    settingsReady = true;
+    backupSettings.refreshControls();
     return discover();
   })
   .catch((error) => {
+    settingsReady = true;
+    backupSettings.refreshControls();
     app.append(note(`Could not load settings: ${messageOf(error)}`, true));
   });
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -847,4 +882,5 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   saved.popupPosition = next.popupPosition;
   draft.popupPosition = next.popupPosition;
+  backupSettings.refreshControls();
 });

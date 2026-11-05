@@ -1,3 +1,4 @@
+import { observePage } from "./page-changes";
 import { selectedSocialFriend, type SocialFriend } from "../kosmora/social";
 import {
   friendReminderKey,
@@ -20,14 +21,7 @@ export class SocialReminders {
   private scheduled = false;
   constructor(private client: Pick<KosmoraClient, "account" | "families">) {}
   start() {
-    const observer = new MutationObserver(() => this.schedule());
-    observer.observe(document.body, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ["href", "class", "hidden", "aria-hidden"],
-    });
+    observePage(() => this.scan());
     window.addEventListener("popstate", () => this.schedule());
     window.addEventListener("focus", () => void this.checkAccount());
     document.addEventListener("visibilitychange", () => {

@@ -324,7 +324,12 @@ function _(e) {
 		let a = r[e];
 		typeof a == "number" && Number.isFinite(a) && (n[e] = Math.min(i, Math.max(t, Math.round(a))));
 	}
-	if (r.pinnedAlbums && typeof r.pinnedAlbums == "object") for (let [e, t] of Object.entries(r.pinnedAlbums)) /^[a-z0-9_]{1,24}$/.test(e) && Array.isArray(t) && (n.pinnedAlbums[e] = [...new Set(t.filter((e) => typeof e == "string" && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(e)))].slice(0, 200));
+	if (r.pinnedAlbums && typeof r.pinnedAlbums == "object") for (let [e, t] of Object.entries(r.pinnedAlbums)) /^[a-z0-9_]{1,24}$/.test(e) && Array.isArray(t) && Object.defineProperty(n.pinnedAlbums, e, {
+		enumerable: !0,
+		configurable: !0,
+		writable: !0,
+		value: [...new Set(t.filter((e) => typeof e == "string" && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(e)))].slice(0, 200)
+	});
 	return n;
 }
 async function v() {

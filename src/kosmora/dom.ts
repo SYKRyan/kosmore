@@ -6,11 +6,16 @@ export function cardOverlaysAllowed(root: Element): boolean {
 }
 export function cardOverlayTargets(
   doc: Document = document,
+  scope: Document | Element = doc,
 ): Map<HTMLElement, CardContext> {
   const targets = new Map<HTMLElement, CardContext>();
-  for (const root of doc.querySelectorAll<HTMLElement>(
-    '.kc-article,a.kc-link,a[href*="/card/"]',
-  )) {
+  const selector = '.kc-article,a.kc-link,a[href*="/card/"]';
+  const enclosing =
+    scope instanceof Element ? scope.closest<HTMLElement>(selector) : null;
+  for (const root of [
+    ...(enclosing ? [enclosing] : []),
+    ...scope.querySelectorAll<HTMLElement>(selector),
+  ]) {
     const container = root.matches(".kc-article")
       ? root
       : (root.querySelector<HTMLElement>(".kc-article") ?? root);

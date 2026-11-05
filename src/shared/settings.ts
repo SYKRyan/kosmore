@@ -94,15 +94,20 @@ export function parseSettings(value: unknown): Settings {
   if (v.pinnedAlbums && typeof v.pinnedAlbums === "object")
     for (const [account, ids] of Object.entries(v.pinnedAlbums)) {
       if (/^[a-z0-9_]{1,24}$/.test(account) && Array.isArray(ids))
-        d.pinnedAlbums[account] = [
-          ...new Set(
-            ids.filter(
-              (id): id is string =>
-                typeof id === "string" &&
-                /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id),
+        Object.defineProperty(d.pinnedAlbums, account, {
+          enumerable: true,
+          configurable: true,
+          writable: true,
+          value: [
+            ...new Set(
+              ids.filter(
+                (id): id is string =>
+                  typeof id === "string" &&
+                  /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id),
+              ),
             ),
-          ),
-        ].slice(0, 200);
+          ].slice(0, 200),
+        });
     }
   return d;
 }

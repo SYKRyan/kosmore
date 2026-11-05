@@ -29,6 +29,7 @@ import { SocialReminders } from "./social";
 import { CardOverlays } from "./card-overlays";
 import { NavigationHotkeys } from "./navigation";
 import { SalesOverlays } from "./sales-overlays";
+import { observePage } from "./page-changes";
 
 const client = new GameClient();
 new SocialReminders(client).start();
@@ -49,12 +50,9 @@ const preferencesReady = Promise.all([
   readMarketFinishes().catch(() => marketFinishes),
   request<PopupState>({ op: "popupState" })
     .then(parsePopupState)
-    .catch(() => pinnedState)
-    .then(async (state) => ({
-      state,
-      savedSettings: await readSettings().catch(() => settings),
-    })),
-]).then(([finishes, { savedSettings, state }]) => {
+    .catch(() => pinnedState),
+  readSettings().catch(() => settings),
+]).then(([finishes, state, savedSettings]) => {
   marketFinishes = finishes;
   settings = savedSettings;
   navigationHotkeys.start();
@@ -72,7 +70,6 @@ let activeRequest: AbortController | undefined,
 let headerSignalRequest = 0;
 let lastUrl = location.href,
   hovered = false,
-  scheduled = false,
   dialog: HTMLDialogElement | undefined;
 function cancelClose() {
   clearTimeout(closeTimer);
@@ -135,9 +132,9 @@ async function show(context: CardContext, fresh = false) {
   const valid = () =>
     !abort.signal.aborted && popup === view && current === context;
   try {
-    const account = await client.account(abort.signal);
+    const account = await client.account(abort.signal, fresh);
     if (!valid()) return;
-    view.setAccount(account, settings.pinnedAlbums[account.key] ?? []);
+    view.setAccount(account, settings.pinnedAlbums[account.key] ?? [], fresh);
     loadHeaderSignals(view, context, abort.signal);
     const detail = client.insights(context.subjectId, abort.signal, fresh);
     void detail.then(
@@ -170,24 +167,6 @@ async function show(context: CardContext, fresh = false) {
           if (valid()) view.setHistory(finish, new Error(messageOf(error)));
         },
       );
-    void client
-      .albums(context.subjectId, abort.signal)
-      .then(
-        (albums) => {
-          if (valid())
-            view.setAlbums(
-              account,
-              albums,
-              settings.pinnedAlbums[account.key] ?? [],
-            );
-        },
-        (error) => {
-          if (valid()) view.albumsFailed(error);
-        },
-      )
-      .catch((error) => {
-        if (valid()) view.albumsFailed(error);
-      });
   } catch (error) {
     if (valid()) {
       view.insightsFailed(error);
@@ -271,17 +250,18 @@ function loadHeaderSignals(
   const request = ++headerSignalRequest,
     requestedSettings = settings;
   view.setSignals();
+  const receive = (signals: import("./card-signals").CardSignals) => {
+    if (
+      !signal.aborted &&
+      popup === view &&
+      settings === requestedSettings &&
+      request === headerSignalRequest
+    )
+      view.setSignals(signals);
+  };
   void overlays
-    .signals(context, requestedSettings)
-    .then((signals) => {
-      if (
-        !signal.aborted &&
-        popup === view &&
-        settings === requestedSettings &&
-        request === headerSignalRequest
-      )
-        view.setSignals(signals);
-    })
+    .signals(context, requestedSettings, receive)
+    .then(receive)
     .catch(() => {});
 }
 function enter(target: Element) {
@@ -373,59 +353,53 @@ window.addEventListener("pagehide", hide);
 window.addEventListener("pageshow", (event) => {
   if (event.persisted) navigationAway();
 });
-const observer = new MutationObserver((records) => {
-  if (
-    scheduled ||
-    !records.some(
-      (r) => !(r.target instanceof Element && r.target.closest(`#${HOST_ID}`)),
-    )
-  )
+observePage(() => {
+  if (lastUrl !== location.href) {
+    checkUrl();
     return;
-  scheduled = true;
-  requestAnimationFrame(() => {
-    scheduled = false;
-    if (lastUrl !== location.href) {
-      checkUrl();
-      return;
-    }
-    if (popup && topDialog() !== dialog) {
-      if (popup.isPinned) {
-        dialog = topDialog();
-        popup.mount();
-      } else {
-        hide();
-        return;
-      }
-    }
-    if (popup?.isPinned && !popup.host.isConnected) popup.mount();
-    if (!current) return;
-    if (!current.anchor.isConnected) {
-      if (!popup?.isPinned) hide();
-      return;
-    }
-    const next = resolveCard(current.anchor);
-    if (!next) {
-      if (!popup?.isPinned) hide();
-      return;
-    }
-    if (contextKey(next) !== contextKey(current)) {
-      if (popup?.isPinned) {
-        current = next;
-        void show(next);
-        return;
-      }
-      const wasHovered = hovered;
+  }
+  if (popup && topDialog() !== dialog) {
+    if (popup.isPinned) {
+      dialog = topDialog();
+      popup.mount();
+    } else {
       hide();
-      if (wasHovered) enter(next.anchor);
+      return;
     }
-  });
+  }
+  if (popup?.isPinned && !popup.host.isConnected) popup.mount();
+  if (!current) return;
+  if (!current.anchor.isConnected) {
+    if (!popup?.isPinned) hide();
+    return;
+  }
+  const next = resolveCard(current.anchor);
+  if (!next) {
+    if (!popup?.isPinned) hide();
+    return;
+  }
+  if (contextKey(next) !== contextKey(current)) {
+    if (popup?.isPinned) {
+      current = next;
+      void show(next);
+      return;
+    }
+    const wasHovered = hovered;
+    hide();
+    if (wasHovered) enter(next.anchor);
+  }
 });
-observer.observe(document.body, {
-  subtree: true,
-  childList: true,
-  characterData: true,
-  attributes: true,
-  attributeFilter: ["class", "href", "src", "aria-label", "open", "hidden"],
+client.onAccountChange(() => {
+  navigationAway();
+  overlays.invalidate();
+  salesOverlays.invalidate();
+});
+const recheckAccount = () => {
+  void client.account().catch(() => {});
+};
+window.addEventListener("focus", recheckAccount);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) recheckAccount();
 });
 chrome.storage.onChanged.addListener((changes, area) => {
   if (

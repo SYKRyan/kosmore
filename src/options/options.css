@@ -481,6 +481,59 @@ input.section-switch:checked::before {
 .settings-subsetting:has(input:disabled) {
   opacity: 0.55;
 }
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.backup-settings input[type="file"] {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 10px;
+  font-size: 12px;
+}
+.backup-preview {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid #6b5180;
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.backup-preview h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #f3dfb4;
+}
+.backup-summary {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 3fr);
+  gap: 6px 16px;
+  font-size: 13px;
+}
+.backup-summary dt {
+  color: #a995be;
+}
+.backup-summary dd {
+  margin: 0;
+}
+.backup-preview select {
+  margin-top: 6px;
+  max-width: 300px;
+}
+.backup-confirmation {
+  align-items: flex-start;
+  margin-top: 14px;
+  font-size: 13px;
+}
+.backup-preview[hidden],
+.backup-confirmation[hidden] {
+  display: none;
+}
+.backup-settings > .status {
+  margin-top: 14px;
+}
 @media (max-width: 1000px) {
   body {
     padding-left: 80px;

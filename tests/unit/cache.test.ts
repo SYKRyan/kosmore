@@ -51,3 +51,54 @@ it("does not retain failed reads or responses from a previous account epoch", as
   await pending;
   expect(await cache.get("a", async () => 3)).toBe(3);
 });
+it("canceling one reader leaves other consumers of the shared request alive", async () => {
+  const cache = new ReadCache();
+  const first = new AbortController();
+  let release!: (n: number) => void;
+  let shared!: AbortSignal;
+  const load = vi.fn((signal: AbortSignal) => {
+    shared = signal;
+    return new Promise<number>((resolve) => {
+      release = resolve;
+    });
+  });
+  const abandoned = cache.get("card", load, false, first.signal);
+  const remaining = cache.get("card", load);
+  const rejected = expect(abandoned).rejects.toMatchObject({
+    name: "AbortError",
+  });
+  first.abort();
+  await rejected;
+  expect(shared.aborted).toBe(false);
+  release(42);
+  expect(await remaining).toBe(42);
+  expect(await cache.get("card", load)).toBe(42);
+  expect(load).toHaveBeenCalledTimes(1);
+});
+it("aborts work with no remaining readers and lets a new reader start immediately", async () => {
+  const cache = new ReadCache();
+  const controller = new AbortController();
+  let shared!: AbortSignal;
+  let release!: (n: number) => void;
+  const pending = cache.get(
+    "card",
+    (signal) => {
+      shared = signal;
+      return new Promise<number>((resolve) => {
+        release = resolve;
+      });
+    },
+    false,
+    controller.signal,
+  );
+  const rejected = expect(pending).rejects.toMatchObject({
+    name: "AbortError",
+  });
+  controller.abort();
+  await rejected;
+  expect(shared.aborted).toBe(true);
+  expect(await cache.get("card", async () => 2)).toBe(2);
+  release(1);
+  await Promise.resolve();
+  expect(await cache.get("card", async () => 3)).toBe(2);
+});
