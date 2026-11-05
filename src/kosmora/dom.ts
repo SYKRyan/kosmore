@@ -34,11 +34,13 @@ export function resolveCard(
 ): CardContext | null {
   if (target.closest(`#${HOST_ID},.kc-back,[hidden]`)) return null;
   const picker = target.closest<HTMLElement>(".pick");
-  const sellPicker = picker?.closest(
-    '[data-testid="sell-sheet-grid"], [data-testid="sell-pick-grid"]',
-  )
-    ? picker
-    : null;
+  // The shared Pickable overlays its card with a sibling selection button,
+  // including collection multi-select entered by long press.
+  const pickable =
+    picker?.querySelector("button.pick-hit") &&
+    picker.querySelector(".kc-article")
+      ? picker
+      : null;
   const batchHead =
     doc.location.pathname === "/market/sell/batch" &&
     !target.closest(
@@ -74,7 +76,7 @@ export function resolveCard(
     target.closest<HTMLElement>(".kc-article") ??
     summary?.querySelector<HTMLElement>(".kc-article") ??
     reveal?.querySelector<HTMLElement>(".ko-face-front .kc-article");
-  const root = sellPicker ?? batchHead ?? activityLink ?? article ?? linked;
+  const root = pickable ?? batchHead ?? activityLink ?? article ?? linked;
   if (!root) return null;
   if (root.closest('[aria-hidden="true"],[hidden],[inert]')) return null;
   if (root.closest(".ko-face-back")) return null;
@@ -108,7 +110,7 @@ export function resolveCard(
   const pageCopy =
     url.pathname === `/card/${id}` ? url.searchParams.get("copy") : null;
   const copyId =
-    activityLink || batchHead || sellPicker
+    activityLink || batchHead || pickable
       ? null
       : (linkUrl?.searchParams.get("copy") ?? pageCopy);
   const openingIds =

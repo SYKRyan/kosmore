@@ -153,6 +153,48 @@ it("resolves Sell Many picker hit targets and keyboard focus to the underlying f
   document.querySelector(".kc-article")!.remove();
   expect(resolveCard(hit)).toBeNull();
 });
+it("resolves shared multi-select overlays outside the Sell picker", () => {
+  for (const path of [
+    "/collection",
+    "/albums/fixture",
+    "/friends/batu/collection",
+  ]) {
+    history.replaceState(null, "", path);
+    document.body.innerHTML = `<ul>${sellPickerTile("42", "Northern Lights", "kc-veil")}${sellPickerTile("46", "Andromeda", "kc-fa")}</ul>`;
+    const picks = document.querySelectorAll<HTMLElement>(".pick");
+    for (const [index, id, variant] of [
+      [0, "42", { veil: true, fullArt: false }],
+      [1, "46", { veil: false, fullArt: true }],
+    ] as const) {
+      const pick = picks[index],
+        hit = pick.querySelector("button")!;
+      hit.innerHTML = '<span aria-hidden="true">Select</span>';
+      hit.setAttribute("aria-pressed", index === 0 ? "true" : "false");
+      for (const target of [
+        pick,
+        hit,
+        hit.firstElementChild!,
+        pick.querySelector("img")!,
+      ])
+        expect(resolveCard(target)).toMatchObject({
+          subjectId: id,
+          variant,
+          anchor: pick,
+          copyId: undefined,
+        });
+      expect(contextKey(resolveCard(hit)!)).toBe(
+        contextKey(resolveCard(pick.querySelector("img")!)!),
+      );
+      for (const attribute of ["hidden", "inert", "aria-hidden"]) {
+        pick.setAttribute(attribute, attribute === "aria-hidden" ? "true" : "");
+        expect(resolveCard(hit)).toBeNull();
+        pick.removeAttribute(attribute);
+      }
+      pick.querySelector(".kc-article")!.remove();
+      expect(resolveCard(hit)).toBeNull();
+    }
+  }
+});
 it("resolves batch-sale thumbnails and names without treating price/copy controls as cards", () => {
   history.replaceState(null, "", "/market/sell/batch?s=46.f");
   document.body.innerHTML = `<ul class="bsell-list">${batchSellRow("46", "Andromeda", "kc-fa")}</ul>`;

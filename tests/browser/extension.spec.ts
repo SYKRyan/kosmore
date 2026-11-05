@@ -15,6 +15,7 @@ import { socialFixture } from "../fixtures/social";
 import { familyCatalog } from "../fixtures/families";
 import { NAVIGATION } from "../../src/shared/hotkeys";
 import { sellManyFixture } from "../fixtures/sell-many";
+import { multiSelectFixture } from "../fixtures/multi-select";
 import {
   activityRow,
   marketActivityFixture,
@@ -2138,6 +2139,59 @@ test("market activity detection follows replaced rows and leaves action controls
   await row.locator(".mk-act-name").hover();
   await expect(popup.locator("h2")).toHaveText("Cassini");
   await expect(popup.locator(".subtitle")).toContainText("No. 48 · Shiny");
+  expect(writeRequests).toBe(0);
+});
+test("long-press multi-select supports popup hover, focus and pinning while preserving selection", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  await page.route("https://kosmora.io/collection?multi-select", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: multiSelectFixture(),
+    }),
+  );
+  await page.goto("https://kosmora.io/collection?multi-select");
+  const popup = page.locator("#kosmore-root"),
+    picks = page.locator(".pick-hit");
+  await page.locator("a.kc-link").first().hover();
+  await page.mouse.down();
+  await expect(picks).toHaveCount(2);
+  await page.mouse.up();
+  for (const [index, name, finish] of [
+    [0, "Northern Lights", "Shiny"],
+    [1, "Andromeda", "Full art"],
+  ] as const) {
+    await page.mouse.move(10, 10);
+    await picks.nth(index).hover();
+    await expect(popup.locator("h2")).toHaveText(name);
+    await expect(popup.locator(".subtitle")).toContainText(finish);
+    await popup.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(popup.locator(".sales li")).toHaveCount(5);
+    await page.keyboard.press("Escape");
+    await picks.nth(index).focus();
+    await expect(popup.locator("h2")).toHaveText(name);
+    await page.keyboard.press("Escape");
+  }
+  await picks.nth(0).hover();
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  const header = (await popup.locator(".top").boundingBox())!;
+  await page.mouse.move(header.x + 25, header.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(1040, 45, { steps: 5 });
+  await page.mouse.up();
+  const before = await popup.boundingBox();
+  await picks.nth(1).hover();
+  await expect(popup.locator("h2")).toHaveText("Andromeda");
+  expect(await popup.boundingBox()).toEqual(before);
+  await expect(picks.nth(0)).toHaveAttribute("aria-pressed", "true");
+  await expect(picks.nth(1)).toHaveAttribute("aria-pressed", "false");
+  await page.screenshot({
+    path: "test-results/screenshots/multi-select-popup.png",
+  });
+  await page.keyboard.press("Escape");
+  await picks.nth(1).click();
+  await expect(picks.nth(1)).toHaveAttribute("aria-pressed", "true");
+  await picks.nth(0).click();
+  await expect(picks.nth(0)).toHaveAttribute("aria-pressed", "false");
   expect(writeRequests).toBe(0);
 });
 test("Sell Many picker supports hover and focus without selecting cards or closing its dialog", async () => {

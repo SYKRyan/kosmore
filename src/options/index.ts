@@ -331,7 +331,7 @@ app.append(
   el(
     "p",
     "bottom",
-    "KosMore 0.2 · Settings stay in this browser. Card and market data come from Kosmora.",
+    "KosMore 0.2.1 · Settings stay in this browser. Card and market data come from Kosmora.",
   ),
 );
 function renderSettings() {
