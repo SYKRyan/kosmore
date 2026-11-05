@@ -5,6 +5,7 @@ import {
   resolveCard,
 } from "../../src/kosmora/dom";
 import { face, OPENING } from "../fixtures/data";
+import { batchSellRow, sellPickerTile } from "../fixtures/sell-many";
 import {
   activityRow,
   marketActivityFixture,
@@ -135,4 +136,40 @@ it("keeps hidden rows, mystery backs and unrelated decorative cards excluded", (
   document.querySelector(".kc-article")!.outerHTML =
     '<div class="kc-back">Mystery card</div>';
   expect(resolveCard(document.querySelector(".mk-act-name")!)).toBeNull();
+});
+it("resolves Sell Many picker hit targets and keyboard focus to the underlying face", () => {
+  history.replaceState(null, "", "/market");
+  document.body.innerHTML = `<ul data-testid="sell-sheet-grid">${sellPickerTile("42", "Northern Lights", "kc-veil")}</ul>`;
+  const hit = document.querySelector(".pick-hit")!;
+  expect(resolveCard(hit)).toMatchObject({
+    subjectId: "42",
+    name: "Northern Lights",
+    variant: { veil: true, fullArt: false },
+    anchor: document.querySelector(".pick"),
+  });
+  expect(resolveCard(document.querySelector(".kc-img")!)?.anchor).toBe(
+    resolveCard(hit)?.anchor,
+  );
+  document.querySelector(".kc-article")!.remove();
+  expect(resolveCard(hit)).toBeNull();
+});
+it("resolves batch-sale thumbnails and names without treating price/copy controls as cards", () => {
+  history.replaceState(null, "", "/market/sell/batch?s=46.f");
+  document.body.innerHTML = `<ul class="bsell-list">${batchSellRow("46", "Andromeda", "kc-fa")}</ul>`;
+  for (const target of [
+    document.querySelector(".kc-img")!,
+    document.querySelector(".bsell-name")!,
+  ])
+    expect(resolveCard(target)).toMatchObject({
+      subjectId: "46",
+      name: "Andromeda",
+      variant: { veil: false, fullArt: true },
+      anchor: document.querySelector(".bsell-head"),
+      copyId: undefined,
+    });
+  for (const target of document.querySelectorAll("button, input"))
+    expect(resolveCard(target)).toBeNull();
+  expect(cardOverlayTargets().size).toBe(0);
+  document.querySelector(".bsell-row")!.setAttribute("hidden", "");
+  expect(resolveCard(document.querySelector(".kc-img")!)).toBeNull();
 });

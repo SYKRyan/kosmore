@@ -2,7 +2,7 @@ import type { CardContext } from "../shared/types";
 export const HOST_ID = "kosmore-root";
 export const OVERLAY_ATTR = "data-kosmore-card-overlays";
 export function cardOverlaysAllowed(root: Element): boolean {
-  return !root.closest(".md-turn, .md-bids, .md-sale");
+  return !root.closest(".md-turn, .md-bids, .md-sale, .bsell-row");
 }
 export function cardOverlayTargets(
   doc: Document = document,
@@ -33,6 +33,19 @@ export function resolveCard(
   doc: Document = document,
 ): CardContext | null {
   if (target.closest(`#${HOST_ID},.kc-back,[hidden]`)) return null;
+  const picker = target.closest<HTMLElement>(".pick");
+  const sellPicker = picker?.closest(
+    '[data-testid="sell-sheet-grid"], [data-testid="sell-pick-grid"]',
+  )
+    ? picker
+    : null;
+  const batchHead =
+    doc.location.pathname === "/market/sell/batch" &&
+    !target.closest(
+      "button, input, select, textarea, [role='button'], [role='combobox']",
+    )
+      ? target.closest<HTMLElement>(".bsell-row .bsell-head")
+      : null;
   // Activity thumbnails are decorative to screen readers, but their outer
   // auction links are visible interactive cards with an independently readable ID.
   const activityLink =
@@ -61,7 +74,7 @@ export function resolveCard(
     target.closest<HTMLElement>(".kc-article") ??
     summary?.querySelector<HTMLElement>(".kc-article") ??
     reveal?.querySelector<HTMLElement>(".ko-face-front .kc-article");
-  const root = activityLink ?? article ?? linked;
+  const root = sellPicker ?? batchHead ?? activityLink ?? article ?? linked;
   if (!root) return null;
   if (root.closest('[aria-hidden="true"],[hidden],[inert]')) return null;
   if (root.closest(".ko-face-back")) return null;
@@ -94,9 +107,10 @@ export function resolveCard(
   const url = new URL(doc.location.href);
   const pageCopy =
     url.pathname === `/card/${id}` ? url.searchParams.get("copy") : null;
-  const copyId = activityLink
-    ? null
-    : (linkUrl?.searchParams.get("copy") ?? pageCopy);
+  const copyId =
+    activityLink || batchHead || sellPicker
+      ? null
+      : (linkUrl?.searchParams.get("copy") ?? pageCopy);
   const openingIds =
     url.pathname === "/packs/open"
       ? (url.searchParams.get("batch") ?? url.searchParams.get("id") ?? "")
@@ -122,6 +136,8 @@ export function resolveCard(
   return {
     subjectId: id,
     name:
+      (batchHead?.querySelector(".bsell-name")?.textContent?.trim() ||
+        undefined) ??
       (activityLink
         ?.querySelector(".mk-act-name > b, .md-lot-name > b")
         ?.textContent?.trim() ||

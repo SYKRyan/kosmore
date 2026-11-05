@@ -238,7 +238,7 @@ export class Popup {
     tabContent.append(this.market, this.tradeArea, this.notesArea);
     const tabWorkspace = el("div", "tab-workspace");
     tabWorkspace.append(tabs, tabContent);
-    body.append(this.statArea, this.albumArea, tabWorkspace);
+    body.append(this.albumArea, this.statArea, tabWorkspace);
     const footer = el("footer", "footer");
     footer.append(
       el("span", "", "Kosmora card companion"),

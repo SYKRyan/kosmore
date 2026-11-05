@@ -14,6 +14,7 @@ import { launchTestBrowser } from "./browser";
 import { socialFixture } from "../fixtures/social";
 import { familyCatalog } from "../fixtures/families";
 import { NAVIGATION } from "../../src/shared/hotkeys";
+import { sellManyFixture } from "../fixtures/sell-many";
 import {
   activityRow,
   marketActivityFixture,
@@ -40,6 +41,7 @@ let context: BrowserContext,
 let variantFailure = false,
   familyCatalogFailure = false,
   legacyMarket = false,
+  sellMany = false,
   holdSlow = false,
   inventoryEmpty = false,
   writeRequests = 0,
@@ -139,6 +141,20 @@ test.beforeAll(async () => {
       });
       return;
     }
+    if (path === "/market/sell/batch") {
+      await route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: sellManyFixture(true),
+      });
+      return;
+    }
+    if (path === "/market" && sellMany) {
+      await route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: sellManyFixture(),
+      });
+      return;
+    }
     if (path === "/market") {
       await route.fulfill({
         contentType: "text/html; charset=utf-8",
@@ -166,6 +182,7 @@ test.beforeEach(async () => {
   variantFailure = false;
   familyCatalogFailure = false;
   legacyMarket = false;
+  sellMany = false;
   holdSlow = false;
   inventoryEmpty = false;
   membership = false;
@@ -397,7 +414,7 @@ test("saving disabled hover settings closes an existing popup in an already-open
   await options.close();
   expect(writeRequests).toBe(0);
 });
-test("price boxes precede existing stats and pinned albums precede market history", async () => {
+test("pinned albums precede stat boxes and market history", async () => {
   await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
   await page.locator(".ko-grid-open").first().hover();
   const popup = page.locator("#kosmore-root");
@@ -411,7 +428,7 @@ test("price boxes precede existing stats and pinned albums precede market histor
     await popup
       .locator(".body")
       .evaluate((body) => [...body.children].map((e) => e.className)),
-  ).toEqual(["stat-area", "pinned-albums", "tab-workspace", "footer"]);
+  ).toEqual(["pinned-albums", "stat-area", "tab-workspace", "footer"]);
   expect(
     await popup
       .locator(".stat-area")
@@ -2121,6 +2138,117 @@ test("market activity detection follows replaced rows and leaves action controls
   await row.locator(".mk-act-name").hover();
   await expect(popup.locator("h2")).toHaveText("Cassini");
   await expect(popup.locator(".subtitle")).toContainText("No. 48 · Shiny");
+  expect(writeRequests).toBe(0);
+});
+test("Sell Many picker supports hover and focus without selecting cards or closing its dialog", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  sellMany = true;
+  await page.goto("https://kosmora.io/market");
+  const dialog = page.locator("dialog.mk-sell-sheet"),
+    popup = page.locator("#kosmore-root");
+  for (const [name, id, variant] of [
+    ["Northern Lights", "42", "Shiny"],
+    ["Andromeda", "46", "Full art"],
+  ] as const) {
+    const pick = dialog.getByRole("button", {
+      name: `Pick ${name}`,
+      exact: true,
+    });
+    await pick.hover();
+    await expect(popup.locator("h2")).toHaveText(name);
+    await expect(popup.locator(".subtitle")).toContainText(
+      `No. ${id} · ${variant}`,
+    );
+    await expect(pick).toHaveAttribute("aria-pressed", "false");
+    await expect(popup.locator(".last-sold")).toContainText("Last Sold: $");
+    await popup.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect(popup.locator(".sales li")).toHaveCount(5);
+    await page.keyboard.press("Escape");
+    await expect(popup).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await pick.focus();
+    await expect(popup.locator("h2")).toHaveText(name);
+    await page.keyboard.press("Escape");
+  }
+  const first = dialog.getByRole("button", {
+    name: "Pick Northern Lights",
+    exact: true,
+  });
+  await first.hover();
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  const header = (await popup.locator(".top").boundingBox())!;
+  await page.mouse.move(header.x + 25, header.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(1040, 45, { steps: 5 });
+  await page.mouse.up();
+  const before = await popup.boundingBox();
+  await dialog
+    .getByRole("button", { name: "Pick Andromeda", exact: true })
+    .hover();
+  await expect(popup.locator("h2")).toHaveText("Andromeda");
+  expect(await popup.boundingBox()).toEqual(before);
+  await expect(first).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    dialog.getByRole("button", { name: "Pick Andromeda", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
+  await page.screenshot({
+    path: "test-results/screenshots/sell-many-picker.png",
+  });
+  await page.keyboard.press("Escape");
+  await first.click();
+  await expect(first).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("body")).not.toHaveAttribute(
+    "data-continued",
+    "true",
+  );
+  expect(writeRequests).toBe(0);
+});
+test("Sell Many batch thumbnails and names update the pinned popup without changing sale inputs", async () => {
+  await mkdir("test-results/screenshots", { recursive: true });
+  await page.goto(
+    "https://kosmora.io/market/sell/batch?s=42.v,46.f&from=market",
+  );
+  const rows = page.locator(".bsell-row"),
+    popup = page.locator("#kosmore-root");
+  await rows.nth(0).locator(".kc-img").hover();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  await expect(popup.locator(".subtitle")).toContainText("No. 42 · Shiny");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  const before = await popup.boundingBox();
+  for (const selector of [".bsell-name", ".kc-img"]) {
+    await rows.nth(1).locator(selector).hover();
+    await expect(popup.locator("h2")).toHaveText("Andromeda");
+    await expect(popup.locator(".subtitle")).toContainText("No. 46 · Full art");
+    expect(await popup.boundingBox()).toEqual(before);
+  }
+  await expect(
+    page.getByLabel("Starting price for Northern Lights", { exact: true }),
+  ).toHaveValue("12.00");
+  await expect(
+    page.getByLabel("Starting price for Andromeda", { exact: true }),
+  ).toHaveValue("12.00");
+  await expect(page.locator("body")).toHaveAttribute("data-copy-clicks", "0");
+  await page.screenshot({
+    path: "test-results/screenshots/sell-many-batch.png",
+  });
+  await page
+    .getByLabel("Starting price for Northern Lights", { exact: true })
+    .fill("17.50");
+  await expect(popup.locator("h2")).toHaveText("Andromeda");
+  await page
+    .getByRole("button", {
+      name: "Choose copy of Northern Lights",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator("body")).toHaveAttribute("data-copy-clicks", "1");
+  await expect(
+    page.getByLabel("Starting price for Northern Lights", { exact: true }),
+  ).toHaveValue("17.50");
+  await expect(page.locator("body")).not.toHaveAttribute(
+    "data-submitted",
+    "true",
+  );
   expect(writeRequests).toBe(0);
 });
 test("persisted settings survive a browser restart", async () => {
