@@ -14,6 +14,7 @@ export interface StatSnapshot {
   complete: boolean;
   priceNotice: string;
   cardError?: string;
+  activeAuctions?: number | Error;
 }
 export interface StatValue {
   value: string;
@@ -23,7 +24,7 @@ interface StatDefinition {
   id: string;
   label: string;
   description: string;
-  source: "prices" | "card" | "sales";
+  source: "prices" | "card" | "sales" | "auctions";
   preview: StatValue;
   read: (snapshot: StatSnapshot) => StatValue;
 }
@@ -102,6 +103,26 @@ export const STAT_CATALOG = [
         : "Incomplete while one or more finish groups are unavailable.",
     }),
   },
+  {
+    id: "activeAuctions",
+    label: "Active Auctions",
+    description:
+      "Open, unexpired market listings for this card across all finishes.",
+    source: "auctions",
+    preview: { value: "7" },
+    read: (s: StatSnapshot) => ({
+      value:
+        typeof s.activeAuctions === "number"
+          ? s.activeAuctions.toLocaleString()
+          : "—",
+      title:
+        s.activeAuctions instanceof Error
+          ? s.activeAuctions.message
+          : typeof s.activeAuctions === "number"
+            ? "Active listings for this exact card across all finishes. Counts are cached for up to 30 seconds; Refresh checks again."
+            : (s.cardError ?? "Loading active auctions…"),
+    }),
+  },
 ] as const satisfies readonly StatDefinition[];
 export type StatId = (typeof STAT_CATALOG)[number]["id"];
 export interface StatPreference {
@@ -135,6 +156,7 @@ export function statSnapshot(
   histories: HistoryState,
   finishes: Finish[],
   cardError?: string,
+  activeAuctions?: number | Error,
 ): StatSnapshot {
   const selected = FINISHES.filter((f) => finishes.includes(f));
   const known = selected.flatMap((f) => {
@@ -157,5 +179,6 @@ export function statSnapshot(
     complete,
     priceNotice,
     cardError,
+    activeAuctions,
   };
 }

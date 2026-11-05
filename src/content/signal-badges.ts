@@ -1,17 +1,14 @@
-import type { CardSignals } from "./card-signals";
-import type { Settings } from "../shared/types";
+import type { CardSignals, OverlaySettings } from "./card-signals";
 import { cardIcon } from "./icons";
 import { el } from "./ui";
 
-export function signalBadges(
-  signals: CardSignals,
-  settings: Pick<
-    Settings,
-    "showSaleHistoryOverlay" | "showFriendInterestOverlay" | "showQuestOverlay"
-  >,
-) {
+export function signalBadges(signals: CardSignals, settings: OverlaySettings) {
   const badges: HTMLElement[] = [];
-  const icon = (kind: "sale" | "friend" | "quest", label: string) => {
+  if (!settings.cardOverlaysEnabled) return badges;
+  const icon = (
+    kind: "auction" | "sale" | "friend" | "quest",
+    label: string,
+  ) => {
     const badge = el("span", `signal-badge ${kind}`);
     badge.setAttribute("role", "img");
     badge.setAttribute("aria-label", label);
@@ -19,6 +16,8 @@ export function signalBadges(
     badge.append(cardIcon(kind));
     badges.push(badge);
   };
+  if (settings.showActiveAuctionsOverlay && signals.activeAuctions)
+    icon("auction", "Active auctions on the market");
   if (settings.showSaleHistoryOverlay && signals.saleHistory)
     icon("sale", "Completed sales in the last 30 days");
   if (settings.showQuestOverlay && signals.quest)

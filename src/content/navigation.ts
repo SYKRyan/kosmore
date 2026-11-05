@@ -23,6 +23,7 @@ export class NavigationHotkeys {
   private request = 0;
   private profileRequest?: AbortController;
   private noticeTimer?: ReturnType<typeof setTimeout>;
+  private cancelAlerts?: () => void;
   constructor(
     private settings: () => Settings,
     private client: KosmoraClient,
@@ -32,7 +33,12 @@ export class NavigationHotkeys {
     document.addEventListener(
       "keydown",
       (event) => {
-        if (event.defaultPrevented || isTyping(event)) return;
+        if (
+          !this.settings().navigationHotkeysEnabled ||
+          event.defaultPrevented ||
+          isTyping(event)
+        )
+          return;
         const shortcut = shortcutFromEvent(event);
         if (!shortcut) return;
         const key = shortcutKey(shortcut),
@@ -50,6 +56,13 @@ export class NavigationHotkeys {
     );
     this.openPendingAlerts();
     window.addEventListener("hashchange", () => this.openPendingAlerts());
+  }
+  settingsChanged() {
+    if (!this.settings().navigationHotkeysEnabled) {
+      this.request++;
+      this.profileRequest?.abort();
+      this.cancelAlerts?.();
+    } else this.openPendingAlerts();
   }
   private async navigate(id: NavigationId) {
     const sequence = ++this.request,
@@ -73,7 +86,8 @@ export class NavigationHotkeys {
         if (
           sequence !== this.request ||
           location.href !== from ||
-          abort.signal.aborted
+          abort.signal.aborted ||
+          !this.settings().navigationHotkeysEnabled
         )
           return;
         path = `/u/${encodeURIComponent(account.handle)}`;
@@ -93,15 +107,22 @@ export class NavigationHotkeys {
     }
   }
   private openPendingAlerts() {
+    this.cancelAlerts?.();
+    if (!this.settings().navigationHotkeysEnabled) return;
     if (location.pathname !== "/market" || location.hash !== ALERTS_HASH)
       return;
     const observer = new MutationObserver(() => attempt());
     const finish = () => {
       observer.disconnect();
       clearTimeout(timer);
+      if (this.cancelAlerts === finish) this.cancelAlerts = undefined;
     };
     const attempt = () => {
-      if (location.pathname !== "/market" || location.hash !== ALERTS_HASH) {
+      if (
+        !this.settings().navigationHotkeysEnabled ||
+        location.pathname !== "/market" ||
+        location.hash !== ALERTS_HASH
+      ) {
         finish();
         return;
       }
@@ -122,6 +143,7 @@ export class NavigationHotkeys {
           "Market Alerts could not open. Use the Alerts button on Market, then try the shortcut again.",
         );
     }, 15000);
+    this.cancelAlerts = finish;
     observer.observe(document.body, {
       subtree: true,
       childList: true,

@@ -55,14 +55,11 @@
   display: none;
 }
 :host([data-empty]) .body,
-:host([data-empty]) .title-row,
-:host([data-empty]) .subtitle,
+:host([data-empty]) .title-row h2,
+:host([data-empty]) .header-details,
 :host([data-empty]) .last-sold,
 :host([data-empty]) .refresh-button {
   display: none;
-}
-:host([data-empty]) .brand {
-  margin-bottom: 0;
 }
 :host([data-empty]) .empty-state {
   display: grid;
@@ -283,18 +280,16 @@ h3 {
   border-bottom: 1px solid #ffffff0e;
 }
 .brand {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   color: #e2bf76;
   font-size: 10px;
   letter-spacing: 0.19em;
   text-transform: uppercase;
-  margin-bottom: 10px;
 }
 .actions {
   display: flex;
+  flex: 0 0 auto;
   gap: 6px;
+  margin-left: auto;
   letter-spacing: normal;
 }
 .actions button {
@@ -303,6 +298,14 @@ h3 {
 .subtitle {
   font-size: 11px;
   color: #ae9dc4;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.header-details {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-top: 5px;
 }
 .tab-workspace {
@@ -581,6 +584,36 @@ h3 {
   font-size: 9px;
   color: #c4b7d4;
   margin-top: 3px;
+}
+.album-tile {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+.album-add {
+  width: 100%;
+}
+.album-tile:has(.album-remove) .album-add small {
+  padding-right: 24px;
+  min-height: 20px;
+}
+.albums .album-remove {
+  position: absolute;
+  bottom: 4px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  min-height: 24px;
+  padding: 4px;
+  color: #f17683;
+  background: transparent;
+  border-color: transparent;
+}
+.albums .album-remove:hover:not(:disabled) {
+  color: #ffabb3;
+  background: #512334;
+  border-color: #b54d61;
 }
 .copy-label {
   display: block;

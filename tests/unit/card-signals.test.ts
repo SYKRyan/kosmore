@@ -24,6 +24,7 @@ function harness() {
     },
   });
   const client = {
+    activeAuctions: vi.fn(async () => 0),
     account: vi.fn(async () => ({
       key: "fixtureplayer",
       handle: "FixturePlayer",
@@ -37,6 +38,60 @@ function harness() {
   };
   return { client, data, provider: new CardSignalProvider(client) };
 }
+it("keeps current listings and completed sales independent, including ordinary auction failures", async () => {
+  const h = harness();
+  const settings = {
+    ...defaults(),
+    showFriendInterestOverlay: false,
+    showQuestOverlay: false,
+  };
+  h.client.activeAuctions.mockResolvedValue(2);
+  h.client.history.mockImplementation(async (_id, finish) =>
+    parseHistory(prices(0), finish),
+  );
+  expect(await h.provider.get("42", settings, "plain")).toMatchObject({
+    activeAuctions: true,
+    saleHistory: false,
+  });
+  h.provider.reset();
+  h.client.activeAuctions.mockResolvedValue(0);
+  h.client.history.mockImplementation(async (_id, finish) =>
+    parseHistory(prices(3), finish),
+  );
+  expect(await h.provider.get("42", settings, "plain")).toMatchObject({
+    activeAuctions: false,
+    saleHistory: true,
+  });
+  h.provider.reset();
+  h.client.activeAuctions.mockResolvedValue(2);
+  expect(await h.provider.get("42", settings, "plain")).toMatchObject({
+    activeAuctions: true,
+    saleHistory: true,
+  });
+  h.provider.reset();
+  h.client.activeAuctions.mockRejectedValue(new ApiError("Unavailable", 503));
+  expect(await h.provider.get("42", settings, "plain")).toMatchObject({
+    activeAuctions: false,
+    saleHistory: true,
+  });
+});
+it("honors the auction toggle independently and propagates market throttling", async () => {
+  const h = harness();
+  h.client.activeAuctions.mockResolvedValue(3);
+  await h.provider.get(
+    "42",
+    { ...defaults(), showActiveAuctionsOverlay: false },
+    "plain",
+  );
+  expect(h.client.activeAuctions).not.toHaveBeenCalled();
+  h.provider.reset();
+  h.client.activeAuctions.mockRejectedValue(
+    new ApiError("Slow down", 429, 123),
+  );
+  await expect(h.provider.get("42", defaults(), "plain")).rejects.toMatchObject(
+    { status: 429, retryAt: 123 },
+  );
+});
 it("deduplicates card checks and stops sale-history reads after the first confirmed positive", async () => {
   const h = harness();
   const result = await Promise.all([
@@ -44,12 +99,38 @@ it("deduplicates card checks and stops sale-history reads after the first confir
     h.provider.get("42", defaults(), "veil"),
   ]);
   expect(result).toEqual([
-    { saleHistory: true, interestedFriends: 1, quest: true },
-    { saleHistory: true, interestedFriends: 1, quest: true },
+    {
+      activeAuctions: false,
+      saleHistory: true,
+      interestedFriends: 1,
+      quest: true,
+    },
+    {
+      activeAuctions: false,
+      saleHistory: true,
+      interestedFriends: 1,
+      quest: true,
+    },
   ]);
   expect(h.client.account).toHaveBeenCalledTimes(1);
   expect(h.client.history).toHaveBeenCalledTimes(1);
   expect(h.client.insights).toHaveBeenCalledTimes(1);
+});
+it("does no game reads when the overlay section is disabled even with individual signals enabled", async () => {
+  const h = harness();
+  expect(
+    await h.provider.get(
+      "42",
+      { ...defaults(), cardOverlaysEnabled: false },
+      "plain",
+    ),
+  ).toEqual({
+    activeAuctions: false,
+    saleHistory: false,
+    interestedFriends: 0,
+    quest: false,
+  });
+  expect(h.client.account).not.toHaveBeenCalled();
 });
 it("does no game reads when all overlays are disabled", async () => {
   const h = harness();
@@ -57,13 +138,20 @@ it("does no game reads when all overlays are disabled", async () => {
     await h.provider.get(
       "42",
       {
+        cardOverlaysEnabled: true,
+        showActiveAuctionsOverlay: false,
         showSaleHistoryOverlay: false,
         showFriendInterestOverlay: false,
         showQuestOverlay: false,
       },
       "plain",
     ),
-  ).toEqual({ saleHistory: false, interestedFriends: 0, quest: false });
+  ).toEqual({
+    activeAuctions: false,
+    saleHistory: false,
+    interestedFriends: 0,
+    quest: false,
+  });
   expect(h.client.account).not.toHaveBeenCalled();
 });
 it("honors each toggle and skips card details when friends have no family preferences", async () => {
@@ -73,13 +161,20 @@ it("honors each toggle and skips card details when friends have no family prefer
     await h.provider.get(
       "42",
       {
+        cardOverlaysEnabled: true,
+        showActiveAuctionsOverlay: false,
         showSaleHistoryOverlay: false,
         showFriendInterestOverlay: true,
         showQuestOverlay: false,
       },
       "plain",
     ),
-  ).toEqual({ saleHistory: false, interestedFriends: 0, quest: false });
+  ).toEqual({
+    activeAuctions: false,
+    saleHistory: false,
+    interestedFriends: 0,
+    quest: false,
+  });
   expect(h.client.history).not.toHaveBeenCalled();
   expect(h.client.insights).not.toHaveBeenCalled();
   h.provider.reset();
@@ -90,13 +185,20 @@ it("honors each toggle and skips card details when friends have no family prefer
     await h.provider.get(
       "42",
       {
+        cardOverlaysEnabled: true,
+        showActiveAuctionsOverlay: false,
         showSaleHistoryOverlay: true,
         showFriendInterestOverlay: false,
         showQuestOverlay: false,
       },
       "veil",
     ),
-  ).toEqual({ saleHistory: false, interestedFriends: 0, quest: false });
+  ).toEqual({
+    activeAuctions: false,
+    saleHistory: false,
+    interestedFriends: 0,
+    quest: false,
+  });
   expect(h.client.history.mock.calls.map((c) => c[1])).toEqual([
     "veil",
     "plain",
@@ -108,6 +210,7 @@ it("does not invent sale signals on failures, and keeps a failed friend lookup s
   const h = harness();
   h.client.history.mockRejectedValue(new ApiError("Unavailable", 503));
   expect(await h.provider.get("42", defaults(), "plain")).toEqual({
+    activeAuctions: false,
     saleHistory: false,
     interestedFriends: 1,
     quest: true,
@@ -118,6 +221,7 @@ it("does not invent sale signals on failures, and keeps a failed friend lookup s
   );
   h.client.friends.mockRejectedValue(new ApiError("Unavailable", 503));
   expect(await h.provider.get("42", defaults(), "plain")).toEqual({
+    activeAuctions: false,
     saleHistory: true,
     interestedFriends: 0,
     quest: true,
@@ -148,17 +252,20 @@ it("resetting for a different account never reuses the prior account's friend ma
   expect(
     (await h.provider.get("42", defaults(), "plain")).interestedFriends,
   ).toBe(0);
-  expect(h.client.insights).toHaveBeenCalledTimes(1);
+  expect(h.client.insights).toHaveBeenCalledTimes(2);
 });
 
 it("reuses the quest catalog across cards, honors its toggle and keeps failures separate", async () => {
   const h = harness();
   const questOnly = {
+    cardOverlaysEnabled: true,
+    showActiveAuctionsOverlay: false,
     showSaleHistoryOverlay: false,
     showFriendInterestOverlay: false,
     showQuestOverlay: true,
   };
   expect(await h.provider.get("42", questOnly, "plain")).toEqual({
+    activeAuctions: false,
     saleHistory: false,
     interestedFriends: 0,
     quest: true,
@@ -172,6 +279,7 @@ it("reuses the quest catalog across cards, honors its toggle and keeps failures 
     new ApiError("Quest catalog unavailable", 403),
   );
   expect(await h.provider.get("42", defaults(), "plain")).toEqual({
+    activeAuctions: false,
     saleHistory: true,
     interestedFriends: 1,
     quest: false,
@@ -198,6 +306,7 @@ it("pauses on quest throttling and discards a canceled catalog after reset", asy
     "42",
     {
       ...defaults(),
+      showActiveAuctionsOverlay: false,
       showSaleHistoryOverlay: false,
       showFriendInterestOverlay: false,
     },

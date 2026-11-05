@@ -111,6 +111,17 @@ var s = [
 			value: e.saleCount === null ? "—" : `${e.saleCount.toLocaleString()}${e.complete ? "" : "+"}`,
 			title: e.complete ? "Completed sales across the selected market finish groups." : "Incomplete while one or more finish groups are unavailable."
 		})
+	},
+	{
+		id: "activeAuctions",
+		label: "Active Auctions",
+		description: "Open, unexpired market listings for this card across all finishes.",
+		source: "auctions",
+		preview: { value: "7" },
+		read: (e) => ({
+			value: typeof e.activeAuctions == "number" ? e.activeAuctions.toLocaleString() : "—",
+			title: e.activeAuctions instanceof Error ? e.activeAuctions.message : typeof e.activeAuctions == "number" ? "Active listings for this exact card across all finishes. Counts are cached for up to 30 seconds; Refresh checks again." : e.cardError ?? "Loading active auctions…"
+		})
 	}
 ], c = () => s.map(({ id: e }) => ({
 	id: e,
@@ -234,12 +245,19 @@ function f(e) {
 var p = "kosmore.settings", m = () => ({
 	schemaVersion: 1,
 	enabled: !0,
+	navigationHotkeysEnabled: !0,
+	cardOverlaysEnabled: !0,
+	statBoxesEnabled: !0,
+	pinnedAlbumsEnabled: !0,
+	closeTooltipWhenAddedToAlbum: !1,
+	applyCloseBehaviorToPinnedTooltips: !1,
 	hoverDelayMs: 300,
 	dismissDelayMs: 200,
 	popupWidth: 440,
 	popupHeight: 900,
 	popupPosition: null,
 	showSaleHistoryOverlay: !0,
+	showActiveAuctionsOverlay: !0,
 	showFriendInterestOverlay: !0,
 	showQuestOverlay: !0,
 	stats: c(),
@@ -251,7 +269,14 @@ function h(e) {
 	if (!e || typeof e != "object") return n;
 	let r = e;
 	if (r.schemaVersion !== 1) return n;
-	n.stats = l(r.stats), n.hotkeys = f(r.hotkeys), n.popupPosition = t(r.popupPosition), typeof r.enabled == "boolean" && (n.enabled = r.enabled), typeof r.showSaleHistoryOverlay == "boolean" && (n.showSaleHistoryOverlay = r.showSaleHistoryOverlay), typeof r.showFriendInterestOverlay == "boolean" && (n.showFriendInterestOverlay = r.showFriendInterestOverlay), typeof r.showQuestOverlay == "boolean" && (n.showQuestOverlay = r.showQuestOverlay), typeof r.hoverDelayMs == "number" && Number.isFinite(r.hoverDelayMs) && (n.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(r.hoverDelayMs))));
+	n.stats = l(r.stats), n.hotkeys = f(r.hotkeys), n.popupPosition = t(r.popupPosition), typeof r.enabled == "boolean" && (n.enabled = r.enabled);
+	for (let e of [
+		"navigationHotkeysEnabled",
+		"cardOverlaysEnabled",
+		"statBoxesEnabled",
+		"pinnedAlbumsEnabled"
+	]) typeof r[e] == "boolean" && (n[e] = r[e]);
+	typeof r.closeTooltipWhenAddedToAlbum == "boolean" && (n.closeTooltipWhenAddedToAlbum = r.closeTooltipWhenAddedToAlbum), typeof r.applyCloseBehaviorToPinnedTooltips == "boolean" && (n.applyCloseBehaviorToPinnedTooltips = r.applyCloseBehaviorToPinnedTooltips), typeof r.showSaleHistoryOverlay == "boolean" && (n.showSaleHistoryOverlay = r.showSaleHistoryOverlay), typeof r.showActiveAuctionsOverlay == "boolean" && (n.showActiveAuctionsOverlay = r.showActiveAuctionsOverlay), typeof r.showFriendInterestOverlay == "boolean" && (n.showFriendInterestOverlay = r.showFriendInterestOverlay), typeof r.showQuestOverlay == "boolean" && (n.showQuestOverlay = r.showQuestOverlay), typeof r.hoverDelayMs == "number" && Number.isFinite(r.hoverDelayMs) && (n.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(r.hoverDelayMs))));
 	for (let [e, t, i] of [
 		[
 			"dismissDelayMs",

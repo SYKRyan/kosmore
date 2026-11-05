@@ -12,11 +12,65 @@ it("keeps account pins isolated and ordered while discarding corrupt identifiers
   expect(s.pinnedAlbums.bob).toEqual([ALBUM_A]);
   expect(s.enabled).toBe(false);
 });
+it("enables new feature groups for older settings and keeps configuration when groups are disabled", () => {
+  const keys = [
+    "navigationHotkeysEnabled",
+    "cardOverlaysEnabled",
+    "statBoxesEnabled",
+    "pinnedAlbumsEnabled",
+  ] as const;
+  const previous = {
+    schemaVersion: 1,
+    pinnedAlbums: { alice: [ALBUM_A] },
+    stats: [{ id: "minPrice", enabled: false }],
+    hotkeys: {
+      home: { code: "KeyH", alt: true, ctrl: false, shift: false, meta: false },
+    },
+  };
+  for (const key of keys) {
+    expect(parseSettings(previous)[key]).toBe(true);
+    expect(parseSettings({ ...previous, [key]: "false" })[key]).toBe(true);
+    const disabled = parseSettings({ ...previous, [key]: false });
+    expect(disabled[key]).toBe(false);
+    expect(disabled.pinnedAlbums.alice).toEqual([ALBUM_A]);
+    expect(disabled.stats[0]).toEqual({ id: "minPrice", enabled: false });
+    expect(disabled.hotkeys.home?.code).toBe("KeyH");
+  }
+});
 it("handles unknown schemas and bounds the delay", () => {
   expect(parseSettings({ schemaVersion: 2 }).hoverDelayMs).toBe(300);
   expect(
     parseSettings({ schemaVersion: 1, hoverDelayMs: 0 }).hoverDelayMs,
   ).toBe(100);
+});
+it("defaults closing after album additions off and accepts only saved boolean preferences", () => {
+  expect(parseSettings(undefined).closeTooltipWhenAddedToAlbum).toBe(false);
+  expect(parseSettings({ schemaVersion: 1 }).closeTooltipWhenAddedToAlbum).toBe(
+    false,
+  );
+  for (const value of [true, false, "true", 1, null])
+    expect(
+      parseSettings({ schemaVersion: 1, closeTooltipWhenAddedToAlbum: value })
+        .closeTooltipWhenAddedToAlbum,
+    ).toBe(value === true);
+});
+it("defaults pinned tooltips out of album close behavior and preserves the independent saved subsetting", () => {
+  expect(parseSettings(undefined).applyCloseBehaviorToPinnedTooltips).toBe(
+    false,
+  );
+  expect(
+    parseSettings({ schemaVersion: 1, closeTooltipWhenAddedToAlbum: true })
+      .applyCloseBehaviorToPinnedTooltips,
+  ).toBe(false);
+  for (const value of [true, false, "true", 1, null]) {
+    const parsed = parseSettings({
+      schemaVersion: 1,
+      closeTooltipWhenAddedToAlbum: false,
+      applyCloseBehaviorToPinnedTooltips: value,
+    });
+    expect(parsed.applyCloseBehaviorToPinnedTooltips).toBe(value === true);
+    expect(parsed.closeTooltipWhenAddedToAlbum).toBe(false);
+  }
 });
 it("adds popup preferences to old settings and bounds finite values", () => {
   const old = parseSettings({ schemaVersion: 1 });
@@ -62,6 +116,7 @@ it("enables new indicators for older settings without changing pins", () => {
     pinnedAlbums: { alice: [ALBUM_A] },
   });
   expect(s.showSaleHistoryOverlay).toBe(true);
+  expect(s.showActiveAuctionsOverlay).toBe(true);
   expect(s.showFriendInterestOverlay).toBe(true);
   expect(s.showQuestOverlay).toBe(true);
   expect(s.pinnedAlbums.alice).toEqual([ALBUM_A]);
@@ -71,11 +126,13 @@ it("keeps the indicator preferences independent of hover popups", () => {
     schemaVersion: 1,
     enabled: false,
     showSaleHistoryOverlay: false,
+    showActiveAuctionsOverlay: false,
     showFriendInterestOverlay: true,
     showQuestOverlay: false,
   });
   expect(s.enabled).toBe(false);
   expect(s.showSaleHistoryOverlay).toBe(false);
+  expect(s.showActiveAuctionsOverlay).toBe(false);
   expect(s.showFriendInterestOverlay).toBe(true);
   expect(s.showQuestOverlay).toBe(false);
 });

@@ -2,6 +2,7 @@ import { ReadCache } from "../shared/cache";
 import {
   FINISHES,
   type Account,
+  type CardInsights,
   type Finish,
   type Friend,
   type KosmoraClient,
@@ -11,16 +12,21 @@ import { matchFriends, readFriendPreferences } from "../shared/trade-matches";
 import type { FriendReminder } from "../shared/friend-reminders";
 import { ApiError } from "../kosmora/client";
 export interface CardSignals {
+  activeAuctions: boolean;
   saleHistory: boolean;
   interestedFriends: number;
   quest: boolean;
 }
-type OverlaySettings = Pick<
+export type OverlaySettings = Pick<
   Settings,
-  "showSaleHistoryOverlay" | "showFriendInterestOverlay" | "showQuestOverlay"
+  | "cardOverlaysEnabled"
+  | "showActiveAuctionsOverlay"
+  | "showSaleHistoryOverlay"
+  | "showFriendInterestOverlay"
+  | "showQuestOverlay"
 >;
 export class CardSignalProvider {
-  private cache = new ReadCache(100);
+  private cache = new ReadCache(100, 30_000);
   private abort = new AbortController();
   private account?: Promise<Account>;
   private quests?: Promise<Set<string> | undefined>;
@@ -30,7 +36,12 @@ export class CardSignalProvider {
   constructor(
     private client: Pick<
       KosmoraClient,
-      "account" | "friends" | "history" | "insights" | "questSubjects"
+      | "account"
+      | "friends"
+      | "history"
+      | "insights"
+      | "questSubjects"
+      | "activeAuctions"
     >,
   ) {}
   reset() {
@@ -63,11 +74,18 @@ export class CardSignalProvider {
     displayedFinish: Finish,
   ): Promise<CardSignals> {
     if (
-      !settings.showSaleHistoryOverlay &&
-      !settings.showFriendInterestOverlay &&
-      !settings.showQuestOverlay
+      !settings.cardOverlaysEnabled ||
+      (!settings.showSaleHistoryOverlay &&
+        !settings.showActiveAuctionsOverlay &&
+        !settings.showFriendInterestOverlay &&
+        !settings.showQuestOverlay)
     )
-      return { saleHistory: false, interestedFriends: 0, quest: false };
+      return {
+        activeAuctions: false,
+        saleHistory: false,
+        interestedFriends: 0,
+        quest: false,
+      };
     const signal = this.abort.signal;
     if (!this.account) {
       const task = this.client.account(signal);
@@ -78,11 +96,14 @@ export class CardSignalProvider {
     }
     const account = await this.account;
     return this.cache.get(
-      `${account.key}:${id}:${settings.showSaleHistoryOverlay}:${settings.showFriendInterestOverlay}:${settings.showQuestOverlay}`,
+      `${account.key}:${id}:${settings.showActiveAuctionsOverlay}:${settings.showSaleHistoryOverlay}:${settings.showFriendInterestOverlay}:${settings.showQuestOverlay}`,
       async () => {
-        let saleHistory = false,
+        let activeAuctions = false,
+          saleHistory = false,
           interestedFriends = 0,
           quest = false;
+        let details: Promise<CardInsights> | undefined;
+        const insights = () => (details ??= this.client.insights(id, signal));
         if (settings.showQuestOverlay) {
           const subjects = await (this.quests ??= this.client
             .questSubjects(signal)
@@ -116,6 +137,19 @@ export class CardSignalProvider {
             }
           }
         }
+        if (settings.showActiveAuctionsOverlay) {
+          try {
+            const card = await insights();
+            activeAuctions =
+              (await this.client.activeAuctions(id, card.name, signal)) > 0;
+          } catch (error) {
+            if (
+              error instanceof ApiError &&
+              (error.status === 429 || error.status === 401)
+            )
+              throw error;
+          }
+        }
         if (settings.showFriendInterestOverlay) {
           const saved = await this.friendPreferences(account, signal);
           if (
@@ -123,7 +157,7 @@ export class CardSignalProvider {
             [...saved.reminders.values()].some((r) => r.families.length)
           ) {
             try {
-              const card = await this.client.insights(id, signal);
+              const card = await insights();
               if (card.families)
                 interestedFriends = matchFriends(
                   card.families,
@@ -140,7 +174,7 @@ export class CardSignalProvider {
           }
         }
         signal.throwIfAborted();
-        return { saleHistory, interestedFriends, quest };
+        return { activeAuctions, saleHistory, interestedFriends, quest };
       },
     );
   }

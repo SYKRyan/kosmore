@@ -70,6 +70,8 @@ export class Popup {
   private tradeResult?: TradeMatches;
   private tradeError?: string;
   private insightError?: string;
+  private activeAuctions?: number | Error;
+  private auctionRequest?: AbortController;
   private tradeRequest?: AbortController;
   private tradePending = false;
   private albumArea = el("section", "pinned-albums");
@@ -97,7 +99,7 @@ export class Popup {
     readonly context: CardContext | null,
     private client: KosmoraClient,
     onRefresh: () => void,
-    onClose: () => void,
+    private onClose: () => void,
     private openSettings: () => void,
     finishes: Finish[] = FINISHES,
     private onFinishesChange: (
@@ -124,7 +126,6 @@ export class Popup {
     style.textContent = statCss + css;
     this.shadow.append(style);
     const top = el("header", "top"),
-      brand = el("div", "brand", "✦ KosMore"),
       actions = el("div", "actions");
     actions.append(
       button(
@@ -164,8 +165,8 @@ export class Popup {
     this.enableDragging(top);
     this.applySize();
     actions.lastElementChild!.setAttribute("aria-label", "Close KosMore popup");
-    brand.append(actions);
     const titleRow = el("div", "title-row");
+    titleRow.append(el("h2", "", context?.name ?? ""), actions);
     this.sellButton.setAttribute("aria-label", "Sell card");
     this.sellButton.title = "Loading owned copies…";
     this.sellButton.disabled = true;
@@ -188,10 +189,8 @@ export class Popup {
     this.sellButton.append(gavel);
     const titleActions = el("div", "title-actions");
     titleActions.append(this.headerSignals, this.sellButton);
-    titleRow.append(el("h2", "", context?.name ?? ""), titleActions);
-    top.append(
-      brand,
-      titleRow,
+    const headerDetails = el("div", "header-details");
+    headerDetails.append(
       el(
         "p",
         "subtitle",
@@ -199,8 +198,9 @@ export class Popup {
           ? `No. ${context.subjectId} · ${context.variant.fullArt ? "Full art" : context.variant.veil ? "Shiny" : "Standard"}`
           : "",
       ),
-      this.lastSold,
+      titleActions,
     );
+    top.append(titleRow, headerDetails, this.lastSold);
     const tabs = el("div", "tabs");
     tabs.setAttribute("role", "tablist");
     tabs.setAttribute("aria-label", "Card insights");
@@ -241,7 +241,7 @@ export class Popup {
     body.append(this.albumArea, this.statArea, tabWorkspace);
     const footer = el("footer", "footer");
     footer.append(
-      el("span", "", "Kosmora card companion"),
+      el("span", "brand", "✦ KosMore"),
       button("Settings", openSettings, "link"),
     );
     body.append(footer);
@@ -257,7 +257,7 @@ export class Popup {
     if (context) {
       this.renderMetrics();
       this.renderMarket();
-      this.albumArea.append(note("Loading your albums…"));
+      this.renderAlbums();
     }
     (topDialog() ?? document.body).append(this.host);
     this.host.showPopover();
@@ -289,6 +289,7 @@ export class Popup {
     this.finishInteraction?.();
     this.closed = true;
     this.tradeRequest?.abort();
+    this.auctionRequest?.abort();
     this.notes?.dispose();
     this.reposition.disconnect();
     this.host.remove();
@@ -571,7 +572,7 @@ export class Popup {
     this.host.style.left = `${left}px`;
     this.host.style.top = `${top}px`;
   }
-  setInsights(details: CardInsights) {
+  setInsights(details: CardInsights, fresh = false) {
     if (!this.context) return;
     this.details = details;
     this.insightError = undefined;
@@ -581,6 +582,41 @@ export class Popup {
     this.renderMetrics();
     this.renderAlbums();
     this.refreshTrade();
+    void this.loadActiveAuctions(fresh);
+  }
+  private async loadActiveAuctions(fresh = false) {
+    if (
+      this.closed ||
+      !this.details ||
+      !this.settings.statBoxesEnabled ||
+      !this.settings.stats.some((p) => p.id === "activeAuctions" && p.enabled)
+    )
+      return;
+    if (!fresh && (this.auctionRequest || this.activeAuctions !== undefined))
+      return;
+    this.auctionRequest?.abort();
+    const request = new AbortController();
+    this.auctionRequest = request;
+    try {
+      const count = await this.client.activeAuctions(
+        this.details.subjectId,
+        this.details.name,
+        request.signal,
+        fresh,
+      );
+      if (!this.closed && !request.signal.aborted) this.activeAuctions = count;
+    } catch (error) {
+      if (!this.closed && !request.signal.aborted)
+        this.activeAuctions = new Error(messageOf(error));
+    } finally {
+      if (this.auctionRequest === request) {
+        this.auctionRequest = undefined;
+        if (!this.closed) {
+          this.renderMetrics();
+          this.renderHeaderSignals();
+        }
+      }
+    }
   }
   insightsFailed(error: unknown) {
     this.insightError = messageOf(error);
@@ -790,6 +826,15 @@ export class Popup {
       this.pinned = settings.pinnedAlbums[this.account.key] ?? [];
     this.renderAlbums();
     this.renderHeaderSignals();
+    if (
+      settings.statBoxesEnabled &&
+      settings.stats.some((p) => p.id === "activeAuctions" && p.enabled)
+    )
+      void this.loadActiveAuctions();
+    else {
+      this.auctionRequest?.abort();
+      this.auctionRequest = undefined;
+    }
   }
   setSignals(signals?: CardSignals) {
     this.signals = signals;
@@ -797,16 +842,32 @@ export class Popup {
   }
   private renderHeaderSignals() {
     this.headerSignals.replaceChildren(
-      ...(this.signals ? signalBadges(this.signals, this.settings) : []),
+      ...(this.signals
+        ? signalBadges(
+            {
+              ...this.signals,
+              // A freshly loaded metric is newer than the cached overlay signal.
+              activeAuctions:
+                this.activeAuctions !== undefined
+                  ? typeof this.activeAuctions === "number" &&
+                    this.activeAuctions > 0
+                  : this.signals.activeAuctions,
+            },
+            this.settings,
+          )
+        : []),
     );
   }
   private renderMetrics() {
-    const definitions = visibleStats(this.settings.stats);
+    const definitions = this.settings.statBoxesEnabled
+      ? visibleStats(this.settings.stats)
+      : [];
     const snapshot = statSnapshot(
       this.details,
       this.histories,
       FINISHES.filter((f) => !this.hidden.has(f)),
       this.insightError,
+      this.activeAuctions,
     );
     this.metrics.replaceChildren(
       ...definitions.map((d) => statBox(d, d.read(snapshot))),
@@ -1037,31 +1098,38 @@ export class Popup {
   }
   private renderAlbums() {
     const area = this.albumArea;
-    area.replaceChildren(this.heading("Pinned albums"));
+    const showAlbums = this.settings.pinnedAlbumsEnabled;
+    area.hidden = !showAlbums;
+    area.replaceChildren(
+      ...(showAlbums ? [this.heading("Pinned albums")] : []),
+    );
     this.renderSell();
     if (!this.account) {
-      area.append(
-        note(this.albumError ?? "Loading your albums…", !!this.albumError),
-      );
+      if (showAlbums)
+        area.append(
+          note(this.albumError ?? "Loading your albums…", !!this.albumError),
+        );
       return;
     }
     const copies = this.details?.copies ?? [];
     if (this.copyProblem) area.append(note(this.copyProblem, true));
     if (!copies.length) {
-      area.append(
-        note(
-          this.details
-            ? "Own a copy of this card to add it to an album."
-            : "Loading owned copies…",
-        ),
-      );
+      if (showAlbums)
+        area.append(
+          note(
+            this.details
+              ? "Own a copy of this card to add it to an album."
+              : "Loading owned copies…",
+          ),
+        );
       return;
     }
     if (!this.copiesResolved) {
-      area.append(note("Identifying the owned copy…"));
+      if (showAlbums) area.append(note("Identifying the owned copy…"));
       return;
     }
     if (copies.length > 1 || this.copyProblem) {
+      area.hidden = false;
       const label = el("label", "copy-label", "Choose an owned copy");
       const select = el("select");
       select.setAttribute("aria-label", "Owned copy");
@@ -1085,6 +1153,7 @@ export class Popup {
       label.append(select);
       area.append(label);
     }
+    if (!showAlbums) return;
     const selected = this.selectedCopy();
     if (!this.pinned.length) {
       area.append(
@@ -1104,9 +1173,11 @@ export class Popup {
     const grid = el("div", "albums");
     for (const id of this.pinned) {
       const album = this.albums.find((a) => a.id === id);
+      const tile = el("div", "album-tile");
       const b = button(
         album?.name ?? "Album unavailable",
         () => void this.add(id, selected),
+        "album-add",
       );
       const why = !album
         ? "Unavailable"
@@ -1119,7 +1190,38 @@ export class Popup {
               : undefined;
       if (why) b.append(el("small", "", why));
       b.disabled = !!why || this.pending;
-      grid.append(b);
+      tile.append(b);
+      if (album?.contains) {
+        const remove = button("", () => void this.remove(id), "album-remove");
+        remove.setAttribute("aria-label", `Remove from ${album.name}`);
+        remove.title = `Remove this card from ${album.name}`;
+        remove.disabled = this.pending;
+        const trash = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "svg",
+        );
+        for (const [key, value] of Object.entries({
+          viewBox: "0 0 24 24",
+          width: "14",
+          height: "14",
+          fill: "none",
+          stroke: "currentColor",
+          "stroke-width": "1.8",
+          "stroke-linecap": "round",
+          "stroke-linejoin": "round",
+          "aria-hidden": "true",
+        }))
+          trash.setAttribute(key, value);
+        const path = document.createElementNS(trash.namespaceURI, "path");
+        path.setAttribute(
+          "d",
+          "M3 6h18 M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2 M5 6l1 14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1l1-14 M10 10v7 M14 10v7",
+        );
+        trash.append(path);
+        remove.append(trash);
+        tile.append(remove);
+      }
+      grid.append(tile);
     }
     area.append(grid, this.status);
   }
@@ -1176,8 +1278,38 @@ export class Popup {
       if (!this.closed) this.renderSell();
     }
   }
+  private async remove(id: string) {
+    if (
+      !this.settings.pinnedAlbumsEnabled ||
+      !this.context ||
+      !this.account ||
+      this.pending
+    )
+      return;
+    this.pending = true;
+    this.status.className = "album-status";
+    this.status.textContent = "Removing from album…";
+    this.renderAlbums();
+    try {
+      await this.client.remove(id, this.context.subjectId, this.account.key);
+      if (this.closed) return;
+      this.albums = await this.client.albums(this.context.subjectId);
+      this.status.textContent = "Removed from album.";
+    } catch (error) {
+      this.status.className = "album-status error";
+      this.status.textContent = messageOf(error);
+      try {
+        this.albums = await this.client.albums(this.context.subjectId);
+      } catch {
+        /* Keep the previous membership visible until it can be checked. */
+      }
+    } finally {
+      this.pending = false;
+      if (!this.closed) this.renderAlbums();
+    }
+  }
   private async add(id: string, copy?: OwnedCopy) {
-    if (!this.context) return;
+    if (!this.settings.pinnedAlbumsEnabled || !this.context) return;
     if (!copy || !this.account || this.pending) return;
     this.pending = true;
     this.status.className = "album-status";
@@ -1185,6 +1317,15 @@ export class Popup {
     this.renderAlbums();
     try {
       await this.client.add(id, copy, this.account.key);
+      // An add may finish after this popup was replaced by another card.
+      if (this.closed) return;
+      if (
+        this.settings.closeTooltipWhenAddedToAlbum &&
+        (!this.isPinned || this.settings.applyCloseBehaviorToPinnedTooltips)
+      ) {
+        this.onClose();
+        return;
+      }
       this.albums = await this.client.albums(this.context.subjectId);
       this.status.textContent = "Added to album.";
     } catch (error) {

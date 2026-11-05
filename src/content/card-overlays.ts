@@ -75,6 +75,9 @@ export class CardOverlays {
   }
   setSettings(settings: Settings) {
     const changed =
+      this.settings?.cardOverlaysEnabled !== settings.cardOverlaysEnabled ||
+      this.settings?.showActiveAuctionsOverlay !==
+        settings.showActiveAuctionsOverlay ||
       this.settings?.showSaleHistoryOverlay !==
         settings.showSaleHistoryOverlay ||
       this.settings?.showFriendInterestOverlay !==
@@ -106,9 +109,11 @@ export class CardOverlays {
   }
   private enabled() {
     return (
-      this.settings?.showSaleHistoryOverlay ||
-      this.settings?.showFriendInterestOverlay ||
-      this.settings?.showQuestOverlay
+      this.settings?.cardOverlaysEnabled &&
+      (this.settings?.showSaleHistoryOverlay ||
+        this.settings?.showActiveAuctionsOverlay ||
+        this.settings?.showFriendInterestOverlay ||
+        this.settings?.showQuestOverlay)
     );
   }
   private schedule() {
@@ -235,7 +240,12 @@ export class CardOverlays {
       });
   }
   private render(entry: Entry, signals: CardSignals) {
-    if (!signals.saleHistory && !signals.interestedFriends && !signals.quest)
+    if (
+      !signals.activeAuctions &&
+      !signals.saleHistory &&
+      !signals.interestedFriends &&
+      !signals.quest
+    )
       return;
     const host = el("span");
     host.setAttribute(OVERLAY_ATTR, "");

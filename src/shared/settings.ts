@@ -6,12 +6,19 @@ export const SETTINGS_KEY = "kosmore.settings";
 export const defaults = (): Settings => ({
   schemaVersion: 1,
   enabled: true,
+  navigationHotkeysEnabled: true,
+  cardOverlaysEnabled: true,
+  statBoxesEnabled: true,
+  pinnedAlbumsEnabled: true,
+  closeTooltipWhenAddedToAlbum: false,
+  applyCloseBehaviorToPinnedTooltips: false,
   hoverDelayMs: 300,
   dismissDelayMs: 200,
   popupWidth: 440,
   popupHeight: 900,
   popupPosition: null,
   showSaleHistoryOverlay: true,
+  showActiveAuctionsOverlay: true,
   showFriendInterestOverlay: true,
   showQuestOverlay: true,
   stats: defaultStats(),
@@ -27,8 +34,21 @@ export function parseSettings(value: unknown): Settings {
   d.hotkeys = parseHotkeys(v.hotkeys);
   d.popupPosition = parsePopupPosition(v.popupPosition);
   if (typeof v.enabled === "boolean") d.enabled = v.enabled;
+  for (const key of [
+    "navigationHotkeysEnabled",
+    "cardOverlaysEnabled",
+    "statBoxesEnabled",
+    "pinnedAlbumsEnabled",
+  ] as const)
+    if (typeof v[key] === "boolean") d[key] = v[key];
+  if (typeof v.closeTooltipWhenAddedToAlbum === "boolean")
+    d.closeTooltipWhenAddedToAlbum = v.closeTooltipWhenAddedToAlbum;
+  if (typeof v.applyCloseBehaviorToPinnedTooltips === "boolean")
+    d.applyCloseBehaviorToPinnedTooltips = v.applyCloseBehaviorToPinnedTooltips;
   if (typeof v.showSaleHistoryOverlay === "boolean")
     d.showSaleHistoryOverlay = v.showSaleHistoryOverlay;
+  if (typeof v.showActiveAuctionsOverlay === "boolean")
+    d.showActiveAuctionsOverlay = v.showActiveAuctionsOverlay;
   if (typeof v.showFriendInterestOverlay === "boolean")
     d.showFriendInterestOverlay = v.showFriendInterestOverlay;
   if (typeof v.showQuestOverlay === "boolean")

@@ -30,6 +30,7 @@ it("migrates older settings without resetting pins or the original six-stat orde
     "interest",
     "readership",
     "salesCount",
+    "activeAuctions",
   ]);
   expect(settings.stats.every((p) => p.enabled)).toBe(true);
   expect(new Set(STAT_CATALOG.map((d) => d.id)).size).toBe(STAT_CATALOG.length);
@@ -72,6 +73,7 @@ it("renders every definition through the same component and preserves partial hi
     "18",
     "1,240",
     "80+",
+    "—",
   ]);
   expect(snapshot.priceNotice).toContain("unavailable");
   for (const [index, box] of boxes.entries())
@@ -112,6 +114,7 @@ it("reorders and toggles the settings preview without persisting a draft until S
     "interest",
     "readership",
     "salesCount",
+    "activeAuctions",
   ]);
   expect(set).not.toHaveBeenCalled();
   await saveSettings({ ...parseSettings(undefined), stats: preferences });
@@ -119,14 +122,40 @@ it("reorders and toggles the settings preview without persisting a draft until S
     [SETTINGS_KEY]: expect.objectContaining({ stats: preferences }),
   });
   view.render(defaultStats());
-  expect(view.host.querySelectorAll(".metric")).toHaveLength(6);
+  expect(view.host.querySelectorAll(".metric")).toHaveLength(
+    STAT_CATALOG.length,
+  );
+});
+it("distinguishes zero active auctions from unavailable counts independently of selected finishes", () => {
+  const definition = STAT_CATALOG.find((d) => d.id === "activeAuctions")!;
+  expect(
+    definition.read(statSnapshot(undefined, {}, [], undefined, 0)).value,
+  ).toBe("0");
+  expect(
+    definition.read(statSnapshot(undefined, {}, ["plain"], undefined, 1234))
+      .value,
+  ).toBe("1,234");
+  const failed = definition.read(
+    statSnapshot(undefined, {}, [], undefined, new Error("Market unavailable")),
+  );
+  expect(failed.value).toBe("—");
+  expect(failed.title).toBe("Market unavailable");
 });
 it("uses the same enabled and positive-only indicator badges in popup headers and on cards", () => {
-  const signals = { saleHistory: true, quest: true, interestedFriends: 2 };
+  const signals = {
+    activeAuctions: true,
+    saleHistory: true,
+    quest: true,
+    interestedFriends: 2,
+  };
   const settings = parseSettings(undefined);
+  expect(
+    signalBadges(signals, { ...settings, cardOverlaysEnabled: false }),
+  ).toEqual([]);
   expect(
     signalBadges(signals, settings).map((e) => e.getAttribute("aria-label")),
   ).toEqual([
+    "Active auctions on the market",
     "Completed sales in the last 30 days",
     "Part of a quest",
     "2 friends may be interested based on saved families",
@@ -140,13 +169,19 @@ it("uses the same enabled and positive-only indicator badges in popup headers an
     signalBadges(signals, {
       ...settings,
       showSaleHistoryOverlay: false,
+      showActiveAuctionsOverlay: false,
       showQuestOverlay: false,
       showFriendInterestOverlay: false,
     }),
   ).toEqual([]);
   expect(
     signalBadges(
-      { saleHistory: false, quest: false, interestedFriends: 0 },
+      {
+        activeAuctions: false,
+        saleHistory: false,
+        quest: false,
+        interestedFriends: 0,
+      },
       settings,
     ),
   ).toEqual([]);

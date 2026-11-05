@@ -2,6 +2,7 @@ import "./options.css";
 import "../content/stat-box.css";
 import { StatSettings } from "./stat-settings";
 import { HotkeySettings } from "./hotkey-settings";
+import { settingsNavigation } from "./settings-navigation";
 import { hotkeyConflict } from "../shared/hotkeys";
 import { button, el, note } from "../content/ui";
 import {
@@ -36,25 +37,63 @@ head.append(
 header.append(head, el("span", "badge", "LOCAL BROWSER SETTINGS"));
 app.append(header);
 const general = el("section", "panel");
-general.append(el("h2", "", "Hover companion"));
-const enabled = el("input");
-enabled.type = "checkbox";
-enabled.id = "enabled";
-const toggle = el("label", "label settings-toggle", "Enable card hover popups");
-toggle.prepend(enabled);
-const enabledRow = el("div", "row");
-enabledRow.append(
-  toggle,
-  el("span", "hint", "Across Kosmora, including pack openings"),
+general.append(el("h2", "", "Hover tooltip"));
+general.append(
+  el(
+    "p",
+    "sub",
+    "Pin to keep the tooltip open across pages in this tab. Drag the header to move it, or any edge or corner to resize. Position and size save automatically. New pages show No Card Selected until you hover a card. Unpin to open beside cards again.",
+  ),
 );
-general.append(el("div", "rule"), enabledRow, el("div", "rule"));
+const enabled = sectionToggle(general, "enabled", "Enable card hover tooltips");
+general.append(el("div", "rule"));
+const closeAfterAlbumAdd = el("input");
+closeAfterAlbumAdd.type = "checkbox";
+closeAfterAlbumAdd.id = "close-tooltip-when-added-to-album";
+const closeAfterAlbumLabel = el(
+  "label",
+  "label settings-toggle",
+  "Close Unpinned Tooltips When Added to Album",
+);
+closeAfterAlbumLabel.prepend(closeAfterAlbumAdd);
+const closeAfterAlbumRow = el("div", "row");
+closeAfterAlbumRow.append(
+  closeAfterAlbumLabel,
+  el(
+    "span",
+    "hint",
+    "Close unpinned tooltips after a successful album addition.",
+  ),
+);
+const applyCloseToPinned = el("input");
+applyCloseToPinned.type = "checkbox";
+applyCloseToPinned.id = "apply-close-behavior-to-pinned-tooltips";
+const applyCloseToPinnedLabel = el(
+  "label",
+  "label settings-toggle",
+  "Also Close Pinned Tooltips",
+);
+applyCloseToPinnedLabel.prepend(applyCloseToPinned);
+const applyCloseToPinnedRow = el("div", "row settings-subsetting");
+applyCloseToPinnedRow.append(
+  applyCloseToPinnedLabel,
+  el("span", "hint", "Extend the same behavior to pinned tooltips."),
+);
+general.append(closeAfterAlbumRow, applyCloseToPinnedRow, el("div", "rule"));
+closeAfterAlbumAdd.addEventListener("change", () => {
+  draft.closeTooltipWhenAddedToAlbum = closeAfterAlbumAdd.checked;
+  applyCloseToPinned.disabled = !closeAfterAlbumAdd.checked;
+});
+applyCloseToPinned.addEventListener("change", () => {
+  draft.applyCloseBehaviorToPinnedTooltips = applyCloseToPinned.checked;
+});
 const delayRow = el("div", "row"),
   delayInfo = el("div");
 const delayLabel = el("label", "", "Hover delay");
 delayLabel.htmlFor = "hover-delay";
 delayInfo.append(
   delayLabel,
-  el("p", "sub", "Milliseconds before a card popup appears (100–2,000)."),
+  el("p", "sub", "Milliseconds before a card tooltip appears (100–2,000)."),
 );
 const delay = el("input");
 delay.type = "number";
@@ -69,14 +108,14 @@ const popupInputs = (
     [
       "dismissDelayMs",
       "Dismiss delay",
-      "Milliseconds after leaving the card and popup (0–30,000). Pinned popups stay open.",
+      "Milliseconds after leaving the card and tooltip (0–30,000). Pinned tooltips stay open.",
       0,
       30000,
       50,
     ],
     [
       "popupWidth",
-      "Popup width",
+      "Tooltip width",
       "Width in pixels (320–1,200), limited to fit your screen.",
       320,
       1200,
@@ -84,7 +123,7 @@ const popupInputs = (
     ],
     [
       "popupHeight",
-      "Popup height",
+      "Tooltip height",
       "Height in pixels (480–1,600), limited to fit your screen.",
       480,
       1600,
@@ -110,26 +149,66 @@ const popupInputs = (
   });
   return { field, input, title, min, max };
 });
-general.append(
-  el(
-    "p",
-    "sub",
-    "Pin to keep the popup open across pages in this tab. Drag the header to move it, or any edge or corner to resize. Position and size save automatically. New pages show No Card Selected until you hover a card. Unpin to open beside cards again.",
-  ),
-);
-app.append(general);
 const hotkeySettings = new HotkeySettings((hotkeys) => {
   draft.hotkeys = hotkeys;
 });
-app.append(hotkeySettings.host);
+function sectionToggle(
+  host: HTMLElement,
+  key:
+    | "enabled"
+    | "navigationHotkeysEnabled"
+    | "cardOverlaysEnabled"
+    | "statBoxesEnabled"
+    | "pinnedAlbumsEnabled",
+  label: string,
+) {
+  const heading = host.querySelector("h2")!;
+  const row = el("div", "settings-group-heading"),
+    input = el("input", "section-switch");
+  input.type = "checkbox";
+  input.id = key;
+  input.setAttribute("role", "switch");
+  input.setAttribute("aria-label", label);
+  input.title = label;
+  input.checked = draft[key];
+  input.addEventListener("change", () => {
+    draft[key] = input.checked;
+    renderGroupState(host);
+  });
+  heading.replaceWith(row);
+  const state = el("span", "settings-group-state", "Disabled");
+  state.hidden = input.checked;
+  row.append(heading, state, input);
+  return input;
+}
+function renderGroupState(host: HTMLElement) {
+  const input = host.querySelector<HTMLInputElement>(".section-switch")!;
+  const disabled = !input.checked;
+  host.classList.toggle("settings-group-disabled", disabled);
+  const content = host.querySelector<HTMLFieldSetElement>(
+    ":scope > .settings-group-content",
+  );
+  if (content) content.disabled = disabled;
+  host.querySelector<HTMLElement>(".settings-group-state")!.hidden = !disabled;
+}
+const hotkeysEnabled = sectionToggle(
+  hotkeySettings.host,
+  "navigationHotkeysEnabled",
+  "Enable navigation hotkey",
+);
 const overlays = el("section", "panel");
 overlays.append(
   el("h2", "", "Card overlays"),
   el(
     "p",
     "sub",
-    "Indicators on visible cards and in popup headers. These work independently of hover popups.",
+    "Indicators on visible cards and in tooltip headers. These work independently of hover tooltips.",
   ),
+);
+const overlaysEnabled = sectionToggle(
+  overlays,
+  "cardOverlaysEnabled",
+  "Enable card overlays",
 );
 function overlayToggle(
   id: string,
@@ -148,10 +227,18 @@ function overlayToggle(
   overlays.append(el("div", "rule"), row);
   return input;
 }
+const auctionOverlay = overlayToggle(
+  "active-auctions-overlay",
+  "Show active auctions icon on cards",
+  "Gavel · currently listed on the market",
+  (checked) => {
+    draft.showActiveAuctionsOverlay = checked;
+  },
+);
 const saleOverlay = overlayToggle(
   "sale-history-overlay",
   "Show sale history icon on cards",
-  "Gavel · completed sales in the last 30 days",
+  "History · completed sales in the last 30 days",
   (checked) => {
     draft.showSaleHistoryOverlay = checked;
   },
@@ -172,15 +259,15 @@ const questOverlay = overlayToggle(
     draft.showQuestOverlay = checked;
   },
 );
-app.append(overlays);
 const statSettings = new StatSettings((preferences) => {
   draft.stats = preferences;
   statSettings.render(draft.stats);
 });
-app.append(statSettings.host);
-enabled.addEventListener("change", () => {
-  draft.enabled = enabled.checked;
-});
+const statsEnabled = sectionToggle(
+  statSettings.host,
+  "statBoxesEnabled",
+  "Enable stat boxes",
+);
 delay.addEventListener("input", () => {
   draft.hoverDelayMs = Number(delay.value);
 });
@@ -193,7 +280,7 @@ connection.append(
   el(
     "p",
     "sub",
-    "Pinned albums belong to the selected Kosmora account. Keep a signed-in game tab open.",
+    "Select the Kosmora account used for pinned albums. Keep a signed-in game tab open.",
   ),
 );
 accountRow.style.marginTop = "14px";
@@ -206,7 +293,23 @@ accountRow.append(select, refresh);
 connection.append(accountRow);
 const connectionStatus = el("div");
 connection.append(connectionStatus);
-app.append(connection);
+connection.setAttribute("aria-label", "connected account");
+const albumSettings = el("section", "panel");
+albumSettings.append(
+  el("h2", "", "Pinned albums"),
+  el(
+    "p",
+    "sub",
+    "Choose the albums that appear as shortcuts in the card tooltip.",
+  ),
+);
+const albumsEnabled = sectionToggle(
+  albumSettings,
+  "pinnedAlbumsEnabled",
+  "Enable pinned albums",
+);
+const albumAccount = el("p", "sub album-account");
+albumSettings.append(albumAccount);
 const grid = el("div", "grid"),
   catalogPanel = el("section", "panel"),
   pinnedPanel = el("section", "panel");
@@ -227,12 +330,12 @@ const catalog = el("div", "album-list"),
 catalogPanel.append(catalog);
 pinnedPanel.append(
   el("h2", "", "Pinned shortcuts"),
-  el("p", "sub", "Buttons appear in this order in the card popup."),
+  el("p", "sub", "Buttons appear in this order in the card tooltip."),
   pins,
 );
 grid.append(catalogPanel, pinnedPanel);
 grid.style.marginTop = "18px";
-connection.append(grid);
+albumSettings.append(grid);
 type SettingsGroup = {
   host: HTMLElement;
   name: string;
@@ -242,6 +345,13 @@ type SettingsGroup = {
 };
 function groupControls(group: SettingsGroup) {
   group.host.setAttribute("aria-label", group.name);
+  const content = el("fieldset", "settings-group-content");
+  content.setAttribute("aria-label", `${group.name} options`);
+  for (const child of [...group.host.children])
+    if (!child.classList.contains("settings-group-heading"))
+      content.append(child);
+  group.host.append(content);
+  renderGroupState(group.host);
   const status = el("p", "status");
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
@@ -256,6 +366,7 @@ function groupControls(group: SettingsGroup) {
       for (const key of group.keys)
         Object.assign(draft, { [key]: structuredClone(saved[key]) });
       group.render();
+      renderGroupState(group.host);
       status.textContent = "Unsaved changes discarded.";
     },
     "ghost",
@@ -268,9 +379,11 @@ function groupControls(group: SettingsGroup) {
 }
 groupControls({
   host: general,
-  name: "popup settings",
+  name: "tooltip settings",
   keys: [
     "enabled",
+    "closeTooltipWhenAddedToAlbum",
+    "applyCloseBehaviorToPinnedTooltips",
     "hoverDelayMs",
     "dismissDelayMs",
     "popupWidth",
@@ -301,15 +414,17 @@ groupControls({
 groupControls({
   host: hotkeySettings.host,
   name: "hotkeys",
-  keys: ["hotkeys"],
-  render: () => hotkeySettings.render(draft.hotkeys),
+  keys: ["navigationHotkeysEnabled", "hotkeys"],
+  render: renderSettings,
   validate: () => hotkeyConflict(draft.hotkeys),
 });
 groupControls({
   host: overlays,
   name: "overlay settings",
   keys: [
+    "cardOverlaysEnabled",
     "showSaleHistoryOverlay",
+    "showActiveAuctionsOverlay",
     "showFriendInterestOverlay",
     "showQuestOverlay",
   ],
@@ -318,15 +433,58 @@ groupControls({
 groupControls({
   host: statSettings.host,
   name: "stat layout",
-  keys: ["stats"],
-  render: () => statSettings.render(draft.stats),
+  keys: ["statBoxesEnabled", "stats"],
+  render: renderSettings,
 });
 groupControls({
-  host: connection,
+  host: albumSettings,
   name: "album shortcuts",
-  keys: ["pinnedAlbums"],
-  render: renderAlbums,
+  keys: ["pinnedAlbumsEnabled", "pinnedAlbums"],
+  render: () => {
+    albumsEnabled.checked = draft.pinnedAlbumsEnabled;
+    renderAlbums();
+  },
 });
+const settingsGroups = [
+  {
+    id: "hover-tooltip",
+    label: "Hover tooltip",
+    host: general,
+    path: "M4 3h16v13H9l-5 5V3Z M8 7h8 M8 11h5",
+  },
+  {
+    id: "pinned-albums",
+    label: "Pinned albums",
+    host: albumSettings,
+    path: "M5 3h14v18H5Z M8 3v18 M12 8h4 M12 12h4",
+  },
+  {
+    id: "stat-boxes",
+    label: "Tooltip stat boxes",
+    host: statSettings.host,
+    path: "M3 3h7v7H3Z M14 3h7v7h-7Z M3 14h7v7H3Z M14 14h7v7h-7Z",
+  },
+  {
+    id: "card-overlays",
+    label: "Card overlays",
+    host: overlays,
+    path: "M7 3h14v14H7Z M3 7v14h14 M12 7h4 M12 11h4",
+  },
+  {
+    id: "navigation-hotkeys",
+    label: "Navigation hotkeys",
+    host: hotkeySettings.host,
+    path: "M3 5h18v14H3Z M7 9h.01 M11 9h.01 M15 9h.01 M7 12h.01 M11 12h.01 M15 12h.01 M7 15h10",
+  },
+  {
+    id: "connected-account",
+    label: "Connected account",
+    host: connection,
+    path: "M20 21v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2 M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+  },
+];
+app.append(...settingsGroups.map((group) => group.host));
+document.body.prepend(settingsNavigation(settingsGroups));
 app.append(
   el(
     "p",
@@ -335,15 +493,31 @@ app.append(
   ),
 );
 function renderSettings() {
+  hotkeysEnabled.checked = draft.navigationHotkeysEnabled;
+  overlaysEnabled.checked = draft.cardOverlaysEnabled;
+  statsEnabled.checked = draft.statBoxesEnabled;
+  albumsEnabled.checked = draft.pinnedAlbumsEnabled;
   enabled.checked = draft.enabled;
+  closeAfterAlbumAdd.checked = draft.closeTooltipWhenAddedToAlbum;
+  applyCloseToPinned.checked = draft.applyCloseBehaviorToPinnedTooltips;
+  applyCloseToPinned.disabled = !draft.closeTooltipWhenAddedToAlbum;
   delay.value = String(draft.hoverDelayMs);
   for (const { field, input } of popupInputs)
     input.value = String(draft[field]);
   saleOverlay.checked = draft.showSaleHistoryOverlay;
+  auctionOverlay.checked = draft.showActiveAuctionsOverlay;
   friendOverlay.checked = draft.showFriendInterestOverlay;
   questOverlay.checked = draft.showQuestOverlay;
   statSettings.render(draft.stats);
   hotkeySettings.render(draft.hotkeys);
+  for (const host of [
+    general,
+    albumSettings,
+    statSettings.host,
+    overlays,
+    hotkeySettings.host,
+  ])
+    renderGroupState(host);
 }
 function pinned() {
   return selected ? (draft.pinnedAlbums[selected.account.key] ?? []) : [];
@@ -353,6 +527,9 @@ function setPins(ids: string[]) {
   renderAlbums();
 }
 function renderAlbums() {
+  albumAccount.textContent = selected
+    ? `Albums for ${selected.account.handle}. Change the connected account below.`
+    : "Select a connected account below to choose its albums.";
   const ids = pinned();
   catalog.replaceChildren();
   pins.replaceChildren();

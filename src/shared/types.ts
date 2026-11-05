@@ -88,12 +88,19 @@ export interface OpeningCard {
 export interface Settings {
   schemaVersion: 1;
   enabled: boolean;
+  navigationHotkeysEnabled: boolean;
+  cardOverlaysEnabled: boolean;
+  statBoxesEnabled: boolean;
+  pinnedAlbumsEnabled: boolean;
+  closeTooltipWhenAddedToAlbum: boolean;
+  applyCloseBehaviorToPinnedTooltips: boolean;
   hoverDelayMs: number;
   dismissDelayMs: number;
   popupWidth: number;
   popupHeight: number;
   popupPosition: import("./popup-layout").PopupPosition | null;
   showSaleHistoryOverlay: boolean;
+  showActiveAuctionsOverlay: boolean;
   showFriendInterestOverlay: boolean;
   showQuestOverlay: boolean;
   stats: import("./stat-catalog").StatPreference[];
@@ -113,6 +120,12 @@ export interface KosmoraClient {
     signal?: AbortSignal,
     fresh?: boolean,
   ): Promise<CardInsights>;
+  activeAuctions(
+    subjectId: string,
+    name: string,
+    signal?: AbortSignal,
+    fresh?: boolean,
+  ): Promise<number>;
   history(
     subjectId: string,
     finish: Finish,
@@ -126,6 +139,11 @@ export interface KosmoraClient {
     signal?: AbortSignal,
   ): Promise<OwnedCopy | undefined>;
   add(albumId: string, copy: OwnedCopy, expectedAccount: string): Promise<void>;
+  remove(
+    albumId: string,
+    subjectId: string,
+    expectedAccount: string,
+  ): Promise<void>;
 }
 export function messageOf(error: unknown): string {
   return error instanceof Error

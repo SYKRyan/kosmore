@@ -11,7 +11,7 @@ export class StatSettings {
   private preview = el("div", "metrics stat-preview");
   private choices = el("ol", "stat-choices");
   constructor(private change: (preferences: StatPreference[]) => void) {
-    const heading = el("h2", "", "Popup stat boxes");
+    const heading = el("h2", "", "Tooltip stat boxes");
     this.preview.setAttribute("role", "group");
     this.preview.setAttribute("aria-label", "Stat box preview");
     this.choices.setAttribute("aria-label", "Stat box visibility and order");

@@ -2,6 +2,7 @@ import { ReadCache } from "../shared/cache";
 import { parseFamilyChoices } from "./families";
 import { parseFriends } from "./friends";
 import { parseQuestSubjects } from "./quests";
+import { countActiveAuctions } from "./auctions";
 import type {
   Account,
   Album,
@@ -32,6 +33,7 @@ export class ApiError extends Error {
 }
 export class GameClient implements KosmoraClient {
   private reads = new ReadCache();
+  private auctionReads = new ReadCache(100, 30_000);
   private lastAccount?: Account;
   private blockedUntil = 0;
   private writes = new Set<string>();
@@ -43,7 +45,7 @@ export class GameClient implements KosmoraClient {
   }
   private async send(
     path: string,
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "DELETE",
     body?: unknown,
     signal?: AbortSignal,
   ): Promise<unknown> {
@@ -62,14 +64,15 @@ export class GameClient implements KosmoraClient {
       redirect: "error",
       signal: combined,
       headers:
-        method === "POST"
+        method !== "GET"
           ? {
               Accept: "application/json",
               "Content-Type": "application/json",
               "x-kosmora": "1",
             }
           : { Accept: "application/json" },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      // The native transport sends valid JSON for every write, including DELETE.
+      body: method === "GET" ? undefined : JSON.stringify(body ?? {}),
     });
     const data: unknown = await r.json().catch(() => null);
     if (r.status === 429) {
@@ -83,6 +86,7 @@ export class GameClient implements KosmoraClient {
       if (r.status === 401) {
         this.lastAccount = undefined;
         this.reads.clear();
+        this.auctionReads.clear();
       }
       throw new ApiError(
         r.status === 401
@@ -100,7 +104,10 @@ export class GameClient implements KosmoraClient {
   }
   async account(signal?: AbortSignal, _fresh = false): Promise<Account> {
     const next = parseAccount(await this.read("/me", signal));
-    if (next.key !== this.lastAccount?.key) this.reads.clear();
+    if (next.key !== this.lastAccount?.key) {
+      this.reads.clear();
+      this.auctionReads.clear();
+    }
     this.lastAccount = next;
     return next;
   }
@@ -109,6 +116,25 @@ export class GameClient implements KosmoraClient {
     return this.reads.get(
       `${this.lastAccount?.key}:card:${id}`,
       async () => parseInsights(await this.read(`/collection/${id}`, signal)),
+      fresh,
+    );
+  }
+  activeAuctions(
+    id: string,
+    name: string,
+    signal?: AbortSignal,
+    fresh = false,
+  ) {
+    id = subjectId(id);
+    return this.auctionReads.get(
+      `${this.lastAccount?.key}:auctions:${id}:${name}`,
+      () => {
+        const timeout = AbortSignal.timeout(15_000);
+        const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+        return countActiveAuctions(id, name, (path) =>
+          this.read(path, combined),
+        );
+      },
       fresh,
     );
   }
@@ -210,6 +236,46 @@ export class GameClient implements KosmoraClient {
       entry && matches(entry) ? [entry] : entries.filter(matches);
     if (candidates.length !== 1) return undefined;
     return copies.find((c) => c.id === candidates[0].instanceId);
+  }
+  async remove(
+    albumId: string,
+    id: string,
+    expectedAccount: string,
+  ): Promise<void> {
+    uuid(albumId);
+    id = subjectId(id);
+    const key = `${albumId}:${id}`;
+    if (this.writes.has(key))
+      throw new Error("An album update is already in progress.");
+    this.writes.add(key);
+    try {
+      if ((await this.account()).key !== expectedAccount)
+        throw new Error("Your Kosmora account changed. Reopen the tooltip.");
+      const album = (await this.albums(id)).find((a) => a.id === albumId);
+      if (!album) throw new Error("This album is no longer available.");
+      if (album.contains === undefined)
+        throw new Error("Album membership could not be verified.");
+      if (!album.contains) return;
+      try {
+        await this.send(`/albums/${albumId}/items/${id}`, "DELETE");
+      } catch (error) {
+        // A failed response can follow a committed removal. Confirm it without
+        // repeating the mutation or turning it into an add/remove toggle.
+        const refreshed = await this.albums(id).catch(() => null);
+        if (refreshed?.find((a) => a.id === albumId)?.contains !== false)
+          throw error;
+      }
+      this.reads.clear();
+      if (
+        (await this.albums(id)).find((a) => a.id === albumId)?.contains !==
+        false
+      )
+        throw new Error(
+          "The removal could not be confirmed. Refresh membership before trying again.",
+        );
+    } finally {
+      this.writes.delete(key);
+    }
   }
   async add(
     albumId: string,

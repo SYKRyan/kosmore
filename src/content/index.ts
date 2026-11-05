@@ -35,7 +35,11 @@ const overlays = new CardOverlays(client);
 overlays.start();
 let settings = defaults();
 let pinnedState: PopupState = { pinned: false, position: null };
-new NavigationHotkeys(() => settings, client, navigationAway).start();
+const navigationHotkeys = new NavigationHotkeys(
+  () => settings,
+  client,
+  navigationAway,
+);
 let marketFinishes: Finish[] = [...FINISHES];
 let pendingFilterWrites = 0;
 const preferencesReady = Promise.all([
@@ -50,6 +54,7 @@ const preferencesReady = Promise.all([
 ]).then(([finishes, { savedSettings, state }]) => {
   marketFinishes = finishes;
   settings = savedSettings;
+  navigationHotkeys.start();
   pinnedState = state;
   overlays.setSettings(settings);
   if (!settings.enabled) hide();
@@ -134,7 +139,7 @@ async function show(context: CardContext, fresh = false) {
     void detail.then(
       async (d) => {
         if (!valid()) return;
-        view.setInsights(d);
+        view.setInsights(d, fresh);
         let chosen;
         let problem: string | undefined;
         try {
@@ -430,6 +435,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (area === "local" && changes[SETTINGS_KEY]) {
     settings = parseSettings(changes[SETTINGS_KEY].newValue);
+    navigationHotkeys.settingsChanged();
     overlays.setSettings(settings);
     if (!settings.enabled) hide();
     else if (popup) {
