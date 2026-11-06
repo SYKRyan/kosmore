@@ -752,6 +752,8 @@ test("settings groups are ordered with separate account controls and a fixed anc
         ),
     ).toEqual([
       "Hover tooltip",
+      "Friend tooltip",
+      "Profile reminders",
       "Pinned albums",
       "Tooltip stat boxes",
       "Card overlays",
@@ -765,6 +767,8 @@ test("settings groups are ordered with separate account controls and a fixed anc
       nav = options.getByRole("navigation", { name: "Settings groups" });
     await expect(nav.getByRole("link")).toHaveText([
       "Hover tooltip",
+      "Friend tooltip",
+      "Profile reminders",
       "Pinned albums",
       "Tooltip stat boxes",
       "Card overlays",
@@ -791,7 +795,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       await expect(options.getByLabel(label, { exact: true })).toBeChecked();
     await expect(
       options.locator(".settings-group-heading").getByRole("switch"),
-    ).toHaveCount(6);
+    ).toHaveCount(8);
     const checkSwitchLayout = async () => {
       for (const input of await options
         .locator(".settings-group-heading")
@@ -820,6 +824,8 @@ test("settings groups are ordered with separate account controls and a fixed anc
     const initial = (await nav.boundingBox())!;
     for (const [label, id] of [
       ["Hover tooltip", "hover-tooltip"],
+      ["Friend tooltip", "friend-tooltip"],
+      ["Profile reminders", "profile-reminders"],
       ["Pinned albums", "pinned-albums"],
       ["Tooltip stat boxes", "stat-boxes"],
       ["Card overlays", "card-overlays"],

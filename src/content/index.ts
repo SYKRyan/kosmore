@@ -30,9 +30,15 @@ import { CardOverlays } from "./card-overlays";
 import { NavigationHotkeys } from "./navigation";
 import { SalesOverlays } from "./sales-overlays";
 import { observePage } from "./page-changes";
+import { FriendTooltip } from "./friend-tooltip";
+import { ProfileReminders } from "./profile-reminders";
 
 const client = new GameClient();
+const friendTooltip = new FriendTooltip(client, () => {
+  if (popup && !popup.isPinned) laterHide();
+});
 new SocialReminders(client).start();
+new ProfileReminders(client).start();
 const overlays = new CardOverlays(client);
 overlays.start();
 const salesOverlays = new SalesOverlays(client);
@@ -55,6 +61,8 @@ const preferencesReady = Promise.all([
 ]).then(([finishes, state, savedSettings]) => {
   marketFinishes = finishes;
   settings = savedSettings;
+  friendTooltip.setSettings(settings);
+  void friendTooltip.restore();
   navigationHotkeys.start();
   pinnedState = state;
   overlays.setSettings(settings);
@@ -109,7 +117,8 @@ function laterHide() {
       !popup?.isPinned &&
       !hovered &&
       !popup?.host.matches(":hover") &&
-      !popup?.shadow.activeElement
+      !popup?.shadow.activeElement &&
+      !friendTooltip.keepsOpen(popup?.host)
     )
       hide();
   }, settings.dismissDelayMs);
@@ -215,6 +224,7 @@ function createView(
       else if (!view.isPinned && !hovered) laterHide();
     },
     (change) => saveLayout(view, change),
+    friendTooltip,
   );
   popup = view;
   view.host.addEventListener("pointerenter", cancelClose);
@@ -265,6 +275,10 @@ function loadHeaderSignals(
     .catch(() => {});
 }
 function enter(target: Element) {
+  if (friendTooltip.contains(target)) {
+    cancelClose();
+    return;
+  }
   if (target.closest(`#${HOST_ID}`)) {
     cancelClose();
     return;
@@ -292,6 +306,18 @@ function enter(target: Element) {
 document.addEventListener(
   "pointerover",
   (event) => {
+    if (
+      event
+        .composedPath()
+        .some(
+          (node) => node instanceof Element && node.matches(".friend-trigger"),
+        )
+    ) {
+      clearTimeout(openTimer);
+      current = popup?.context ?? null;
+      cancelClose();
+      return;
+    }
     if (event.target instanceof Element) enter(event.target);
   },
   true,
@@ -302,7 +328,9 @@ document.addEventListener(
     const next = event.relatedTarget;
     if (
       next instanceof Element &&
-      (popup?.host.contains(next) || current?.anchor.contains(next))
+      (popup?.host.contains(next) ||
+        current?.anchor.contains(next) ||
+        friendTooltip.contains(next))
     )
       return;
     hovered = false;
@@ -313,6 +341,18 @@ document.addEventListener(
 document.addEventListener(
   "focusin",
   (event) => {
+    if (
+      event
+        .composedPath()
+        .some(
+          (node) => node instanceof Element && node.matches(".friend-trigger"),
+        )
+    ) {
+      clearTimeout(openTimer);
+      current = popup?.context ?? null;
+      cancelClose();
+      return;
+    }
     if (event.target instanceof Element) enter(event.target);
   },
   true,
@@ -332,6 +372,16 @@ document.addEventListener(
 document.addEventListener(
   "keydown",
   (event) => {
+    if (
+      event
+        .composedPath()
+        .some(
+          (node) =>
+            node instanceof Element &&
+            node.hasAttribute("data-kosmore-profile"),
+        )
+    )
+      return;
     if (event.key === "Escape" && popup) {
       event.stopImmediatePropagation();
       event.preventDefault();
@@ -390,6 +440,7 @@ observePage(() => {
   }
 });
 client.onAccountChange(() => {
+  friendTooltip.reset();
   navigationAway();
   overlays.invalidate();
   salesOverlays.invalidate();
@@ -413,6 +464,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (area === "local" && changes[SETTINGS_KEY]) {
     settings = parseSettings(changes[SETTINGS_KEY].newValue);
+    friendTooltip.setSettings(settings);
     navigationHotkeys.settingsChanged();
     overlays.setSettings(settings);
     salesOverlays.setSettings(settings);

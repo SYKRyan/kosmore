@@ -7,6 +7,8 @@ import {
 export type Request =
   | { requestId: string; op: "popupState" }
   | { requestId: string; op: "popupLayout"; change: PopupLayoutChange }
+  | { requestId: string; op: "friendPopupState" }
+  | { requestId: string; op: "friendPopupLayout"; change: PopupLayoutChange }
   | { requestId: string; op: "sessions" }
   | { requestId: string; op: "albums"; tabId: number; accountKey: string }
   | { requestId: string; op: "openOptions" };
@@ -27,8 +29,12 @@ export function isRequest(x: unknown): x is Request {
   const r = x as Request;
   return (
     validId(r.requestId) &&
-    (["sessions", "openOptions", "popupState"].includes(r.op) ||
+    (["sessions", "openOptions", "popupState", "friendPopupState"].includes(
+      r.op,
+    ) ||
       (r.op === "popupLayout" && isPopupLayoutChange(r.change)) ||
+      (r.op === "friendPopupLayout" &&
+        isPopupLayoutChange(r.change, { minWidth: 240, minHeight: 160 })) ||
       (r.op === "albums" &&
         Number.isInteger(r.tabId) &&
         r.tabId >= 0 &&
