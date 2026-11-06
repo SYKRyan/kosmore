@@ -40,6 +40,15 @@ On a player's profile, click **✦ KosMore** above the header to edit the same p
 
 Kosmora does not report all unsold listings, so this is a local sample built from listings KosMore sees while you browse the Market and from its existing auction reads. Outcomes are resolved from Market updates and fresh sale histories without extra observation requests. A dash means no settled observations are available; it does not mean a 0% sale rate. Observations stay in this browser, are limited to 20,000 listings with 35-day retention, and are excluded from backups.
 
+## Fusion family impact
+
+On the Fusion page, each card shows whether you can fuse it without losing a family tier, counting the cards already in the tray:
+
+- **`✓ Safe`**: none of its families loses a tier.
+- **`⚠ Loses Asteroids I`**: fusing it drops that family from tier I (`+1` if another family drops too).
+
+The game fuses complete batches only, in the order you chose the cards; a chosen card still waiting for its batch has a dashed outline. Badges never block clicks. **Settings → Card overlays → Show family impact on the Fusion page** turns it off.
+
 ## Updating from source
 
 After pulling changes, run `pnpm install` and `pnpm build` from the repository. Reload KosMore at `chrome://extensions`, refresh existing Kosmora tabs, and reopen settings. Chrome must load the rebuilt `dist` folder; if your installed extension uses a separate folder, replace its contents with the new build first.

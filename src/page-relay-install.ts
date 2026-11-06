@@ -2,10 +2,12 @@
  * KosMore page-world relay, installed by src/page-hook.ts (MAIN world, document_start).
  *
  * Kosmora's auction search never reports listings that ended unsold, so the Sale
- * Rate stat needs to see the listings the game shows you. This script passes copies
- * of the game's own successful `GET /api/auctions` and `GET /api/auctions/{id}`
- * responses to the content script. It sends no requests of its own, relays nothing
- * else, and returns the page's original response untouched.
+ * Rate stat needs to see the listings the game shows you. Fusion family impact
+ * needs the recipes and cards the Fusion page loads. This script passes copies of
+ * the game's own successful `GET /api/auctions`, `GET /api/auctions/{id}`,
+ * `GET /api/fusion`, `GET /api/fusion/cards` and `GET /api/families` responses to
+ * the content script. It sends no requests of its own, relays nothing else, and
+ * returns the page's original response untouched.
  */
 import {
   RELAY_BUFFER,

@@ -352,6 +352,14 @@ const questOverlay = overlayToggle(
     draft.showQuestOverlay = checked;
   },
 );
+const fusionFamilyOverlay = overlayToggle(
+  "fusion-family-overlay",
+  "Show family impact on the Fusion page",
+  "Bottom left of each card, counting cards already chosen · ✓ Safe: no family loses a tier · ⚠ Loses: fusing it drops its family a tier",
+  (checked) => {
+    draft.showFusionFamilyOverlay = checked;
+  },
+);
 const salesSettings = new SalesSettings((update) =>
   Object.assign(draft, update),
 );
@@ -544,6 +552,7 @@ groupControls({
     "showOnSaleOverlay",
     "showFriendInterestOverlay",
     "showQuestOverlay",
+    "showFusionFamilyOverlay",
   ],
   render: renderSettings,
 });
@@ -687,6 +696,7 @@ function renderSettings() {
   onSaleOverlay.checked = draft.showOnSaleOverlay;
   friendOverlay.checked = draft.showFriendInterestOverlay;
   questOverlay.checked = draft.showQuestOverlay;
+  fusionFamilyOverlay.checked = draft.showFusionFamilyOverlay;
   statSettings.render(draft.stats);
   hotkeySettings.render(draft.hotkeys);
   salesSettings.render(draft);

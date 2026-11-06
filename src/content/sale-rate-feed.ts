@@ -1,5 +1,9 @@
 import { parseObservedAuctions } from "../kosmora/auctions";
-import { isRelayMessage, RELAY_READY } from "../shared/page-relay";
+import {
+  isRelayMessage,
+  RELAY_AUCTIONS,
+  RELAY_READY,
+} from "../shared/page-relay";
 import { resolveWithHistory } from "../shared/sale-observations";
 import type { MarketHistory } from "../shared/types";
 import type { SaleObservationStore } from "./sale-observation-store";
@@ -17,7 +21,8 @@ export function listenToPageRelay(
     if (
       event.source !== win ||
       event.origin !== win.location.origin ||
-      !isRelayMessage(event.data)
+      !isRelayMessage(event.data) ||
+      !RELAY_AUCTIONS.test(event.data.path)
     )
       return;
     store.recordMany(

@@ -5,6 +5,7 @@ import {
   setRequestPriority,
 } from "../shared/request-scheduler";
 import { parseFamilyChoices } from "./families";
+import { parseFamilyCountsPage, parseMilestones } from "./fusion";
 import { parseFriends } from "./friends";
 import { parseQuestSubjects } from "./quests";
 import { activeAuctionSummary, type AuctionListing } from "./auctions";
@@ -285,6 +286,45 @@ export class GameClient implements KosmoraClient {
       signal,
       fresh,
       ["/atlas/families"],
+    );
+  }
+  /** Serves a card's queued `/collection/{id}` read ahead of other queued reads. */
+  expediteCard(id: string) {
+    this.scheduler.expedite(`/collection/${subjectId(id)}`);
+  }
+  /** Cards collected per family, for fusion family impact. */
+  familyCounts(signal?: AbortSignal, fresh = false) {
+    const page = (offset: number) =>
+      `/me/families?sort=closest&limit=1000${offset ? `&offset=${offset}` : ""}`;
+    return this.cached(
+      this.reads,
+      "family-counts",
+      async (shared) => {
+        // Kosmora returns at most 1000 families per read; page through the rest.
+        const counts = new Map<string, number>();
+        for (let offset = 0; offset < 20_000; offset += 1000) {
+          const next = parseFamilyCountsPage(
+            await this.read(page(offset), shared),
+          );
+          for (const [id, n] of next.counts) counts.set(id, n);
+          if (next.counts.size < 1000 || counts.size >= next.total) break;
+        }
+        return counts;
+      },
+      signal,
+      fresh,
+      [page(0)],
+    );
+  }
+  /** Family tier thresholds, when the relay has not passed on the game's own read. */
+  familyMilestones(signal?: AbortSignal) {
+    return this.cached(
+      this.reads,
+      "family-milestones",
+      async (shared) => parseMilestones(await this.read("/families", shared)),
+      signal,
+      false,
+      ["/families"],
     );
   }
   friends(signal?: AbortSignal, fresh = false) {

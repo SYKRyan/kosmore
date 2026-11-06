@@ -24,7 +24,10 @@ export function parseCardFamilies(value: unknown): CardFamily[] {
       throw new Error("Card family data is unfamiliar.");
     if (result.has(id) && result.get(id)!.name !== name)
       throw new Error("Conflicting card families.");
-    result.set(id, { id, name });
+    result.set(
+      id,
+      f.economic === false ? { id, name, economic: false } : { id, name },
+    );
   }
   return [...result.values()];
 }

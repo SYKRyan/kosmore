@@ -46,6 +46,8 @@ export interface CardInsights {
 export interface CardFamily {
   id: string;
   name: string;
+  /** false when this card does not count toward the family's tiers. */
+  economic?: false;
 }
 export interface Friend {
   handle: string;
@@ -122,6 +124,7 @@ export interface Settings {
   showOnSaleOverlay: boolean;
   showFriendInterestOverlay: boolean;
   showQuestOverlay: boolean;
+  showFusionFamilyOverlay: boolean;
   stats: import("./stat-catalog").StatPreference[];
   hotkeys: import("./hotkeys").Hotkeys;
   pinnedAlbums: Record<string, string[]>;

@@ -40,6 +40,7 @@ export const defaults = (): Settings => ({
   showOnSaleOverlay: true,
   showFriendInterestOverlay: true,
   showQuestOverlay: true,
+  showFusionFamilyOverlay: true,
   stats: defaultStats(),
   hotkeys: {},
   pinnedAlbums: {},
@@ -92,6 +93,8 @@ export function parseSettings(value: unknown): Settings {
     d.showFriendInterestOverlay = v.showFriendInterestOverlay;
   if (typeof v.showQuestOverlay === "boolean")
     d.showQuestOverlay = v.showQuestOverlay;
+  if (typeof v.showFusionFamilyOverlay === "boolean")
+    d.showFusionFamilyOverlay = v.showFusionFamilyOverlay;
   if (typeof v.hoverDelayMs === "number" && Number.isFinite(v.hoverDelayMs))
     d.hoverDelayMs = Math.min(2000, Math.max(100, Math.round(v.hoverDelayMs)));
   for (const [key, min, max] of [

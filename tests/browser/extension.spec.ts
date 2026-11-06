@@ -22,6 +22,15 @@ import {
 import { multiSelectFixture } from "../fixtures/multi-select";
 import { auction, auctionPage } from "../fixtures/auctions";
 import {
+  FUSION_FAMILIES,
+  familyMilestones,
+  fusionFixture,
+  fusionGrid,
+  fusionMembership,
+  fusionRecipes,
+  myFamilies,
+} from "../fixtures/fusion";
+import {
   activityRow,
   marketActivityFixture,
 } from "../fixtures/market-activity";
@@ -4866,6 +4875,155 @@ test("sale rate: relays the page's own auction reads and settles them per finish
       .toEqual([`kosmore.marketOutcomes.${ended.slice(0, 10)}`]);
   } finally {
     await page.unroute("https://kosmora.io/api/auctions*");
+  }
+});
+
+test("fusion family impact: marks tiles safe or not from the page's own reads, follows the tray, never blocks picks, and fits narrow cards", async () => {
+  let familyReads = 0;
+  await page.route("https://kosmora.io/fusion", (route) =>
+    route.fulfill({
+      contentType: "text/html; charset=utf-8",
+      body: fusionFixture(),
+    }),
+  );
+  await page.route("https://kosmora.io/api/fusion/cards*", (route) =>
+    route.fulfill({ json: fusionGrid }),
+  );
+  await page.route("https://kosmora.io/api/fusion", (route) =>
+    route.fulfill({ json: fusionRecipes }),
+  );
+  await page.route("https://kosmora.io/api/families", (route) =>
+    route.fulfill({ json: familyMilestones }),
+  );
+  let cardReads = 0;
+  await page.route("https://kosmora.io/api/collection/30*", (route) => {
+    cardReads++;
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    return route.fulfill({
+      json: { ...card(id), families: fusionMembership[id] },
+    });
+  });
+  await page.route("https://kosmora.io/api/me/families*", (route) => {
+    familyReads++;
+    return route.fulfill({ json: myFamilies });
+  });
+  const tile = (id: string) => page.locator(`.grid .pick[data-id="${id}"]`);
+  const badge = (id: string) =>
+    tile(id).locator(".kc-article [data-kosmore-fusion-family] .verdict");
+  try {
+    await page.goto("https://kosmora.io/fusion");
+    // Asteroids 4 (floor 2): two can go. Parrots 2: its only card drops it.
+    await expect(badge("304")).toHaveText("⚠ LosesParrotsI");
+    await expect(badge("304")).toHaveClass(/drop/);
+    await expect(badge("304")).toHaveAttribute(
+      "aria-label",
+      "Not safe: picking this card drops Parrots from tier I to no tier.",
+    );
+    // Its primary family keeps tier II, but its sub-family MAMA Awards drops.
+    await expect(badge("307")).toHaveText("⚠ LosesMAMA AwardsI");
+    // Asteroids, no family (305) and room to spare (306): safe.
+    for (const id of ["301", "302", "303", "305", "306"]) {
+      await expect(badge(id)).toHaveText("✓ Safe");
+      await expect(badge(id)).toHaveClass(/safe/);
+    }
+    expect(familyReads).toBe(1);
+    expect(cardReads).toBeLessThanOrEqual(7); // once per card at most
+    expect(writeRequests).toBe(0);
+
+    // Clicking right on a badge still picks the card underneath.
+    const at = (await badge("301").boundingBox())!;
+    await page.mouse.click(at.x + at.width / 2, at.y + at.height / 2);
+    await expect(tile("301")).toHaveClass(/pick-on/);
+    await expect(badge("302")).toHaveText("✓ Safe");
+    await tile("302").locator(".pick-hit").click();
+    await expect(badge("303")).toHaveText("⚠ LosesAsteroidsI");
+    await expect(badge("303")).toHaveClass(/drop/);
+    await expect(badge("301")).toHaveText("✓ Safe");
+    // A third pick waits for a partner (two per fusion): marked as waiting,
+    // and it does not count against the two being fused.
+    await tile("303").locator(".pick-hit").click();
+    await expect(badge("303")).toHaveClass(/wait/);
+    await expect(badge("303")).toHaveAttribute(
+      "aria-label",
+      /^Not in this fusion yet: the game fuses 2 cards at a time/,
+    );
+    await expect(badge("301")).toHaveText("✓ Safe");
+    await expect(badge("301")).not.toHaveClass(/wait/);
+    await tile("303").locator(".pick-hit").click();
+    await expect(badge("303")).not.toHaveClass(/wait/);
+    // Taking a card back out restores the third one.
+    await tile("302").locator(".pick-hit").click();
+    await expect(badge("303")).toHaveText("✓ Safe");
+    await tile("301").locator(".pick-hit").click();
+    await expect(badge("303")).toHaveText("✓ Safe");
+    expect(writeRequests).toBe(0);
+
+    // Narrow cards: the badge stays inside the card, leaves the bottom-right
+    // badge slots clear, and shortens a long family name.
+    // The long family exactly at 25: its card drops tier IV.
+    await page.unroute("https://kosmora.io/api/me/families*");
+    await page.route("https://kosmora.io/api/me/families*", (route) =>
+      route.fulfill({
+        json: {
+          ...myFamilies,
+          families: myFamilies.families.map((f) =>
+            f.id === "sports.long" ? { ...f, collected: 25 } : f,
+          ),
+        },
+      }),
+    );
+    await page.setViewportSize({ width: 420, height: 1000 });
+    await page.reload();
+    await tile("306").waitFor();
+    await page.evaluate(() => {
+      const g = document.querySelector(".grid") as HTMLElement;
+      g.style.gridTemplateColumns = "repeat(2, 144px)";
+    });
+    // Badges appear as cards come into view.
+    await tile("306").scrollIntoViewIfNeeded();
+    await expect(badge("306")).toHaveText(
+      `⚠ Loses${FUSION_FAMILIES.long.name}IV`,
+    );
+    for (const id of ["304", "306"]) {
+      await tile(id).scrollIntoViewIfNeeded();
+      await expect(badge(id)).toHaveClass(/drop/);
+      // On the card art: inside it, so no card text is covered.
+      const art = (await tile(id).locator(".kc-window").boundingBox())!;
+      const box = (await badge(id).boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(art.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(art.x + art.width);
+      expect(box.y).toBeGreaterThanOrEqual(art.y);
+      expect(box.y + box.height).toBeLessThanOrEqual(art.y + art.height);
+    }
+    expect(
+      await badge("306")
+        .locator(".name")
+        .evaluate((n) => n.scrollWidth > n.clientWidth),
+    ).toBe(true);
+    for (const fixed of await badge("306").locator(".fixed").all())
+      await expect(fixed).toBeVisible();
+
+    // The setting turns it off without a reload.
+    await worker.evaluate(async () => {
+      const saved = (await chrome.storage.local.get("kosmore.settings"))[
+        "kosmore.settings"
+      ] as object;
+      await chrome.storage.local.set({
+        "kosmore.settings": { ...saved, showFusionFamilyOverlay: false },
+      });
+    });
+    await expect(page.locator("[data-kosmore-fusion-family]")).toHaveCount(0);
+  } finally {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    for (const url of [
+      "https://kosmora.io/fusion",
+      "https://kosmora.io/api/fusion/cards*",
+      "https://kosmora.io/api/fusion",
+      "https://kosmora.io/api/families",
+      "https://kosmora.io/api/me/families*",
+      "https://kosmora.io/api/collection/30*",
+    ])
+      await page.unroute(url);
   }
 });
 

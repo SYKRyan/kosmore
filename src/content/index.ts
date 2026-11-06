@@ -35,6 +35,7 @@ import { ProfileReminders } from "./profile-reminders";
 import { MarketOutcomes } from "./market-outcomes";
 import { HistoryResolver, listenToPageRelay } from "./sale-rate-feed";
 import { saleObservations } from "./sale-observation-store";
+import { FusionFamilyImpact } from "./fusion-family";
 
 const client = new GameClient();
 const friendTooltip = new FriendTooltip(client, () => {
@@ -46,6 +47,8 @@ const overlays = new CardOverlays(client);
 overlays.start();
 const salesOverlays = new SalesOverlays(client);
 salesOverlays.start();
+const fusionFamily = new FusionFamilyImpact(client);
+fusionFamily.start();
 new MarketOutcomes(saleObservations).start();
 listenToPageRelay(saleObservations);
 const historyResolver = new HistoryResolver(saleObservations);
@@ -89,6 +92,7 @@ const preferencesReady = Promise.all([
   pinnedState = state;
   overlays.setSettings(settings);
   salesOverlays.setSettings(settings);
+  fusionFamily.setSettings(settings);
   if (!settings.enabled) hide();
   else if (pinnedState.pinned && !popup && !current) createView(null);
 });
@@ -491,6 +495,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     navigationHotkeys.settingsChanged();
     overlays.setSettings(settings);
     salesOverlays.setSettings(settings);
+    fusionFamily.setSettings(settings);
     if (!settings.enabled) hide();
     else if (popup) {
       popup.setSettings(settings);
