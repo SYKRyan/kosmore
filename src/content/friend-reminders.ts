@@ -40,10 +40,12 @@ export class FriendReminders {
   private ready = false;
   private saving = false;
   private closed = false;
+  private layoutObserver?: ResizeObserver;
   constructor(
     handle: string,
     private persist: (value: FriendReminder) => Promise<void>,
     retryFamilies: () => void,
+    options?: { profile: boolean; controls: HTMLElement[] },
   ) {
     this.retryButton = button(
       "Retry families",
@@ -51,7 +53,10 @@ export class FriendReminders {
       "retry-families",
     );
     this.retryButton.hidden = true;
-    this.host.id = FRIEND_REMINDERS_ID;
+    this.host.id = options?.profile
+      ? "kosmore-profile-reminders"
+      : FRIEND_REMINDERS_ID;
+    if (options?.profile) this.host.dataset.kosmoreProfile = "editor";
     const shadow = this.host.attachShadow({ mode: "open" });
     const style = el("style");
     style.textContent = css;
@@ -61,6 +66,13 @@ export class FriendReminders {
       el("p", "brand", "✦ KosMore · Private reminders"),
       el("h2", "", handle),
     );
+    if (options?.profile) {
+      content.querySelector(".brand")!.textContent = "✦ KosMore";
+      content.querySelector("h2")!.remove();
+      const actions = el("div", "header-actions");
+      actions.append(...options.controls);
+      content.prepend(actions);
+    }
     const notesSection = el("div", "section notes-section");
     const notesTitle = el("h3");
     const notesLabel = el("label", "", "Notes");
@@ -137,22 +149,37 @@ export class FriendReminders {
         this.changed();
       }
     });
-    editor.append(this.tokens, this.input, this.addButton);
+    editor.append(this.tokens, this.input);
     picker.append(editor, this.options);
     this.familyHint.id = "family-hint";
     this.familyHint.setAttribute("aria-live", "polite");
+    const familyActions = el("div", "family-actions");
+    familyActions.append(this.addButton);
     familySection.append(
       familyTitle,
       picker,
       this.familyHint,
       this.retryButton,
+      familyActions,
     );
     const footer = el("div", "footer");
     this.status.setAttribute("role", "status");
-    footer.append(this.saveButton, this.cancelButton, this.status);
+    const actions = el("div", "footer-actions");
+    actions.append(this.cancelButton, this.saveButton);
+    footer.append(this.status, actions);
     this.fieldset.append(familySection, notesSection, footer);
     content.append(this.fieldset);
     shadow.append(style, content);
+    if (options?.profile) {
+      this.layoutObserver = new ResizeObserver(() => {
+        this.notes.style.height =
+          this.host.dataset.mode === "widget" && this.host.clientWidth >= 650
+            ? `${editor.getBoundingClientRect().height}px`
+            : "";
+      });
+      this.layoutObserver.observe(editor);
+      this.layoutObserver.observe(this.host);
+    }
     // Prevent the game's delegated keyboard and pointer actions from using editor input.
     for (const event of [
       "click",
@@ -226,6 +253,7 @@ export class FriendReminders {
   }
   dispose() {
     this.closed = true;
+    this.layoutObserver?.disconnect();
     this.host.remove();
   }
   private controls() {

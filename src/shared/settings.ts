@@ -7,6 +7,14 @@ export const SETTINGS_KEY = "kosmore.settings";
 export const defaults = (): Settings => ({
   schemaVersion: 1,
   enabled: true,
+  profileRemindersEnabled: true,
+  profileRemindersPinned: false,
+  friendTooltipEnabled: true,
+  friendHoverDelayMs: 300,
+  friendDismissDelayMs: 200,
+  friendTooltipWidth: 320,
+  friendTooltipHeight: 560,
+  friendTooltipPosition: null,
   navigationHotkeysEnabled: true,
   cardOverlaysEnabled: true,
   salesOverlaysEnabled: true,
@@ -44,8 +52,12 @@ export function parseSettings(value: unknown): Settings {
   d.stats = parseStats(v.stats);
   d.hotkeys = parseHotkeys(v.hotkeys);
   d.popupPosition = parsePopupPosition(v.popupPosition);
+  d.friendTooltipPosition = parsePopupPosition(v.friendTooltipPosition);
   if (typeof v.enabled === "boolean") d.enabled = v.enabled;
   for (const key of [
+    "profileRemindersEnabled",
+    "profileRemindersPinned",
+    "friendTooltipEnabled",
     "navigationHotkeysEnabled",
     "cardOverlaysEnabled",
     "salesOverlaysEnabled",
@@ -83,6 +95,10 @@ export function parseSettings(value: unknown): Settings {
   if (typeof v.hoverDelayMs === "number" && Number.isFinite(v.hoverDelayMs))
     d.hoverDelayMs = Math.min(2000, Math.max(100, Math.round(v.hoverDelayMs)));
   for (const [key, min, max] of [
+    ["friendHoverDelayMs", 100, 2000],
+    ["friendDismissDelayMs", 0, 30000],
+    ["friendTooltipWidth", 240, 1200],
+    ["friendTooltipHeight", 160, 1600],
     ["dismissDelayMs", 0, 30000],
     ["popupWidth", 320, 1200],
     ["popupHeight", 480, 1600],

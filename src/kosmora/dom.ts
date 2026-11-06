@@ -1,5 +1,6 @@
 import type { CardContext } from "../shared/types";
 export const HOST_ID = "kosmore-root";
+export const FRIEND_TOOLTIP_ID = "kosmore-friend-tooltip";
 export const OVERLAY_ATTR = "data-kosmore-card-overlays";
 export function cardOverlaysAllowed(root: Element): boolean {
   return !root.closest(".md-turn, .md-bids, .md-sale, .bsell-row");
@@ -37,7 +38,8 @@ export function resolveCard(
   target: Element,
   doc: Document = document,
 ): CardContext | null {
-  if (target.closest(`#${HOST_ID},.kc-back,[hidden]`)) return null;
+  if (target.closest(`#${HOST_ID},#${FRIEND_TOOLTIP_ID},.kc-back,[hidden]`))
+    return null;
   const picker = target.closest<HTMLElement>(".pick");
   // The shared Pickable overlays its card with a sibling selection button,
   // including collection multi-select entered by long press.

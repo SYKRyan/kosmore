@@ -5,6 +5,10 @@ import { HotkeySettings } from "./hotkey-settings";
 import { settingsNavigation } from "./settings-navigation";
 import { SalesSettings, SALES_SETTINGS_KEYS } from "./sales-settings";
 import { BackupSettings } from "./backup-settings";
+import {
+  FriendTooltipSettings,
+  FRIEND_TOOLTIP_KEYS,
+} from "./friend-tooltip-settings";
 import { hotkeyConflict } from "../shared/hotkeys";
 import { button, el, note } from "../content/ui";
 import {
@@ -159,6 +163,8 @@ function sectionToggle(
   host: HTMLElement,
   key:
     | "enabled"
+    | "profileRemindersEnabled"
+    | "friendTooltipEnabled"
     | "navigationHotkeysEnabled"
     | "cardOverlaysEnabled"
     | "salesOverlaysEnabled"
@@ -200,6 +206,41 @@ const hotkeysEnabled = sectionToggle(
   "navigationHotkeysEnabled",
   "Enable navigation hotkey",
 );
+const friendTooltipSettings = new FriendTooltipSettings((update) =>
+  Object.assign(draft, update),
+);
+const friendTooltipEnabled = sectionToggle(
+  friendTooltipSettings.host,
+  "friendTooltipEnabled",
+  "Enable friend tooltip",
+);
+const profileSettings = el("section", "panel");
+profileSettings.append(
+  el("h2", "", "Profile reminders"),
+  el(
+    "p",
+    "sub",
+    "Open KosMore above a player's profile header to edit the same private families and notes as Social. Pin the editor below the header and above Albums, with families on the left and notes on the right. These reminders stay in this browser.",
+  ),
+);
+const profileEnabled = sectionToggle(
+  profileSettings,
+  "profileRemindersEnabled",
+  "Enable profile reminders",
+);
+const profilePinned = el("input");
+profilePinned.type = "checkbox";
+profilePinned.id = "profile-reminders-pinned";
+const profilePinLabel = el(
+  "label",
+  "label settings-toggle",
+  "Keep reminders pinned on profiles",
+);
+profilePinLabel.prepend(profilePinned);
+profileSettings.append(el("div", "rule"), profilePinLabel);
+profilePinned.addEventListener("change", () => {
+  draft.profileRemindersPinned = profilePinned.checked;
+});
 const overlays = el("section", "panel");
 overlays.append(
   el("h2", "", "Card overlays"),
@@ -479,6 +520,19 @@ groupControls({
   validate: () => hotkeyConflict(draft.hotkeys),
 });
 groupControls({
+  host: friendTooltipSettings.host,
+  name: "friend tooltip settings",
+  keys: [...FRIEND_TOOLTIP_KEYS],
+  render: renderSettings,
+  validate: () => friendTooltipSettings.validate(draft),
+});
+groupControls({
+  host: profileSettings,
+  name: "profile reminder settings",
+  keys: ["profileRemindersEnabled", "profileRemindersPinned"],
+  render: renderSettings,
+});
+groupControls({
   host: overlays,
   name: "overlay settings",
   keys: [
@@ -540,6 +594,18 @@ const settingsGroups = [
     path: "M4 3h16v13H9l-5 5V3Z M8 7h8 M8 11h5",
   },
   {
+    id: "friend-tooltip",
+    label: "Friend tooltip",
+    host: friendTooltipSettings.host,
+    path: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-4 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+  },
+  {
+    id: "profile-reminders",
+    label: "Profile reminders",
+    host: profileSettings,
+    path: "M4 3h16v18H4Z M8 15h8 M8 18h5 M15 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
+  },
+  {
     id: "pinned-albums",
     label: "Pinned albums",
     host: albumSettings,
@@ -592,10 +658,14 @@ app.append(
   el(
     "p",
     "bottom",
-    "KosMore 0.2.2 · Settings stay in this browser. Card and market data come from Kosmora.",
+    `KosMore ${chrome.runtime.getManifest().version} · Settings stay in this browser. Card and market data come from Kosmora.`,
   ),
 );
 function renderSettings() {
+  profileEnabled.checked = draft.profileRemindersEnabled;
+  profilePinned.checked = draft.profileRemindersPinned;
+  friendTooltipEnabled.checked = draft.friendTooltipEnabled;
+  friendTooltipSettings.render(draft);
   hotkeysEnabled.checked = draft.navigationHotkeysEnabled;
   overlaysEnabled.checked = draft.cardOverlaysEnabled;
   salesEnabled.checked = draft.salesOverlaysEnabled;
@@ -622,6 +692,8 @@ function renderSettings() {
   salesSettings.render(draft);
   for (const host of [
     general,
+    friendTooltipSettings.host,
+    profileSettings,
     albumSettings,
     statSettings.host,
     overlays,
@@ -880,6 +952,28 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
     saved[field] = next[field];
   }
+  for (const { field, input } of friendTooltipSettings.inputs) {
+    if (field !== "friendTooltipWidth" && field !== "friendTooltipHeight")
+      continue;
+    if (draft[field] === saved[field]) {
+      draft[field] = next[field];
+      input.value = String(next[field]);
+    }
+    saved[field] = next[field];
+  }
+  for (const [field, input] of [
+    ["profileRemindersEnabled", profileEnabled],
+    ["profileRemindersPinned", profilePinned],
+  ] as const) {
+    if (draft[field] === saved[field]) {
+      draft[field] = next[field];
+      input.checked = next[field];
+    }
+    saved[field] = next[field];
+  }
+  renderGroupState(profileSettings);
+  saved.friendTooltipPosition = next.friendTooltipPosition;
+  draft.friendTooltipPosition = next.friendTooltipPosition;
   saved.popupPosition = next.popupPosition;
   draft.popupPosition = next.popupPosition;
   backupSettings.refreshControls();

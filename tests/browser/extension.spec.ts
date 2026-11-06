@@ -752,6 +752,8 @@ test("settings groups are ordered with separate account controls and a fixed anc
         ),
     ).toEqual([
       "Hover tooltip",
+      "Friend tooltip",
+      "Profile reminders",
       "Pinned albums",
       "Tooltip stat boxes",
       "Card overlays",
@@ -765,6 +767,8 @@ test("settings groups are ordered with separate account controls and a fixed anc
       nav = options.getByRole("navigation", { name: "Settings groups" });
     await expect(nav.getByRole("link")).toHaveText([
       "Hover tooltip",
+      "Friend tooltip",
+      "Profile reminders",
       "Pinned albums",
       "Tooltip stat boxes",
       "Card overlays",
@@ -791,7 +795,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       await expect(options.getByLabel(label, { exact: true })).toBeChecked();
     await expect(
       options.locator(".settings-group-heading").getByRole("switch"),
-    ).toHaveCount(6);
+    ).toHaveCount(8);
     const checkSwitchLayout = async () => {
       for (const input of await options
         .locator(".settings-group-heading")
@@ -820,6 +824,8 @@ test("settings groups are ordered with separate account controls and a fixed anc
     const initial = (await nav.boundingBox())!;
     for (const [label, id] of [
       ["Hover tooltip", "hover-tooltip"],
+      ["Friend tooltip", "friend-tooltip"],
+      ["Profile reminders", "profile-reminders"],
       ["Pinned albums", "pinned-albums"],
       ["Tooltip stat boxes", "stat-boxes"],
       ["Card overlays", "card-overlays"],
@@ -4114,6 +4120,50 @@ test("sales badges fill only their own controlled batch price fields with indepe
     await page.unroute("**/api/auctions?**");
   }
 });
+test("card and sales overlays remain independent of the hover-tooltip switch", async () => {
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        enabled: false,
+        showQuestOverlay: true,
+      },
+    });
+  });
+  await page.goto("https://kosmora.io/collection");
+  const quest = page.locator("[data-kosmore-card-overlays] .quest");
+  await expect(quest).toBeVisible();
+  await page.locator(".kc-article").hover();
+  await expect(page.locator("#kosmore-root")).toHaveCount(0);
+  await page.goto(
+    `https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`,
+  );
+  const sales = page.locator("[data-kosmore-sales-overlay]");
+  await expect(sales.getByRole("button", { name: /^Last Sale/ })).toBeEnabled();
+  await expect(
+    sales.getByRole("button", { name: /^Lowest Listed/ }),
+  ).toBeEnabled();
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        salesOverlaysEnabled: false,
+        cardOverlaysEnabled: false,
+      },
+    });
+  });
+  await expect(sales).toHaveCount(0);
+  await page.goto("https://kosmora.io/collection");
+  await expect(quest).toHaveCount(0);
+  expect(writeRequests).toBe(0);
+});
+
 test("single-sale badges share settings and respect click toggles, visibility, readonly inputs and nonpositive adjustments", async () => {
   const options = await context.newPage();
   try {

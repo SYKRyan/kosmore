@@ -87,7 +87,7 @@ for (const path of required)
 const contents = new Map();
 for (const path of files) {
   if (path.endsWith(".map")) continue;
-  // Only declared entry points/icons and compiled JS/CSS assets enter the tester ZIP.
+  // Only declared entry points/icons and compiled JS/CSS assets enter the release ZIP.
   if (
     !required.has(path) &&
     !/^assets\/[a-zA-Z0-9._-]+\.(?:js|css)$/.test(path)
@@ -105,9 +105,15 @@ for (const path of files) {
 }
 contents.set("README.txt", await readFile(resolve(root, "README.txt")));
 const releaseNotes = await readFile(
-  resolve(root, "docs", "release-notes", `${version}.txt`),
+  resolve(root, "docs", "release-notes", `${version}.md`),
+  "utf8",
 );
-contents.set("RELEASE-NOTES.txt", releaseNotes);
+const textReleaseNotes = releaseNotes
+  .replace(/^#{1,6}\s+/gm, "")
+  .replace(/\*\*([^*]+)\*\*/g, "$1")
+  .replace(/`([^`]+)`/g, "$1");
+contents.set("RELEASE-NOTES.md", Buffer.from(releaseNotes));
+contents.set("RELEASE-NOTES.txt", Buffer.from(textReleaseNotes));
 // Fixed ZIP timestamps make the same build/input bytes reproducible.
 const archive = zipSync(
   Object.fromEntries(
@@ -125,16 +131,20 @@ if (
       !unpacked[path] || !data.equals(Buffer.from(unpacked[path])),
   )
 )
-  throw new Error("Tester ZIP failed its round-trip content verification.");
+  throw new Error("Release ZIP failed its round-trip content verification.");
 
 const releases = resolve(root, "releases");
-const name = `KosMore-${version}-test.zip`;
+const name = `KosMore-${version}.zip`;
 const hash = createHash("sha256").update(archive).digest("hex");
 await mkdir(releases, { recursive: true });
 await writeFile(resolve(releases, name), archive);
 await writeFile(resolve(releases, `${name}.sha256`), `${hash}  ${name}\n`);
 await writeFile(
   resolve(releases, `KosMore-${version}-release-notes.txt`),
+  textReleaseNotes,
+);
+await writeFile(
+  resolve(releases, `KosMore-${version}-release-notes.md`),
   releaseNotes,
 );
 console.log(

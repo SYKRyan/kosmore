@@ -1,3 +1,4 @@
+import { pinIcon } from "./icons";
 import css from "./popup.css?inline";
 import statCss from "./stat-box.css?inline";
 import { defaults } from "../shared/settings";
@@ -33,6 +34,7 @@ import { el, button, note } from "./ui";
 import { sellPath } from "../kosmora/selling";
 import { readTradeMatches, type TradeMatches } from "../shared/trade-matches";
 import { CardNotes } from "./card-notes";
+import type { FriendTooltip } from "./friend-tooltip";
 import {
   resizedBounds,
   type PopupBounds,
@@ -138,6 +140,7 @@ export class Popup {
     placement?: PopupPlacement,
     private onPinChange: () => void = () => {},
     private onLayoutChange: (change: PopupLayoutChange) => void = () => {},
+    private friendTooltip?: FriendTooltip,
   ) {
     this.placement = placement ? { ...placement } : undefined;
     if (context)
@@ -170,26 +173,7 @@ export class Popup {
       this.pinButton,
       button("×", onClose, "icon"),
     );
-    const pinIcon = document.createElementNS(
-      "http://www.w3.org/2000/svg",
-      "svg",
-    );
-    pinIcon.setAttribute("viewBox", "0 0 24 24");
-    pinIcon.setAttribute("width", "16");
-    pinIcon.setAttribute("height", "16");
-    pinIcon.setAttribute("fill", "none");
-    pinIcon.setAttribute("stroke", "currentColor");
-    pinIcon.setAttribute("stroke-width", "1.7");
-    pinIcon.setAttribute("stroke-linecap", "round");
-    pinIcon.setAttribute("stroke-linejoin", "round");
-    pinIcon.setAttribute("aria-hidden", "true");
-    const pinPath = document.createElementNS(pinIcon.namespaceURI, "path");
-    pinPath.setAttribute(
-      "d",
-      "M16 3 21 8 17 9 14 12 14 16 12 18 6 12 8 10 12 10 15 7Z M9 15 3 21",
-    );
-    pinIcon.append(pinPath);
-    this.pinButton.append(pinIcon);
+    this.pinButton.append(pinIcon());
     this.renderPin();
     this.enableDragging(top);
     this.applySize();
@@ -323,6 +307,7 @@ export class Popup {
     this.position();
   }
   dispose() {
+    this.friendTooltip?.ownerDisposed(this.host);
     cancelAnimationFrame(this.marketFrame);
     cancelAnimationFrame(this.observationFrame);
     this.albumRequest?.abort();
@@ -930,9 +915,22 @@ export class Popup {
   private renderHeaderSignals() {
     this.headerSignals.replaceChildren(
       ...(this.signals
-        ? signalBadges(this.signals, this.settings).filter((badge) =>
-            badge.matches(".friend,.quest"),
-          )
+        ? signalBadges(
+            this.signals,
+            this.settings,
+            false,
+            undefined,
+            this.context &&
+              this.settings.friendTooltipEnabled &&
+              this.friendTooltip
+              ? (badge) =>
+                  this.friendTooltip!.bind(
+                    badge,
+                    this.context!.subjectId,
+                    this.host,
+                  )
+              : undefined,
+          ).filter((badge) => badge.matches(".friend,.quest"))
         : []),
     );
   }

@@ -93,6 +93,10 @@ function backupSettings(value: unknown): Settings {
     ["dismissDelayMs", 0, 30000],
     ["popupWidth", 320, 1200],
     ["popupHeight", 480, 1600],
+    ["friendHoverDelayMs", 100, 2000],
+    ["friendDismissDelayMs", 0, 30000],
+    ["friendTooltipWidth", 240, 1200],
+    ["friendTooltipHeight", 160, 1600],
   ] as const) {
     if (
       Object.hasOwn(raw, key) &&
@@ -117,6 +121,12 @@ function backupSettings(value: unknown): Settings {
     !parsePopupPosition(raw.popupPosition)
   )
     throw new Error("The saved tooltip position is invalid.");
+  if (
+    Object.hasOwn(raw, "friendTooltipPosition") &&
+    raw.friendTooltipPosition !== null &&
+    !parsePopupPosition(raw.friendTooltipPosition)
+  )
+    throw new Error("The saved friend tooltip position is invalid.");
   if (Object.hasOwn(raw, "pinnedAlbums")) {
     for (const [handle, list] of Object.entries(
       record(raw.pinnedAlbums, "Pinned albums"),

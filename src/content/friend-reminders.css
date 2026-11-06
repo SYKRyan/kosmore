@@ -96,13 +96,19 @@ input::placeholder {
   border-radius: 10px;
   background: #130e26;
 }
+.family-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
 .family-picker {
   position: relative;
 }
 .family-options {
   position: absolute;
   left: 0;
-  right: 0;
+  /* Keep the separate Add action reachable while suggestions are open. */
+  right: 72px;
   top: 100%;
   z-index: 2;
   list-style: none;
@@ -220,7 +226,15 @@ button:disabled {
   align-items: center;
   margin-top: 22px;
 }
+.footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-left: auto;
+}
 .status {
+  margin: 0;
   color: #b6d9bd;
   font-size: 12px;
   flex: 1 1 170px;
@@ -232,5 +246,103 @@ button:disabled {
 @media (max-width: 600px) {
   .content {
     padding: 20px;
+  }
+}
+
+/* Profile reminders share Social controls, with a compact popup or native-style widget. */
+:host([data-kosmore-profile]) {
+  margin: 0;
+  background:
+    radial-gradient(90% 60% at 50% 0, #6e46dc33, transparent 72%),
+    linear-gradient(170deg, #1b1545, #0c0a26 75%);
+  border: 1px solid #cab4ff26;
+  box-shadow: inset 0 1px 0 #ffffff08;
+}
+:host([data-kosmore-profile][hidden]) {
+  display: none;
+}
+:host([data-mode="popup"]) {
+  position: fixed;
+  inset: auto;
+  width: min(540px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  box-shadow: 0 18px 60px #0008;
+}
+:host([data-mode="widget"]) {
+  container-type: inline-size;
+  width: 100%;
+  grid-column: 1 / -1;
+  background:
+    radial-gradient(90% 60% at 50% 0, #6e46dc14, transparent 72%),
+    linear-gradient(170deg, #1b154566, #0c0a264d 75%);
+}
+:host([data-kosmore-profile]) .content {
+  position: relative;
+  padding: 24px;
+}
+:host([data-kosmore-profile]) .brand {
+  margin: 0 75px 5px 0;
+  color: #fff3c4;
+  font:
+    700 18.4px/1.2 Cinzel,
+    "Trajan Pro",
+    Georgia,
+    serif;
+  letter-spacing: 0.04em;
+}
+:host([data-mode="widget"]) .brand {
+  margin: 0 50px 0 0;
+  min-height: 24px;
+  color: #dec17f;
+  font:
+    600 10px/1.5 system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-align: left;
+}
+.header-actions {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: flex;
+  gap: 6px;
+}
+.header-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 5px;
+  border-color: #78628b;
+}
+.header-actions button[aria-pressed="true"] {
+  color: #21182f;
+  background: #dec17f;
+  border-color: #dec17f;
+}
+.header-actions button[hidden] {
+  display: none;
+}
+@container (min-width: 650px) {
+  fieldset {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 28px;
+    row-gap: 20px;
+    align-items: start;
+  }
+  .section + .section {
+    margin-top: 0;
+  }
+  .footer {
+    grid-column: 1 / -1;
+    margin-top: 0;
+  }
+  textarea {
+    min-height: 0;
+    resize: none;
   }
 }

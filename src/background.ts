@@ -4,11 +4,15 @@ import {
   parsePopupPosition,
   parsePopupState,
   POPUP_SESSION_PREFIX,
+  FRIEND_POPUP_SESSION_PREFIX,
 } from "./shared/popup-layout";
 import { readSettings, saveSettings } from "./shared/settings";
 let layoutWrites = Promise.resolve();
 chrome.tabs.onRemoved.addListener((tabId) => {
-  void chrome.storage.session.remove(`${POPUP_SESSION_PREFIX}${tabId}`);
+  void chrome.storage.session.remove([
+    `${POPUP_SESSION_PREFIX}${tabId}`,
+    `${FRIEND_POPUP_SESSION_PREFIX}${tabId}`,
+  ]);
 });
 chrome.action.onClicked.addListener(() => {
   void chrome.runtime.openOptionsPage();
@@ -18,17 +22,23 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   const isOptions = sender.url === chrome.runtime.getURL("options.html");
   const isGame = !!sender.tab && sender.url?.startsWith("https://kosmora.io/");
   if (
-    (message.op === "popupState" || message.op === "popupLayout") &&
+    (message.op === "popupState" ||
+      message.op === "popupLayout" ||
+      message.op === "friendPopupState" ||
+      message.op === "friendPopupLayout") &&
     isGame &&
     sender.tab?.id !== undefined &&
     sender.frameId === 0
   ) {
-    const key = `${POPUP_SESSION_PREFIX}${sender.tab.id}`;
+    const friendPopup =
+      message.op === "friendPopupState" || message.op === "friendPopupLayout";
+    const key = `${friendPopup ? FRIEND_POPUP_SESSION_PREFIX : POPUP_SESSION_PREFIX}${sender.tab.id}`;
     const result = layoutWrites.then(async () => {
       const state = parsePopupState(
         (await chrome.storage.session.get(key))[key],
       );
-      if (message.op === "popupState") return state;
+      if (message.op === "popupState" || message.op === "friendPopupState")
+        return state;
       const change = message.change;
       if (change.pinned !== undefined) state.pinned = change.pinned;
       if (change.position) state.position = parsePopupPosition(change.position);
@@ -40,11 +50,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       ) {
         const settings = await readSettings();
         if (change.position)
-          settings.popupPosition = parsePopupPosition(change.position);
+          settings[friendPopup ? "friendTooltipPosition" : "popupPosition"] =
+            parsePopupPosition(change.position);
         if (change.width !== undefined)
-          settings.popupWidth = Math.round(change.width);
+          settings[friendPopup ? "friendTooltipWidth" : "popupWidth"] =
+            Math.round(change.width);
         if (change.height !== undefined)
-          settings.popupHeight = Math.round(change.height);
+          settings[friendPopup ? "friendTooltipHeight" : "popupHeight"] =
+            Math.round(change.height);
         await saveSettings(settings);
       }
       return state;

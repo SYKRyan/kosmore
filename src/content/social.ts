@@ -16,10 +16,22 @@ interface ActiveFriend {
   account?: Account;
   storageKey?: string;
 }
+export interface ReminderSurface {
+  select(): SocialFriend | null;
+  mount(friend: SocialFriend, view: FriendReminders): () => void;
+  options?: ConstructorParameters<typeof FriendReminders>[3];
+}
 export class SocialReminders {
   private active?: ActiveFriend;
   private scheduled = false;
-  constructor(private client: Pick<KosmoraClient, "account" | "families">) {}
+  private unmount?: () => void;
+  constructor(
+    private client: Pick<KosmoraClient, "account" | "families">,
+    private surface?: ReminderSurface,
+  ) {}
+  refresh(force = false) {
+    this.scan(force);
+  }
   start() {
     observePage(() => this.scan());
     window.addEventListener("popstate", () => this.schedule());
@@ -69,12 +81,16 @@ export class SocialReminders {
     }
   }
   private clear() {
+    this.unmount?.();
+    this.unmount = undefined;
     this.active?.abort.abort();
     this.active?.view.dispose();
     this.active = undefined;
   }
   private scan(force = false) {
-    const friend = selectedSocialFriend();
+    const friend = this.surface
+      ? this.surface.select()
+      : selectedSocialFriend();
     const previous = this.active;
     if (
       !force &&
@@ -103,10 +119,12 @@ export class SocialReminders {
         await saveFriendReminder(active.storageKey, value);
       },
       () => void this.loadFamilies(active, true),
+      this.surface?.options,
     );
     const active: ActiveFriend = { friend, view, abort };
     this.active = active;
-    friend.panel.after(view.host);
+    if (this.surface) this.unmount = this.surface.mount(friend, view);
+    else friend.panel.after(view.host);
     void this.load(active);
   }
   private async load(active: ActiveFriend) {

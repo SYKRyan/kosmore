@@ -34,7 +34,6 @@ interface Entry {
   error?: string;
 }
 const KEYS = [
-  "enabled",
   "salesOverlaysEnabled",
   "showSalesLastSale",
   "salesLastSaleSetsPrice",
@@ -88,8 +87,7 @@ export class SalesOverlays {
   }
   private enabled() {
     return (
-      this.settings?.enabled &&
-      this.settings.salesOverlaysEnabled &&
+      this.settings?.salesOverlaysEnabled &&
       (this.settings.showSalesLastSale || this.settings.showSalesLowestListing)
     );
   }

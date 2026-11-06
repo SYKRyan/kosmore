@@ -1,6 +1,6 @@
 ## Install
 
-1. Extract the tester ZIP to a permanent folder, such as `Documents\KosMore`.
+1. Extract the release ZIP to a permanent folder, such as `Documents\KosMore`.
 2. In Chrome, open `chrome://extensions` and turn on **Developer mode**.
 3. Click **Load unpacked** and select the extracted folder containing `manifest.json`.
 4. Open Kosmora and refresh any tabs that were already open.
@@ -21,3 +21,15 @@ Backups include saved preferences, ordered pinned album shortcuts, market filter
 **Merge** keeps destination-only entries and uses backup values for matching settings and notes. **Replace** removes existing supported entries absent from the backup and requires confirmation. Save or cancel unsaved settings edits before importing. Export a copy of the destination browser's data first if you want to keep it.
 
 JSON backups contain readable private notes. Keep the file somewhere you trust.
+
+## Friend tooltips
+
+Hover or focus the purple friend indicator inside the card hover tooltip to see matching friends. Click a name to expand all families and notes you saved for that friend; only one friend expands at a time. If just one friend matches, their details are always expanded. Social opens the friend’s Social selection, and Profile opens their profile. Edit the saved preferences and notes on Social or profiles. Card overlay icons remain passive indicators.
+
+**Settings → Friend tooltip**, directly after Hover tooltip, controls this popup independently: enable/disable, hover delay, dismiss delay, width, and height. You can also pin, drag, and resize it. Its saved preferences travel with JSON backups.
+
+### Profile reminders
+
+On a player's profile, click **✦ KosMore** above the header to edit the same private family preferences and notes used on Social. The top-right pin moves the editor into a profile widget above Albums, with families on the left and notes on the right (stacked on narrow screens). When pinned, the standalone control above the header is hidden and the KosMore label sits at the top left of the widget, with the unpin button at the top right. Pinning keeps the widget available on other profiles; unpin to return to the popup. The notes box tracks the token box’s height as families are added or removed. Add sits below the token box on the right. Status messages sit at the bottom left, with Cancel and Save grouped on the right in both profile and Social editors. Save and Cancel work as on Social, and moving between popup and widget preserves unsaved edits.
+
+**Settings → Profile reminders** can disable this feature or choose whether reminders stay pinned. Notes and profile display preferences are included in Backup & restore.
