@@ -4114,6 +4114,50 @@ test("sales badges fill only their own controlled batch price fields with indepe
     await page.unroute("**/api/auctions?**");
   }
 });
+test("card and sales overlays remain independent of the hover-tooltip switch", async () => {
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        enabled: false,
+        showQuestOverlay: true,
+      },
+    });
+  });
+  await page.goto("https://kosmora.io/collection");
+  const quest = page.locator("[data-kosmore-card-overlays] .quest");
+  await expect(quest).toBeVisible();
+  await page.locator(".kc-article").hover();
+  await expect(page.locator("#kosmore-root")).toHaveCount(0);
+  await page.goto(
+    `https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`,
+  );
+  const sales = page.locator("[data-kosmore-sales-overlay]");
+  await expect(sales.getByRole("button", { name: /^Last Sale/ })).toBeEnabled();
+  await expect(
+    sales.getByRole("button", { name: /^Lowest Listed/ }),
+  ).toBeEnabled();
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        salesOverlaysEnabled: false,
+        cardOverlaysEnabled: false,
+      },
+    });
+  });
+  await expect(sales).toHaveCount(0);
+  await page.goto("https://kosmora.io/collection");
+  await expect(quest).toHaveCount(0);
+  expect(writeRequests).toBe(0);
+});
+
 test("single-sale badges share settings and respect click toggles, visibility, readonly inputs and nonpositive adjustments", async () => {
   const options = await context.newPage();
   try {

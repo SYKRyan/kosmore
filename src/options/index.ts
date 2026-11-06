@@ -592,7 +592,7 @@ app.append(
   el(
     "p",
     "bottom",
-    "KosMore 0.2.2 · Settings stay in this browser. Card and market data come from Kosmora.",
+    `KosMore ${chrome.runtime.getManifest().version} · Settings stay in this browser. Card and market data come from Kosmora.`,
   ),
 );
 function renderSettings() {

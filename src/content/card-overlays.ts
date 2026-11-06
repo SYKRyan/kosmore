@@ -76,7 +76,6 @@ export class CardOverlays {
   }
   setSettings(settings: Settings) {
     const changed =
-      this.settings?.enabled !== settings.enabled ||
       this.settings?.cardOverlaysEnabled !== settings.cardOverlaysEnabled ||
       this.settings?.showOnSaleOverlay !== settings.showOnSaleOverlay ||
       this.settings?.showActiveAuctionsOverlay !==
@@ -129,8 +128,7 @@ export class CardOverlays {
   }
   private enabled() {
     return (
-      this.settings?.enabled &&
-      this.settings.cardOverlaysEnabled &&
+      this.settings?.cardOverlaysEnabled &&
       (this.settings?.showSaleHistoryOverlay ||
         this.settings?.showOnSaleOverlay ||
         this.settings?.showActiveAuctionsOverlay ||
