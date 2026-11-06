@@ -3129,7 +3129,7 @@ test("shortcut recording detects conflicts and group saves preserve other drafts
         name: `Set shortcut for ${label}`,
         exact: true,
       });
-    await expect(hotkeys.locator(".hotkey-row")).toHaveCount(14);
+    await expect(hotkeys.locator(".hotkey-row")).toHaveCount(15);
     await options.getByLabel("Tooltip width", { exact: true }).fill("600");
     await record("Home").click();
     await record("Home").press("Alt+Shift+H");
