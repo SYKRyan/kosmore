@@ -7,6 +7,8 @@ import {
   type HistoryState,
 } from "../shared/stat-catalog";
 import { statBox } from "./stat-box";
+import { saleObservations } from "./sale-observation-store";
+import { saleRates, type SaleRates } from "../shared/sale-observations";
 import { SIGNAL_BADGE_CSS, signalBadges } from "./signal-badges";
 import { cardIcon } from "./icons";
 import { enableMarketLink, marketSearchPath } from "./market-links";
@@ -105,6 +107,23 @@ export class Popup {
   private placement?: PopupPlacement;
   private pinButton = button("", () => this.togglePin(), "icon pin-button");
   private reposition: ResizeObserver;
+  private observationFrame = 0;
+  // Redraw only when this card's listings changed, at most once per frame.
+  private stopObservations = saleObservations.subscribe((subjects) => {
+    if (
+      this.closed ||
+      this.observationFrame ||
+      !this.context ||
+      !subjects.has(this.context.subjectId)
+    )
+      return;
+    this.observationFrame = requestAnimationFrame(() => {
+      this.observationFrame = 0;
+      if (this.closed) return;
+      this.renderMetrics();
+      this.renderMarket();
+    });
+  });
   constructor(
     readonly context: CardContext | null,
     private client: KosmoraClient,
@@ -305,11 +324,13 @@ export class Popup {
   }
   dispose() {
     cancelAnimationFrame(this.marketFrame);
+    cancelAnimationFrame(this.observationFrame);
     this.albumRequest?.abort();
     this.finishInteraction?.();
     this.closed = true;
     this.tradeRequest?.abort();
     this.auctionRequest?.abort();
+    this.stopObservations();
     this.notes?.dispose();
     this.reposition.disconnect();
     this.host.remove();
@@ -925,6 +946,7 @@ export class Popup {
       FINISHES.filter((f) => !this.hidden.has(f)),
       this.insightError,
       this.activeAuctions,
+      this.saleRates(),
     );
     this.metrics.replaceChildren(
       ...definitions.map((d) => statBox(d, d.read(snapshot))),
@@ -1059,6 +1081,11 @@ export class Popup {
             : `Lowest current listing price across all finishes: ${formatKosmo(price)} Kosmo.`;
     if (marketName) this.listedFor.title += ` Find ${marketName} at Market.`;
   }
+  private saleRates(): SaleRates | undefined {
+    return this.details
+      ? saleRates(saleObservations.observations, this.details.subjectId)
+      : undefined;
+  }
   private renderMarketHistory() {
     const available = FINISHES.filter((f) => !this.hidden.has(f)).flatMap(
       (f) => {
@@ -1073,8 +1100,9 @@ export class Popup {
     const table = el("table", "stats");
     table.setAttribute("aria-label", "Market summaries by variant");
     const head = el("tr");
-    for (const title of ["Variant", "Sales", "Min", "Median", "Max"])
+    for (const title of ["Variant", "Sales", "Min", "Median", "Max", "Sold"])
       head.append(el("th", "", title));
+    const rates = this.saleRates();
     const thead = el("thead");
     thead.append(head);
     table.append(thead);
@@ -1100,6 +1128,17 @@ export class Popup {
           state.high ? formatKosmo(state.high) : "—",
         ])
           row.append(el("td", "", value));
+      // Sell-through comes from local observations, independent of the history read.
+      const rate = rates?.[f];
+      const sold = el(
+        "td",
+        "sale-rate",
+        rate?.percent == null ? "—" : `${rate.percent}% (${rate.total})`,
+      );
+      sold.title = rate?.total
+        ? `${rate.sold} of ${rate.total} observed ${FINISH_LABEL[f]} listings of this card sold (last 30 days).`
+        : `No settled ${FINISH_LABEL[f]} listings of this card observed yet.`;
+      row.append(sold);
       tbody.append(row);
     }
     table.append(tbody);

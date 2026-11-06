@@ -33,6 +33,19 @@ await build({
   build: {
     ...common.build,
     lib: {
+      // Page-world relay for market responses (see src/page-hook.ts).
+      entry: resolve("src/page-hook.ts"),
+      name: "KosMorePageRelay",
+      formats: ["iife"],
+      fileName: () => "page-hook.js",
+    },
+  },
+});
+await build({
+  ...common,
+  build: {
+    ...common.build,
+    lib: {
       entry: resolve("src/background.ts"),
       formats: ["es"],
       fileName: () => "background.js",

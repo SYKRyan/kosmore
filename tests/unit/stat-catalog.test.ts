@@ -31,6 +31,7 @@ it("migrates older settings without resetting pins or the original six-stat orde
     "readership",
     "salesCount",
     "activeAuctions",
+    "saleRate",
   ]);
   expect(settings.stats.every((p) => p.enabled)).toBe(true);
   expect(new Set(STAT_CATALOG.map((d) => d.id)).size).toBe(STAT_CATALOG.length);
@@ -74,6 +75,7 @@ it("renders every definition through the same component and preserves partial hi
     "1,240",
     "80+",
     "—",
+    "—",
   ]);
   expect(snapshot.priceNotice).toContain("unavailable");
   for (const [index, box] of boxes.entries())
@@ -115,6 +117,7 @@ it("reorders and toggles the settings preview without persisting a draft until S
     "readership",
     "salesCount",
     "activeAuctions",
+    "saleRate",
   ]);
   expect(set).not.toHaveBeenCalled();
   await saveSettings({ ...parseSettings(undefined), stats: preferences });
@@ -187,4 +190,36 @@ it("renders only enabled positive indicator badges with shared icons", () => {
       settings,
     ),
   ).toEqual([]);
+});
+it("shows the card's own sale rate for the selected variants with its sample size", () => {
+  const definition = STAT_CATALOG.find((d) => d.id === "saleRate")!;
+  const rates = {
+    plain: { sold: 2, total: 3, percent: 67 },
+    veil: { sold: 0, total: 1, percent: 0 },
+    fullart: { sold: 0, total: 0, percent: null },
+  };
+  const all = definition.read(
+    statSnapshot(
+      undefined,
+      {},
+      ["plain", "veil", "fullart"],
+      undefined,
+      undefined,
+      rates,
+    ),
+  );
+  expect(all.value).toBe("50% · 4");
+  expect(all.title).toContain("Standard: 2 of 3 sold");
+  expect(all.title).toContain("Shiny: 0 of 1 sold");
+  expect(all.title).toContain("Full art: none observed");
+  expect(
+    definition.read(
+      statSnapshot(undefined, {}, ["veil"], undefined, undefined, rates),
+    ).value,
+  ).toBe("0% · 1");
+  expect(
+    definition.read(
+      statSnapshot(undefined, {}, ["fullart"], undefined, undefined, rates),
+    ).value,
+  ).toBe("—");
 });

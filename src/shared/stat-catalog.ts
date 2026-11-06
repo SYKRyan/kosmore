@@ -1,10 +1,16 @@
 import {
   FINISHES,
+  FINISH_LABEL,
   type CardInsights,
   type Finish,
   type MarketHistory,
 } from "./types";
 import { summarizePrices, type PriceSummary } from "./market-summary";
+import {
+  combinedRate,
+  SALE_RATE_DAYS,
+  type SaleRates,
+} from "./sale-observations";
 
 export type HistoryState = Partial<Record<Finish, MarketHistory | Error>>;
 export interface StatSnapshot {
@@ -15,6 +21,8 @@ export interface StatSnapshot {
   priceNotice: string;
   cardError?: string;
   activeAuctions?: number | Error;
+  saleRates?: SaleRates;
+  finishes: Finish[];
 }
 export interface StatValue {
   value: string;
@@ -24,7 +32,7 @@ interface StatDefinition {
   id: string;
   label: string;
   description: string;
-  source: "prices" | "card" | "sales" | "auctions";
+  source: "prices" | "card" | "sales" | "auctions" | "observed";
   preview: StatValue;
   read: (snapshot: StatSnapshot) => StatValue;
 }
@@ -123,7 +131,29 @@ export const STAT_CATALOG = [
             : (s.cardError ?? "Loading active auctions…"),
     }),
   },
+  {
+    id: "saleRate",
+    label: `Sale Rate · ${SALE_RATE_DAYS} days`,
+    description:
+      "Share of this card's observed listings that sold, for the selected variants. Kosmora does not report unsold listings, so KosMore records the listings the Market shows you and settles them from sale histories.",
+    source: "observed",
+    preview: { value: "67% · 3" },
+    read: (s: StatSnapshot) => saleRateValue(s),
+  },
 ] as const satisfies readonly StatDefinition[];
+function saleRateValue(s: StatSnapshot): StatValue {
+  const basis = `Observed locally from listings KosMore saw on the Market, settled from sale histories. Listings ended in the last ${SALE_RATE_DAYS} days.`;
+  if (!s.saleRates) return { value: "—", title: "Loading card details…" };
+  const rate = combinedRate(s.saleRates, s.finishes);
+  const parts = FINISHES.filter((f) => s.finishes.includes(f)).map((f) => {
+    const r = s.saleRates![f];
+    return `${FINISH_LABEL[f]}: ${r.total ? `${r.sold} of ${r.total} sold` : "none observed"}`;
+  });
+  const title = `${parts.join(" · ")}. ${basis}`;
+  return rate.percent === null
+    ? { value: "—", title }
+    : { value: `${rate.percent}% · ${rate.total}`, title };
+}
 export type StatId = (typeof STAT_CATALOG)[number]["id"];
 export interface StatPreference {
   id: StatId;
@@ -157,6 +187,7 @@ export function statSnapshot(
   finishes: Finish[],
   cardError?: string,
   activeAuctions?: number | Error,
+  saleRates?: SaleRates,
 ): StatSnapshot {
   const selected = FINISHES.filter((f) => finishes.includes(f));
   const known = selected.flatMap((f) => {
@@ -180,5 +211,7 @@ export function statSnapshot(
     priceNotice,
     cardError,
     activeAuctions,
+    saleRates,
+    finishes: selected,
   };
 }
