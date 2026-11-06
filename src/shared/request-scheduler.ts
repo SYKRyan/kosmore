@@ -28,6 +28,14 @@ export class RequestScheduler {
       if (job.key === key) job.priority = "foreground";
     this.pump();
   }
+  /** Serves a queued read next: it is needed on screen now (no extra request). */
+  expedite(key: string) {
+    const jobs = this.queue.filter((job) => job.key === key);
+    if (!jobs.length) return;
+    for (const job of jobs) job.priority = "foreground";
+    this.queue = [...jobs, ...this.queue.filter((job) => job.key !== key)];
+    this.pump();
+  }
   promotePrefix(prefix: string) {
     for (const job of this.queue)
       if (job.key.startsWith(prefix)) job.priority = "foreground";

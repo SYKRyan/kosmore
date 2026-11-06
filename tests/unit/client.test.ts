@@ -349,3 +349,43 @@ it("resolves repeated subjects by verified opening slot plus identity", async ()
     await h.client.resolveCopy({ ...ctx, entryIndex: undefined }, copies),
   ).toBeUndefined();
 });
+
+it("pages through family counts past Kosmora's 1000-family limit", async () => {
+  const family = (i: number) => ({ id: `f${i}`, collected: i });
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), "https://kosmora.io");
+    if (url.pathname === "/api/me") return Response.json(me);
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const size = offset === 0 ? 1000 : 200;
+    return Response.json({
+      total: 1200,
+      families: Array.from({ length: size }, (_, i) => family(offset + i)),
+    });
+  });
+  const client = new GameClient(fetcher as typeof fetch);
+  const counts = await client.familyCounts();
+  expect(counts.size).toBe(1200);
+  expect(counts.get("f1199")).toBe(1199);
+  expect(
+    fetcher.mock.calls
+      .map(([input]) => String(input))
+      .filter((u) => u.includes("/me/families")),
+  ).toEqual([
+    "/api/me/families?sort=closest&limit=1000",
+    "/api/me/families?sort=closest&limit=1000&offset=1000",
+  ]);
+});
+
+it("shares one card read between callers once the account is known", async () => {
+  const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+    String(input) === "/api/me" ? Response.json(me) : Response.json(card("42")),
+  );
+  const client = new GameClient(fetcher as typeof fetch);
+  await client.account(undefined, false);
+  // Fusion badges and card overlays reading the same card.
+  await Promise.all([client.insights("42"), client.insights("42")]);
+  await client.insights("42");
+  expect(
+    fetcher.mock.calls.filter(([u]) => String(u) === "/api/collection/42"),
+  ).toHaveLength(1);
+});

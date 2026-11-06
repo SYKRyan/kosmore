@@ -106,3 +106,30 @@ it("removes canceled queued requests before they consume a network slot", async 
   await first;
   expect(sent).toBe(false);
 });
+
+it("serves an expedited read next without adding one", async () => {
+  const scheduler = new RequestScheduler(1);
+  const signal = new AbortController().signal;
+  const releases: (() => void)[] = [];
+  const starts: string[] = [];
+  const load = (name: string) => async () => {
+    starts.push(name);
+    await new Promise<void>((resolve) => releases.push(resolve));
+  };
+  const tasks = ["a", "b", "c", "d"].map((key) =>
+    scheduler.run(key, signal, load(key)),
+  );
+  await Promise.resolve();
+  expect(starts).toEqual(["a"]);
+  scheduler.expedite("d");
+  scheduler.expedite("missing");
+  releases.shift()!();
+  await new Promise((r) => setTimeout(r, 0));
+  expect(starts).toEqual(["a", "d"]);
+  while (releases.length || starts.length < 4) {
+    releases.shift()?.();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  await Promise.all(tasks);
+  expect(starts).toEqual(["a", "d", "b", "c"]);
+});

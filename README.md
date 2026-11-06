@@ -186,6 +186,16 @@ Save or cancel unsaved settings edits before importing. Unsaved edits, temporary
 
 ### Connected account
 
+## Fusion family impact
+
+On the Fusion page, each card shows whether you can fuse it without losing a family tier, counting the cards already in the tray:
+
+- **`✓ Safe`**: none of its families loses a tier.
+- **`⚠ Loses Asteroids I`**: fusing it drops that family from tier I (`+1` if another family drops too).
+
+The game fuses complete batches only, in the order you chose the cards; a chosen card still waiting for its batch has a dashed outline. Badges never block clicks. **Settings → Card overlays → Show family impact on the Fusion page** turns it off.
+
+## Updating from source
 Keep a signed-in Kosmora tab open, then select the account whose pinned albums you want to configure. Use **Refresh accounts** after opening another game tab or changing accounts.
 
 The selection controls album configuration in settings. Features on Kosmora pages use the account signed in on that page. Pinned shortcuts, friend reminders, card notes, and market finish filters retain their account associations, including when transferred in a backup.
