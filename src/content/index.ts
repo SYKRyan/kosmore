@@ -32,6 +32,9 @@ import { SalesOverlays } from "./sales-overlays";
 import { observePage } from "./page-changes";
 import { FriendTooltip } from "./friend-tooltip";
 import { ProfileReminders } from "./profile-reminders";
+import { MarketOutcomes } from "./market-outcomes";
+import { HistoryResolver, listenToPageRelay } from "./sale-rate-feed";
+import { saleObservations } from "./sale-observation-store";
 
 const client = new GameClient();
 const friendTooltip = new FriendTooltip(client, () => {
@@ -43,6 +46,25 @@ const overlays = new CardOverlays(client);
 overlays.start();
 const salesOverlays = new SalesOverlays(client);
 salesOverlays.start();
+new MarketOutcomes(saleObservations).start();
+listenToPageRelay(saleObservations);
+const historyResolver = new HistoryResolver(saleObservations);
+client.onHistoryLoaded((subjectId, history, loadedAt) =>
+  historyResolver.receive(subjectId, history, loadedAt),
+);
+client.onAuctionListings((listings) =>
+  saleObservations.recordMany(
+    listings.map((listing) => [
+      listing.id,
+      {
+        subjectId: listing.subjectId,
+        finish: listing.finish,
+        outcome: "open",
+        endsAt: Date.parse(listing.endsAt),
+      },
+    ]),
+  ),
+);
 let settings = defaults();
 let pinnedState: PopupState = { pinned: false, position: null };
 const navigationHotkeys = new NavigationHotkeys(
@@ -453,6 +475,7 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) recheckAccount();
 });
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local") saleObservations.external(changes);
   if (
     area === "local" &&
     Object.keys(changes).some((key) => key.startsWith("kosmore.friend."))

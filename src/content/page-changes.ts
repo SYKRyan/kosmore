@@ -82,6 +82,7 @@ export function observePage(listener: (changes: PageChanges) => void) {
         "disabled",
         "readonly",
         "aria-readonly",
+        "data-ended",
       ],
     });
   }

@@ -1013,7 +1013,7 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
   await page.locator(".kc-article").hover();
   const popup = page.locator("#kosmore-root");
   await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
-  await expect(popup.locator(".metric")).toHaveCount(7);
+  await expect(popup.locator(".metric")).toHaveCount(8);
   await expect(
     page.locator("[data-kosmore-card-overlays] .sale"),
   ).toBeVisible();
@@ -1087,7 +1087,7 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
       options.getByLabel("Show sale history icon on cards", { exact: true }),
     ).toBeChecked();
     await set("Enable stat boxes", "stat layout", true);
-    await expect(popup.locator(".metric")).toHaveCount(7);
+    await expect(popup.locator(".metric")).toHaveCount(8);
     await set("Enable card overlays", "overlay settings", true);
     await expect(
       page.locator("[data-kosmore-card-overlays] .sale"),
@@ -4799,6 +4799,73 @@ test("performance: quest badges appear before slow market results and survive a 
   } finally {
     release();
     await page.unroute("**/api/auctions?**");
+  }
+});
+
+test("sale rate: relays the page's own auction reads and settles them per finish from fresh histories", async () => {
+  // Start from an empty observation log.
+  await worker.evaluate(async () => {
+    const keys = Object.keys(await chrome.storage.local.get(null)).filter((k) =>
+      k.startsWith("kosmore.marketOutcomes."),
+    );
+    await chrome.storage.local.remove(keys);
+  });
+  const ended = new Date(Date.now() - 30 * 60_000).toISOString();
+  const listings = {
+    items: [
+      // In the fixture's sales (prices(3) sells auction IDs ...000-...002): sold.
+      auction(1, "42", { endsAt: ended }),
+      // Absent from complete Standard and Shiny histories: unsold.
+      auction(905, "42", { endsAt: ended }),
+      auction(906, "42", { endsAt: ended, veil: true }),
+      // Another card: must not count for card 42.
+      auction(907, "43", { endsAt: ended }),
+    ],
+    nextOffset: null,
+  };
+  await page.route("https://kosmora.io/api/auctions*", (route) =>
+    route.fulfill({ json: listings }),
+  );
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await page.locator(".kc-article").hover();
+    const popup = page.locator("#kosmore-root");
+    await expect(popup.locator(".stats")).toContainText("Standard");
+    // The page itself reads the market; the relay forwards a copy.
+    const status = await page.evaluate(async () => {
+      const res = await fetch("/api/auctions?sort=ending&offset=0");
+      return (await res.json()).items.length;
+    });
+    expect(status).toBe(4); // the page still receives its full response
+    // Fresh histories settle the ended listings.
+    await popup.getByRole("button", { name: "Refresh" }).click();
+    const rows = popup.locator(".stats tbody tr");
+    await expect(
+      rows.filter({ hasText: "Standard" }).locator(".sale-rate"),
+    ).toHaveText("50% (2)");
+    await expect(
+      rows.filter({ hasText: "Shiny" }).locator(".sale-rate"),
+    ).toHaveText("0% (1)");
+    await expect(
+      rows.filter({ hasText: "Full art" }).locator(".sale-rate"),
+    ).toHaveText("—");
+    await expect(
+      popup.locator('.metric[data-stat-id="saleRate"] strong'),
+    ).toHaveText("33% · 3");
+    // Persisted (after the save delay) per day of listing end.
+    await expect
+      .poll(
+        () =>
+          worker.evaluate(async () =>
+            Object.keys(await chrome.storage.local.get(null)).filter((k) =>
+              k.startsWith("kosmore.marketOutcomes."),
+            ),
+          ),
+        { timeout: 8000 },
+      )
+      .toEqual([`kosmore.marketOutcomes.${ended.slice(0, 10)}`]);
+  } finally {
+    await page.unroute("https://kosmora.io/api/auctions*");
   }
 });
 

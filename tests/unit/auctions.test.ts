@@ -7,6 +7,11 @@ import {
 import { GameClient } from "../../src/kosmora/client";
 import { auction, auctionPage } from "../fixtures/auctions";
 
+const withoutListings = <T extends { listings: unknown }>({
+  listings: _listings,
+  ...summary
+}: T) => summary;
+
 afterEach(() => vi.restoreAllMocks());
 
 it("finds the lowest current listing price using bids before starting prices and exact active subjects", async () => {
@@ -31,31 +36,43 @@ it("finds the lowest current listing price using bids before starting prices and
       ],
       nextOffset: null,
     });
-  expect(await activeAuctionSummary("42", "Card", read)).toEqual({
-    count: 3,
-    lowestPrice: "12000000",
+  const summary = await activeAuctionSummary("42", "Card", read);
+  expect(summary).toMatchObject({ count: 3, lowestPrice: "12000000" });
+  // Only exact-subject, open, unexpired listings are exposed for observation.
+  expect(summary.listings.map((l) => l.id)).toEqual(
+    [1, 5, 6].map((n) => auction(n).id),
+  );
+  expect(summary.listings[0]).toMatchObject({
+    subjectId: "42",
+    finish: "plain",
   });
 });
 it("keeps counts but omits a lowest price when any matching active listing has unavailable pricing", async () => {
   for (const price of [undefined, null, "hidden", -1]) {
     expect(
-      await activeAuctionSummary("42", "Card", async () => ({
-        items: [auction(1), auction(2, "42", { startPrice: price })],
-        nextOffset: null,
-      })),
+      withoutListings(
+        await activeAuctionSummary("42", "Card", async () => ({
+          items: [auction(1), auction(2, "42", { startPrice: price })],
+          nextOffset: null,
+        })),
+      ),
     ).toEqual({ count: 2 });
   }
   expect(
-    await activeAuctionSummary("42", "Card", async () => ({
-      items: [],
-      nextOffset: null,
-    })),
+    withoutListings(
+      await activeAuctionSummary("42", "Card", async () => ({
+        items: [],
+        nextOffset: null,
+      })),
+    ),
   ).toEqual({ count: 0 });
   expect(
-    await activeAuctionSummary("42", "Card", async () => ({
-      items: [auction(1, "42", { startPrice: "0" })],
-      nextOffset: null,
-    })),
+    withoutListings(
+      await activeAuctionSummary("42", "Card", async () => ({
+        items: [auction(1, "42", { startPrice: "0" })],
+        nextOffset: null,
+      })),
+    ),
   ).toEqual({ count: 1, lowestPrice: "0" });
 });
 

@@ -7,7 +7,7 @@ import {
 import { parseFamilyChoices } from "./families";
 import { parseFriends } from "./friends";
 import { parseQuestSubjects } from "./quests";
-import { activeAuctionSummary } from "./auctions";
+import { activeAuctionSummary, type AuctionListing } from "./auctions";
 import type {
   Account,
   Album,
@@ -16,6 +16,7 @@ import type {
   OpeningCard,
   OwnedCopy,
   Finish,
+  MarketHistory,
 } from "../shared/types";
 import {
   object,
@@ -47,6 +48,10 @@ export class GameClient implements KosmoraClient {
   private scheduler = new RequestScheduler(3);
   private accountVersion = 0;
   private accountListeners = new Set<() => void>();
+  private listingListeners = new Set<(listings: AuctionListing[]) => void>();
+  private historyListeners = new Set<
+    (subjectId: string, history: MarketHistory, loadedAt: number) => void
+  >();
   private lastAccount?: Account;
   private blockedUntil = 0;
   private writes = new Set<string>();
@@ -55,6 +60,20 @@ export class GameClient implements KosmoraClient {
   ) {}
   onAccountChange(listener: () => void) {
     this.accountListeners.add(listener);
+  }
+  /** Price histories as they arrive from the network (not cache hits), with fetch time. */
+  onHistoryLoaded(
+    listener: (
+      subjectId: string,
+      history: MarketHistory,
+      loadedAt: number,
+    ) => void,
+  ) {
+    this.historyListeners.add(listener);
+  }
+  /** Open listings seen by auction searches, for local sale-rate observations. */
+  onAuctionListings(listener: (listings: AuctionListing[]) => void) {
+    this.listingListeners.add(listener);
   }
   private clearPrivateReads() {
     this.accountVersion++;
@@ -243,6 +262,14 @@ export class GameClient implements KosmoraClient {
         return activeAuctionSummary(id, name, (path) => {
           setRequestPriority(combined, requestPriority(shared));
           return this.read(path, combined);
+        }).then((summary) => {
+          for (const listener of this.listingListeners)
+            try {
+              listener(summary.listings);
+            } catch {
+              // Observation failures never affect the auction summary.
+            }
+          return summary;
         });
       },
       signal,
@@ -286,7 +313,17 @@ export class GameClient implements KosmoraClient {
     return this.cached(
       this.priceReads,
       `prices:${id}:${finish}`,
-      async (shared) => parseHistory(await this.read(path, shared), finish),
+      async (shared) => {
+        const history = parseHistory(await this.read(path, shared), finish);
+        const loadedAt = Date.now();
+        for (const listener of this.historyListeners)
+          try {
+            listener(id, history, loadedAt);
+          } catch {
+            // Observation failures never affect the history read.
+          }
+        return history;
+      },
       signal,
       fresh,
       [path],

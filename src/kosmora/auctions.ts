@@ -1,3 +1,5 @@
+import { finishOf } from "../shared/sale-observations";
+import type { Finish } from "../shared/types";
 import {
   amount,
   count,
@@ -23,9 +25,15 @@ export function parseAuctionPage(value: unknown) {
   return {
     items: page.items.map((value) => {
       const item = object(value);
+      const card = object(item.card);
       return {
         id: uuid(item.id),
-        subjectId: subjectId(object(item.card).subjectId),
+        subjectId: subjectId(card.subjectId),
+        // Non-standard copies carry top-level flags (`veil: true`, checked live 2026-11-05).
+        finish: finishOf({
+          veil: item.veil,
+          fullArt: item.fullArt ?? card.fullArt,
+        }),
         state: text(item.state),
         endsAt: date(item.endsAt),
         price: listingPrice(item.bestBid ?? item.startPrice),
@@ -35,11 +43,19 @@ export function parseAuctionPage(value: unknown) {
   };
 }
 
+export type AuctionListing = ReturnType<
+  typeof parseAuctionPage
+>["items"][number];
+
 export async function activeAuctionSummary(
   id: string,
   name: string,
   read: (path: string) => Promise<unknown>,
-): Promise<{ count: number; lowestPrice?: string }> {
+): Promise<{
+  count: number;
+  lowestPrice?: string;
+  listings: AuctionListing[];
+}> {
   id = subjectId(id);
   if (!name.trim()) throw new Error("The card name is unavailable.");
   const listings = new Map<
@@ -77,6 +93,7 @@ export async function activeAuctionSummary(
       return {
         count: active.length,
         ...(lowestPrice !== undefined ? { lowestPrice } : {}),
+        listings: active,
       };
     }
     if (page.nextOffset <= offset)
@@ -94,4 +111,61 @@ export async function countActiveAuctions(
   read: (path: string) => Promise<unknown>,
 ): Promise<number> {
   return (await activeAuctionSummary(id, name, read)).count;
+}
+
+export interface ObservedAuction {
+  id: string;
+  subjectId: string;
+  finish: Finish;
+  outcome: "open" | "sold" | "unsold";
+  endsAt: number;
+}
+// Withdrawn listings never reached a buyer decision, so they do not count either way.
+const IGNORED_STATES = new Set([
+  "cancelled",
+  "canceled",
+  "withdrawn",
+  "removed",
+]);
+
+function observedAuction(value: unknown): ObservedAuction | null {
+  try {
+    const item = object(value);
+    const card = object(item.card);
+    const state = text(item.state).toLowerCase();
+    if (IGNORED_STATES.has(state)) return null;
+    const endsAt = Date.parse(date(item.endsAt));
+    const outcome =
+      state === "open"
+        ? "open"
+        : state === "sold" || (item.finalPrice ?? null) !== null
+          ? "sold"
+          : "unsold";
+    return {
+      id: uuid(item.id).toLowerCase(),
+      subjectId: subjectId(card.subjectId),
+      finish: finishOf({
+        veil: item.veil,
+        fullArt: item.fullArt ?? card.fullArt,
+      }),
+      outcome,
+      endsAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads listings from an auction page (`{items}`) or a single auction, skipping
+ * malformed entries instead of rejecting the whole response.
+ */
+export function parseObservedAuctions(value: unknown): ObservedAuction[] {
+  if (!value || typeof value !== "object") return [];
+  const items = (value as { items?: unknown }).items;
+  const list = Array.isArray(items) ? items : [value];
+  return list.flatMap((item) => {
+    const auction = observedAuction(item);
+    return auction ? [auction] : [];
+  });
 }
