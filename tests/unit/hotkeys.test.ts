@@ -11,8 +11,8 @@ import { parseSettings } from "../../src/shared/settings";
 const key = (code: string, modifiers: KeyboardEventInit = {}) =>
   new KeyboardEvent("keydown", { code, ...modifiers });
 const a = shortcutFromEvent(key("KeyA", { altKey: true }))!;
-it("provides all fourteen destinations without assigning shortcuts to existing users", () => {
-  expect(NAVIGATION).toHaveLength(14);
+it("provides all fifteen destinations without assigning shortcuts to existing users", () => {
+  expect(NAVIGATION).toHaveLength(15);
   expect(parseSettings({ schemaVersion: 1 }).hotkeys).toEqual({});
   expect(NAVIGATION.find((item) => item.id === "marketAuctions")?.path).toBe(
     "/market?tab=overview&view=auctions",
@@ -21,6 +21,7 @@ it("provides all fourteen destinations without assigning shortcuts to existing u
     "/market?tab=overview&view=mine",
   );
   expect(NAVIGATION.find((item) => item.id === "pulsar")?.path).toBe("/games");
+  expect(NAVIGATION.find((item) => item.id === "fusion")?.path).toBe("/fusion");
 });
 it("parses only valid shortcuts and deterministically discards duplicate or unknown entries", () => {
   expect(

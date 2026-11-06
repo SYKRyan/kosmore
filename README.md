@@ -11,7 +11,7 @@ A browser extension that adds card insights, shortcuts, and private reminders to
 - **Social and profile reminders:** keep private family preferences and notes for players, with an optional pinned profile editor.
 - **Trade reminders:** see a player's preferred families and a rarity breakdown of your available matching cards while proposing a trade.
 - **Sales Overlay:** compare Last Sale and Lowest Listed prices on single and batch selling screens, with optional click-to-fill price adjustments.
-- **Navigation hotkeys:** assign keyboard shortcuts to 14 Kosmora destinations.
+- **Navigation hotkeys:** assign keyboard shortcuts to 15 Kosmora destinations.
 - **Backup & restore:** export and import settings, album shortcuts, family preferences, and private notes across browsers or computers.
 - **Account-aware data:** keep album shortcuts and private reminders associated with the correct Kosmora account.
 
@@ -167,7 +167,7 @@ The price visibility options are checkboxes; click-to-fill options are nested sw
 
 ### Navigation hotkeys
 
-Assign shortcuts for **Home**, **Collection**, **Albums**, **Atlas**, **Social**, **Market Buy**, **Market Activity My Auctions**, **Market Activity My Activity**, **Market Alerts**, **Talents**, **Packs**, **Pulsar**, **Odyssey**, and **My Profile**.
+Assign shortcuts for **Home**, **Collection**, **Albums**, **Atlas**, **Social**, **Market**, **My Auctions**, **My Activity**, **Alerts**, **Talents**, **Packs**, **Fusion**, **Pulsar**, **Odyssey**, and **My Profile**.
 
 Click a shortcut control and press a letter, number, or F1–F12, optionally with Ctrl, Alt, Shift, or Meta. Escape cancels recording; **Clear** removes a binding. Save the group to apply your choices. Duplicate bindings are rejected.
 

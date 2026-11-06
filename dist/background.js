@@ -222,22 +222,22 @@ var g = [
 	},
 	{
 		id: "marketBuy",
-		label: "Market Buy",
+		label: "Market",
 		path: "/market"
 	},
 	{
 		id: "marketAuctions",
-		label: "Market Activity My Auctions",
+		label: "My Auctions",
 		path: "/market?tab=overview&view=auctions"
 	},
 	{
 		id: "marketActivity",
-		label: "Market Activity My Activity",
+		label: "My Activity",
 		path: "/market?tab=overview&view=mine"
 	},
 	{
 		id: "marketAlerts",
-		label: "Market Alerts",
+		label: "Alerts",
 		path: "/market#kosmore-alerts"
 	},
 	{
@@ -249,6 +249,11 @@ var g = [
 		id: "packs",
 		label: "Packs",
 		path: "/packs"
+	},
+	{
+		id: "fusion",
+		label: "Fusion",
+		path: "/fusion"
 	},
 	{
 		id: "pulsar",

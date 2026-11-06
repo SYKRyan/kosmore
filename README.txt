@@ -23,7 +23,7 @@ Kosmora.
   your available matching cards while proposing a trade.
 - Sales Overlay: compare Last Sale and Lowest Listed prices on single and batch
   selling screens, with optional click-to-fill price adjustments.
-- Navigation hotkeys: assign keyboard shortcuts to 14 Kosmora destinations.
+- Navigation hotkeys: assign keyboard shortcuts to 15 Kosmora destinations.
 - Backup & restore: export and import settings, album shortcuts, family
   preferences, and private notes across browsers or computers.
 - Account-aware data: keep album shortcuts and private reminders associated with
@@ -306,9 +306,8 @@ submit listings using Kosmora's usual sale controls.
 Navigation hotkeys
 ------------------
 
-Assign shortcuts for Home, Collection, Albums, Atlas, Social, Market Buy, Market
-Activity My Auctions, Market Activity My Activity, Market Alerts, Talents,
-Packs, Pulsar, Odyssey, and My Profile.
+Assign shortcuts for Home, Collection, Albums, Atlas, Social, Market, My Auctions,
+My Activity, Alerts, Talents, Packs, Fusion, Pulsar, Odyssey, and My Profile.
 
 Click a shortcut control and press a letter, number, or F1–F12, optionally with
 Ctrl, Alt, Shift, or Meta. Escape cancels recording; Clear removes a binding.
