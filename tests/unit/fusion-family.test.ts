@@ -495,6 +495,24 @@ it("reads nothing until the account is known, and starts over when it changes", 
   expect(shown("4")).toBe("drop: ⚠ Loses | Parrots | I");
 });
 
+it("works with hover tooltips disabled and obeys the Card overlays switch", async () => {
+  page();
+  const { impact } = setup();
+  impact.setSettings({ ...defaults(), enabled: false });
+  await settle();
+  expect(shown("4")).toBe("drop: ⚠ Loses | Parrots | I");
+  impact.setSettings({
+    ...defaults(),
+    enabled: false,
+    cardOverlaysEnabled: false,
+  });
+  await settle();
+  expect(document.querySelector(`[${FUSION_FAMILY_ATTR}]`)).toBeNull();
+  impact.setSettings({ ...defaults(), enabled: false });
+  await settle();
+  expect(shown("4")).toBe("drop: ⚠ Loses | Parrots | I");
+});
+
 it("sits on the card art, and draws nothing off the Fusion page or with the setting off", async () => {
   page([], true);
   const { impact, client } = setup();

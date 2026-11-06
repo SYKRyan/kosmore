@@ -5198,6 +5198,17 @@ test("fusion family impact: marks tiles safe or not from the page's own reads, f
     for (const fixed of await badge("306").locator(".fixed").all())
       await expect(fixed).toBeVisible();
 
+    // Fusion is a Card overlays feature, independent of hover tooltips.
+    await worker.evaluate(async () => {
+      const saved = (await chrome.storage.local.get("kosmore.settings"))[
+        "kosmore.settings"
+      ] as object;
+      await chrome.storage.local.set({
+        "kosmore.settings": { ...saved, enabled: false },
+      });
+    });
+    await expect(badge("306")).toBeVisible();
+
     // The setting turns it off without a reload.
     await worker.evaluate(async () => {
       const saved = (await chrome.storage.local.get("kosmore.settings"))[

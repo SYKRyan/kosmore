@@ -346,6 +346,7 @@ var x = "kosmore.settings", S = () => ({
 	showOnSaleOverlay: !0,
 	showFriendInterestOverlay: !0,
 	showQuestOverlay: !0,
+	showFusionFamilyOverlay: !0,
 	stats: m(),
 	hotkeys: {},
 	pinnedAlbums: {}
@@ -375,7 +376,7 @@ function C(e) {
 		"pinnedAlbumsEnabled"
 	]) typeof r[e] == "boolean" && (t[e] = r[e]);
 	for (let e of ["salesLastSaleAdjustment", "salesLowestListingAdjustment"]) b(r[e]) && (t[e] = r[e]);
-	typeof r.closeTooltipWhenAddedToAlbum == "boolean" && (t.closeTooltipWhenAddedToAlbum = r.closeTooltipWhenAddedToAlbum), typeof r.applyCloseBehaviorToPinnedTooltips == "boolean" && (t.applyCloseBehaviorToPinnedTooltips = r.applyCloseBehaviorToPinnedTooltips), typeof r.showSaleHistoryOverlay == "boolean" && (t.showSaleHistoryOverlay = r.showSaleHistoryOverlay), typeof r.showLastSalePriceOverlay == "boolean" && (t.showLastSalePriceOverlay = r.showLastSalePriceOverlay), typeof r.showActiveAuctionsOverlay == "boolean" && (t.showActiveAuctionsOverlay = r.showActiveAuctionsOverlay), typeof r.showLowestListingPriceOverlay == "boolean" && (t.showLowestListingPriceOverlay = r.showLowestListingPriceOverlay), typeof r.showOnSaleOverlay == "boolean" && (t.showOnSaleOverlay = r.showOnSaleOverlay), typeof r.showFriendInterestOverlay == "boolean" && (t.showFriendInterestOverlay = r.showFriendInterestOverlay), typeof r.showQuestOverlay == "boolean" && (t.showQuestOverlay = r.showQuestOverlay), typeof r.hoverDelayMs == "number" && Number.isFinite(r.hoverDelayMs) && (t.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(r.hoverDelayMs))));
+	typeof r.closeTooltipWhenAddedToAlbum == "boolean" && (t.closeTooltipWhenAddedToAlbum = r.closeTooltipWhenAddedToAlbum), typeof r.applyCloseBehaviorToPinnedTooltips == "boolean" && (t.applyCloseBehaviorToPinnedTooltips = r.applyCloseBehaviorToPinnedTooltips), typeof r.showSaleHistoryOverlay == "boolean" && (t.showSaleHistoryOverlay = r.showSaleHistoryOverlay), typeof r.showLastSalePriceOverlay == "boolean" && (t.showLastSalePriceOverlay = r.showLastSalePriceOverlay), typeof r.showActiveAuctionsOverlay == "boolean" && (t.showActiveAuctionsOverlay = r.showActiveAuctionsOverlay), typeof r.showLowestListingPriceOverlay == "boolean" && (t.showLowestListingPriceOverlay = r.showLowestListingPriceOverlay), typeof r.showOnSaleOverlay == "boolean" && (t.showOnSaleOverlay = r.showOnSaleOverlay), typeof r.showFriendInterestOverlay == "boolean" && (t.showFriendInterestOverlay = r.showFriendInterestOverlay), typeof r.showQuestOverlay == "boolean" && (t.showQuestOverlay = r.showQuestOverlay), typeof r.showFusionFamilyOverlay == "boolean" && (t.showFusionFamilyOverlay = r.showFusionFamilyOverlay), typeof r.hoverDelayMs == "number" && Number.isFinite(r.hoverDelayMs) && (t.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(r.hoverDelayMs))));
 	for (let [e, n, i] of [
 		[
 			"friendHoverDelayMs",

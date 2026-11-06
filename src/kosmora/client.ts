@@ -333,6 +333,7 @@ export class GameClient implements KosmoraClient {
       false,
       ["/families"],
     );
+  }
   async possibleInterest(
     familyIds: string[],
     signal?: AbortSignal,

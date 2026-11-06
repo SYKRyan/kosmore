@@ -180,8 +180,7 @@ export class FusionFamilyImpact {
 
   private enabled() {
     return (
-      !!this.settings?.enabled &&
-      this.settings.cardOverlaysEnabled &&
+      !!this.settings?.cardOverlaysEnabled &&
       this.settings.showFusionFamilyOverlay &&
       this.win.location.pathname === "/fusion"
     );

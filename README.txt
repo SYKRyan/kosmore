@@ -13,6 +13,8 @@ Kosmora.
   auction, sales, and local sale-rate boxes.
 - Card overlays: spot active auctions, recent sales, your listed cards, quest
   cards, and matches for friends' saved family preferences.
+- Fusion family impact: see which Fusion cards can be fused without losing a
+  family tier, accounting for cards already in the tray.
 - Friend tooltip: expand matching friends' saved families and notes in a
   separate popup with Social and Profile links.
 - Social and profile reminders: keep private family preferences and notes for
@@ -196,6 +198,15 @@ configured independently:
   preferences you saved for current friends.
 - Quest: a gold Quest badge when the card belongs to any quest, whether you
   follow it or not.
+- Family impact on the Fusion page: a badge at the bottom left of each card's
+  art showing ✓ Safe when no family loses a tier, or ⚠ Loses Asteroids I when
+  fusing it drops that family from tier I. A +1 indicates another affected
+  family. Counts include cards already in the tray and all families the card
+  counts toward. Keeping another copy preserves that card's family contribution.
+
+Fusion impact follows complete batches in the order you choose cards. A chosen
+card still waiting for its batch has a dashed outline. Badges do not block card
+selection. Use Show family impact on the Fusion page to turn them on or off.
 
 The price switches are subsettings of their respective indicators. Friend
 indicators on cards are passive; use the indicator inside the card tooltip to
@@ -342,5 +353,6 @@ changing accounts.
 
 The selection controls album configuration in settings. Features on Kosmora
 pages use the account signed in on that page. Pinned shortcuts, friend
-reminders, card notes, and market finish filters retain their account
-associations, including when transferred in a backup.
+reminders, and card notes retain their account associations, including when
+transferred in a backup. Market finish filters are shared across accounts in
+this browser.
