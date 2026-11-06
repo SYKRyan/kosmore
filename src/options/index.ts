@@ -5,6 +5,7 @@ import { HotkeySettings } from "./hotkey-settings";
 import { settingsNavigation } from "./settings-navigation";
 import { SalesSettings, SALES_SETTINGS_KEYS } from "./sales-settings";
 import { BackupSettings } from "./backup-settings";
+import { TradeSettings, TRADE_SETTINGS_KEYS } from "./trade-settings";
 import {
   FriendTooltipSettings,
   FRIEND_TOOLTIP_KEYS,
@@ -21,6 +22,27 @@ import {
 import { request, type Session } from "../shared/messages";
 import { messageOf, type Album, type Settings } from "../shared/types";
 const app = document.getElementById("app")!;
+type FeatureKey =
+  | "enabled"
+  | "profileRemindersEnabled"
+  | "tradeRemindersEnabled"
+  | "friendTooltipEnabled"
+  | "navigationHotkeysEnabled"
+  | "cardOverlaysEnabled"
+  | "salesOverlaysEnabled"
+  | "statBoxesEnabled"
+  | "pinnedAlbumsEnabled";
+const featureGroups = new Map<
+  HTMLElement,
+  { key: FeatureKey; input: HTMLInputElement }
+>();
+const savingGroups = new Set<HTMLElement>();
+let settingsWrites: Promise<unknown> = Promise.resolve();
+function queueSettingsWrite<T>(write: () => Promise<T>): Promise<T> {
+  const result = settingsWrites.then(write);
+  settingsWrites = result.catch(() => {});
+  return result;
+}
 let saved: Settings = defaults(),
   draft: Settings = defaults(),
   sessions: Session[] = [],
@@ -74,6 +96,8 @@ closeAfterAlbumRow.append(
 );
 const applyCloseToPinned = el("input");
 applyCloseToPinned.type = "checkbox";
+applyCloseToPinned.classList.add("section-switch");
+applyCloseToPinned.setAttribute("role", "switch");
 applyCloseToPinned.id = "apply-close-behavior-to-pinned-tooltips";
 const applyCloseToPinnedLabel = el(
   "label",
@@ -159,19 +183,7 @@ const popupInputs = (
 const hotkeySettings = new HotkeySettings((hotkeys) => {
   draft.hotkeys = hotkeys;
 });
-function sectionToggle(
-  host: HTMLElement,
-  key:
-    | "enabled"
-    | "profileRemindersEnabled"
-    | "friendTooltipEnabled"
-    | "navigationHotkeysEnabled"
-    | "cardOverlaysEnabled"
-    | "salesOverlaysEnabled"
-    | "statBoxesEnabled"
-    | "pinnedAlbumsEnabled",
-  label: string,
-) {
+function sectionToggle(host: HTMLElement, key: FeatureKey, label: string) {
   const heading = host.querySelector("h2")!;
   const row = el("div", "settings-group-heading"),
     input = el("input", "section-switch");
@@ -181,9 +193,11 @@ function sectionToggle(
   input.setAttribute("aria-label", label);
   input.title = label;
   input.checked = draft[key];
+  input.disabled = true;
+  featureGroups.set(host, { key, input });
   input.addEventListener("change", () => {
     draft[key] = input.checked;
-    renderGroupState(host);
+    void persistFeature(host);
   });
   heading.replaceWith(row);
   const state = el("span", "settings-group-state", "Disabled");
@@ -192,13 +206,19 @@ function sectionToggle(
   return input;
 }
 function renderGroupState(host: HTMLElement) {
-  const input = host.querySelector<HTMLInputElement>(".section-switch")!;
+  const input = featureGroups.get(host)!.input;
   const disabled = !input.checked;
+  const saving = savingGroups.has(host);
+  input.disabled = !settingsReady || saving;
   host.classList.toggle("settings-group-disabled", disabled);
   const content = host.querySelector<HTMLFieldSetElement>(
     ":scope > .settings-group-content",
   );
-  if (content) content.disabled = disabled;
+  if (content) content.disabled = disabled || saving;
+  for (const button of host.querySelectorAll<HTMLButtonElement>(
+    ":scope > .savebar button",
+  ))
+    button.disabled = disabled || saving || !settingsReady;
   host.querySelector<HTMLElement>(".settings-group-state")!.hidden = !disabled;
 }
 const hotkeysEnabled = sectionToggle(
@@ -241,6 +261,14 @@ profileSettings.append(el("div", "rule"), profilePinLabel);
 profilePinned.addEventListener("change", () => {
   draft.profileRemindersPinned = profilePinned.checked;
 });
+const tradeSettings = new TradeSettings((update) =>
+  Object.assign(draft, update),
+);
+const tradeEnabled = sectionToggle(
+  tradeSettings.host,
+  "tradeRemindersEnabled",
+  "Enable trade reminders",
+);
 const overlays = el("section", "panel");
 overlays.append(
   el("h2", "", "Card overlays"),
@@ -477,6 +505,7 @@ function groupControls(group: SettingsGroup) {
   actions.append(cancel, save);
   bar.append(status, actions);
   group.host.append(bar);
+  renderGroupState(group.host);
 }
 groupControls({
   host: general,
@@ -533,6 +562,12 @@ groupControls({
   render: renderSettings,
 });
 groupControls({
+  host: tradeSettings.host,
+  name: "trade reminder settings",
+  keys: [...TRADE_SETTINGS_KEYS],
+  render: renderSettings,
+});
+groupControls({
   host: overlays,
   name: "overlay settings",
   keys: [
@@ -571,7 +606,7 @@ groupControls({
 });
 const backupSettings = new BackupSettings({
   isDirty: () => JSON.stringify(draft) !== JSON.stringify(saved),
-  isBusy: () => busy || !settingsReady,
+  isBusy: () => busy || savingGroups.size > 0 || !settingsReady,
   setApplying: (applying) => {
     busy = applying;
     for (const group of settingsGroups)
@@ -624,6 +659,12 @@ const settingsGroups = [
     path: "M4 3h16v18H4Z M8 15h8 M8 18h5 M15 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
   },
   {
+    id: "trade-reminders",
+    label: "Trade reminders",
+    host: tradeSettings.host,
+    path: "M3 7h18 M17 3l4 4-4 4 M21 17H3 M7 13l-4 4 4 4",
+  },
+  {
     id: "sales-overlay",
     label: "Sales Overlay",
     host: salesSettings.host,
@@ -662,6 +703,8 @@ app.append(
   ),
 );
 function renderSettings() {
+  tradeEnabled.checked = draft.tradeRemindersEnabled;
+  tradeSettings.render(draft);
   profileEnabled.checked = draft.profileRemindersEnabled;
   profilePinned.checked = draft.profileRemindersPinned;
   friendTooltipEnabled.checked = draft.friendTooltipEnabled;
@@ -694,6 +737,7 @@ function renderSettings() {
     general,
     friendTooltipSettings.host,
     profileSettings,
+    tradeSettings.host,
     albumSettings,
     statSettings.host,
     overlays,
@@ -896,7 +940,13 @@ async function persist(
   status: HTMLElement,
   save: HTMLButtonElement,
 ) {
-  if (busy) return;
+  if (
+    busy ||
+    !settingsReady ||
+    savingGroups.has(group.host) ||
+    !featureGroups.get(group.host)!.input.checked
+  )
+    return;
   const error = group.validate?.();
   if (error) {
     status.className = "status error";
@@ -904,15 +954,20 @@ async function persist(
     return;
   }
   busy = true;
+  savingGroups.add(group.host);
+  renderGroupState(group.host);
   backupSettings.refreshControls();
   save.disabled = true;
   const values = Object.fromEntries(
     group.keys.map((key) => [key, structuredClone(draft[key])]),
   );
   try {
-    const next = await readSettings();
-    Object.assign(next, values);
-    await saveSettings(next);
+    const next = await queueSettingsWrite(async () => {
+      const next = await readSettings();
+      Object.assign(next, values);
+      await saveSettings(next);
+      return next;
+    });
     for (const key of group.keys)
       Object.assign(saved, { [key]: structuredClone(next[key]) });
     status.className = "status success";
@@ -922,7 +977,38 @@ async function persist(
     status.textContent = messageOf(error);
   } finally {
     busy = false;
-    save.disabled = false;
+    savingGroups.delete(group.host);
+    renderGroupState(group.host);
+    backupSettings.refreshControls();
+  }
+}
+async function persistFeature(host: HTMLElement) {
+  const { key, input } = featureGroups.get(host)!;
+  if (!settingsReady || savingGroups.has(host)) return;
+  const value = input.checked;
+  const status = host.querySelector<HTMLElement>(":scope > .savebar .status")!;
+  savingGroups.add(host);
+  renderGroupState(host);
+  status.className = "status";
+  status.textContent = "Saving…";
+  backupSettings.refreshControls();
+  try {
+    await queueSettingsWrite(async () => {
+      const next = await readSettings();
+      next[key] = value;
+      await saveSettings(next);
+    });
+    saved[key] = value;
+    status.className = "status success";
+    status.textContent = "Saved. Changes apply to open Kosmora tabs.";
+  } catch (error) {
+    draft[key] = saved[key];
+    input.checked = saved[key];
+    status.className = "status error";
+    status.textContent = `Could not save the feature switch: ${messageOf(error)}`;
+  } finally {
+    savingGroups.delete(host);
+    renderGroupState(host);
     backupSettings.refreshControls();
   }
 }
@@ -930,6 +1016,7 @@ void readSettings()
   .then((s) => {
     saved = s;
     draft = structuredClone(s);
+    settingsReady = true;
     renderSettings();
     renderAlbums();
     settingsReady = true;
@@ -944,6 +1031,12 @@ void readSettings()
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes[SETTINGS_KEY]) return;
   const next = parseSettings(changes[SETTINGS_KEY].newValue);
+  for (const [host, { key, input }] of featureGroups) {
+    if (draft[key] === saved[key]) draft[key] = next[key];
+    saved[key] = next[key];
+    input.checked = draft[key];
+    renderGroupState(host);
+  }
   for (const { field, input } of popupInputs) {
     if (field !== "popupWidth" && field !== "popupHeight") continue;
     if (draft[field] === saved[field]) {
@@ -962,7 +1055,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     saved[field] = next[field];
   }
   for (const [field, input] of [
-    ["profileRemindersEnabled", profileEnabled],
+    ...tradeSettings.inputs.map(({ field, input }) => [field, input] as const),
     ["profileRemindersPinned", profilePinned],
   ] as const) {
     if (draft[field] === saved[field]) {
@@ -972,6 +1065,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
     saved[field] = next[field];
   }
   renderGroupState(profileSettings);
+  tradeSettings.render(draft);
+  renderGroupState(tradeSettings.host);
   saved.friendTooltipPosition = next.friendTooltipPosition;
   draft.friendTooltipPosition = next.friendTooltipPosition;
   saved.popupPosition = next.popupPosition;

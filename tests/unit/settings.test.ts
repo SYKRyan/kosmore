@@ -15,6 +15,10 @@ it("keeps account pins isolated and ordered while discarding corrupt identifiers
 it("enables new feature groups for older settings and keeps configuration when groups are disabled", () => {
   const keys = [
     "navigationHotkeysEnabled",
+    "tradeRemindersEnabled",
+    "showTradeFamilyBadges",
+    "showTradePossibleInterest",
+    "tradeRaritySymbols",
     "cardOverlaysEnabled",
     "statBoxesEnabled",
     "pinnedAlbumsEnabled",

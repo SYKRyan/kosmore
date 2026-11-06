@@ -361,7 +361,7 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
     await expect(
       group.getByLabel("Friend hover delay", { exact: true }),
     ).toBeDisabled();
-    await save.click();
+    await expect(save).toBeDisabled();
     await expect(dialog()).toHaveCount(0);
     await expect(
       page.locator('main>a[href="/card/42"] .signal-badge.friend'),
@@ -376,9 +376,7 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
       .click();
     await expect(
       group.getByLabel("Enable friend tooltip", { exact: true }),
-    ).not.toBeChecked();
-    await group.getByLabel("Enable friend tooltip", { exact: true }).check();
-    await save.click();
+    ).toBeChecked();
     await options.setViewportSize({ width: 390, height: 900 });
     await options
       .getByRole("link", { name: "Friend tooltip", exact: true })

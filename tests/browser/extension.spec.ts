@@ -757,6 +757,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Card overlays",
       "Friend tooltip",
       "Profile reminders",
+      "Trade reminders",
       "Sales Overlay",
       "Navigation hotkeys",
       "Backup & restore",
@@ -772,6 +773,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Card overlays",
       "Friend tooltip",
       "Profile reminders",
+      "Trade reminders",
       "Sales Overlay",
       "Navigation hotkeys",
       "Backup & restore",
@@ -795,7 +797,23 @@ test("settings groups are ordered with separate account controls and a fixed anc
       await expect(options.getByLabel(label, { exact: true })).toBeChecked();
     await expect(
       options.locator(".settings-group-heading").getByRole("switch"),
-    ).toHaveCount(8);
+    ).toHaveCount(9);
+    for (const name of [
+      "Show Last Sale price",
+      "Show Lowest Listed price",
+      "Close Unpinned Tooltips When Added to Album",
+    ])
+      await expect(
+        options.getByRole("checkbox", { name, exact: true }),
+      ).toBeVisible();
+    for (const name of [
+      "Set price when Last Sale is clicked",
+      "Set price when Lowest Listed is clicked",
+      "Also Close Pinned Tooltips",
+    ])
+      await expect(
+        options.getByRole("switch", { name, exact: true }),
+      ).toBeVisible();
     const checkSwitchLayout = async () => {
       for (const input of await options
         .locator(".settings-group-heading")
@@ -829,6 +847,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       ["Card overlays", "card-overlays"],
       ["Friend tooltip", "friend-tooltip"],
       ["Profile reminders", "profile-reminders"],
+      ["Trade reminders", "trade-reminders"],
       ["Sales Overlay", "sales-overlay"],
       ["Navigation hotkeys", "navigation-hotkeys"],
       ["Backup & restore", "backup-restore"],
@@ -878,7 +897,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
     await options.close();
   }
 });
-test("disabled settings groups are visibly read-only and can be enabled or cancelled", async () => {
+test("feature switches save immediately and disabled settings groups are read-only", async () => {
   await page.goto("https://kosmora.io/collection");
   const options = await context.newPage();
   const groups = [
@@ -895,6 +914,24 @@ test("disabled settings groups are visibly read-only and can be enabled or cance
       "Search albums",
     ],
     ["stat-boxes", "Enable stat boxes", "stat layout", "Show Min Price"],
+    [
+      "friend-tooltip",
+      "Enable friend tooltip",
+      "friend tooltip settings",
+      "Friend hover delay",
+    ],
+    [
+      "profile-reminders",
+      "Enable profile reminders",
+      "profile reminder settings",
+      "Keep reminders pinned on profiles",
+    ],
+    [
+      "trade-reminders",
+      "Enable trade reminders",
+      "trade reminder settings",
+      "Show possible interest counts",
+    ],
     [
       "card-overlays",
       "Enable card overlays",
@@ -936,15 +973,12 @@ test("disabled settings groups are visibly read-only and can be enabled or cance
       expect(controls.length).toBeGreaterThan(0);
       for (const control of controls) await expect(control).toBeDisabled();
       for (const button of await group.locator(".savebar button").all())
-        await expect(button).toBeEnabled();
+        await expect(button).toBeDisabled();
     };
     for (const [id, label, name, editable] of groups) {
       const group = options.locator(`#${id}`);
       await group.getByRole("switch", { name: label, exact: true }).uncheck();
       await checkDisabled(id);
-      await group
-        .getByRole("button", { name: `Save ${name}`, exact: true })
-        .click();
       await expect(group.getByRole("status")).toContainText("Saved.");
       await group.getByRole("switch", { name: label, exact: true }).check();
       await expect(group.getByLabel(editable, { exact: true })).toBeEnabled();
@@ -952,6 +986,11 @@ test("disabled settings groups are visibly read-only and can be enabled or cance
       await group
         .getByRole("button", { name: `Cancel ${name} changes`, exact: true })
         .click();
+      await expect(
+        group.getByRole("switch", { name: label, exact: true }),
+      ).toBeChecked();
+      await group.getByRole("switch", { name: label, exact: true }).uncheck();
+      await expect(group.getByRole("status")).toContainText("Saved.");
       await checkDisabled(id);
     }
     await options.reload();
@@ -988,6 +1027,170 @@ test("disabled settings groups are visibly read-only and can be enabled or cance
     await options.close();
   }
 });
+test("feature switches preserve drafts, recover from storage failures, and stay in sync across settings tabs", async () => {
+  const options = await context.newPage(),
+    other = await context.newPage();
+  try {
+    for (const tab of [options, other])
+      await tab.goto(`chrome-extension://${extensionId}/options.html`);
+    await expect(
+      options.getByLabel("Hover delay", { exact: true }),
+    ).toHaveValue("100");
+    const group = options.locator("#hover-tooltip"),
+      toggle = group.getByRole("switch", {
+        name: "Enable card hover tooltips",
+        exact: true,
+      });
+    await options.getByLabel("Hover delay", { exact: true }).fill("");
+    await options.getByLabel("Tooltip width", { exact: true }).fill("720");
+    await toggle.uncheck();
+    await expect(group.getByRole("status")).toContainText("Saved.");
+    await expect(
+      other.getByLabel("Enable card hover tooltips", { exact: true }),
+    ).not.toBeChecked();
+    await expect(
+      other.getByRole("button", { name: "Save tooltip settings", exact: true }),
+    ).toBeDisabled();
+    const stored = await worker.evaluate(
+      async () =>
+        (await chrome.storage.local.get("kosmore.settings"))[
+          "kosmore.settings"
+        ],
+    );
+    expect(stored).toMatchObject({
+      enabled: false,
+      hoverDelayMs: 100,
+      popupWidth: 440,
+    });
+    await toggle.check();
+    await expect(
+      options.getByLabel("Hover delay", { exact: true }),
+    ).toBeEnabled();
+    await expect(
+      options.getByLabel("Hover delay", { exact: true }),
+    ).toHaveValue("");
+    await expect(
+      options.getByLabel("Tooltip width", { exact: true }),
+    ).toHaveValue("720");
+    await group
+      .getByRole("button", {
+        name: "Cancel tooltip settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(toggle).toBeChecked();
+    await expect(
+      options.getByLabel("Hover delay", { exact: true }),
+    ).toHaveValue("100");
+    await expect(
+      options.getByLabel("Tooltip width", { exact: true }),
+    ).toHaveValue("440");
+    await options.evaluate(() => {
+      const original = chrome.storage.local.set.bind(chrome.storage.local);
+      let fail = true;
+      chrome.storage.local.set = ((items: Record<string, unknown>) => {
+        if (fail) {
+          fail = false;
+          return Promise.reject(new Error("Fixture storage failure"));
+        }
+        return original(items);
+      }) as typeof chrome.storage.local.set;
+    });
+    // A failed save restores the checked state before Playwright's uncheck assertion.
+    await toggle.click();
+    await expect(group.getByRole("status")).toContainText(
+      "Could not save the feature switch",
+    );
+    await expect(toggle).toBeChecked();
+    await expect(toggle).toBeEnabled();
+    await expect(
+      group.getByRole("button", { name: "Save tooltip settings", exact: true }),
+    ).toBeEnabled();
+    await toggle.uncheck();
+    await expect(group.getByRole("status")).toContainText("Saved.");
+    await expect(toggle).not.toBeChecked();
+  } finally {
+    await options.close();
+    await other.close();
+  }
+});
+
+test("queued feature switches and group saves retain every change", async () => {
+  const options = await context.newPage();
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await expect(
+      options.getByLabel("Hover delay", { exact: true }),
+    ).toHaveValue("100");
+    await options.evaluate(() => {
+      const original = chrome.storage.local.set.bind(chrome.storage.local);
+      const held = new Promise<void>((resolve) => {
+        (
+          window as unknown as { releaseSettingsWrite: () => void }
+        ).releaseSettingsWrite = resolve;
+      });
+      chrome.storage.local.set = (async (items: Record<string, unknown>) => {
+        await held;
+        await original(items);
+      }) as typeof chrome.storage.local.set;
+    });
+    const tooltip = options.locator("#hover-tooltip"),
+      overlays = options.locator("#card-overlays"),
+      sales = options.locator("#sales-overlay");
+    await tooltip
+      .getByRole("switch", { name: "Enable card hover tooltips", exact: true })
+      .uncheck();
+    await overlays
+      .getByRole("switch", { name: "Enable card overlays", exact: true })
+      .uncheck();
+    await sales
+      .getByLabel("Last Sale price adjustment", { exact: true })
+      .fill("5");
+    await sales
+      .getByRole("button", { name: "Save sales overlay settings", exact: true })
+      .click();
+    await expect(
+      tooltip.getByRole("switch", {
+        name: "Enable card hover tooltips",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await expect(
+      overlays.getByRole("switch", {
+        name: "Enable card overlays",
+        exact: true,
+      }),
+    ).toBeDisabled();
+    await options.evaluate(() =>
+      (
+        window as unknown as { releaseSettingsWrite: () => void }
+      ).releaseSettingsWrite(),
+    );
+    for (const group of [tooltip, overlays, sales])
+      await expect(group.getByRole("status")).toContainText("Saved.");
+    expect(
+      await worker.evaluate(
+        async () =>
+          (await chrome.storage.local.get("kosmore.settings"))[
+            "kosmore.settings"
+          ],
+      ),
+    ).toMatchObject({
+      enabled: false,
+      cardOverlaysEnabled: false,
+      salesLastSaleAdjustment: 5,
+    });
+    await expect(
+      tooltip.getByRole("button", {
+        name: "Save tooltip settings",
+        exact: true,
+      }),
+    ).toBeDisabled();
+  } finally {
+    await options.close();
+  }
+});
+
 test("section enable settings apply live and preserve shortcuts, stat choices and pinned albums", async () => {
   await worker.evaluate(async () => {
     const saved = (await chrome.storage.local.get("kosmore.settings"))[
@@ -1031,9 +1234,6 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
     const set = async (label: string, group: string, on: boolean) => {
       await options.getByLabel(label, { exact: true }).setChecked(on);
       const section = options.getByRole("region", { name: group, exact: true });
-      await section
-        .getByRole("button", { name: `Save ${group}`, exact: true })
-        .click();
       await expect(section.getByRole("status")).toContainText("Saved.");
     };
     await set("Enable navigation hotkey", "hotkeys", false);
@@ -1072,7 +1272,8 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
       .click();
     await expect(
       options.getByLabel("Enable stat boxes", { exact: true }),
-    ).not.toBeChecked();
+    ).toBeChecked();
+    await set("Enable stat boxes", "stat layout", false);
     await options.reload();
     for (const label of [
       "Enable navigation hotkey",
@@ -1180,7 +1381,7 @@ test("replacing an anchor removes its popup and newly inserted cards work withou
   await expect(page.locator("#kosmore-root h2")).toHaveText("Andromeda");
   expect(writeRequests).toBe(0);
 });
-test("saving disabled hover settings closes an existing popup in an already-open tab", async () => {
+test("disabling hover tooltips immediately closes an existing popup in an already-open tab", async () => {
   await page.goto("https://kosmora.io/collection");
   await page.locator(".kc-article").hover();
   await expect(page.locator("#kosmore-root")).toBeVisible();
@@ -1189,9 +1390,6 @@ test("saving disabled hover settings closes an existing popup in an already-open
   await options
     .getByLabel("Enable card hover tooltips", { exact: true })
     .uncheck();
-  await options
-    .getByRole("button", { name: "Save tooltip settings", exact: true })
-    .click();
   await expect(
     options
       .getByRole("region", { name: "tooltip settings", exact: true })
@@ -2297,9 +2495,6 @@ test("For Sale marks only your listed cards on the left, stays aligned and honor
       .click();
     await expect(label).toBeVisible();
     await options.getByLabel("Enable card overlays", { exact: true }).uncheck();
-    await options
-      .getByRole("button", { name: "Save overlay settings", exact: true })
-      .click();
     await expect(page.locator("[data-kosmore-card-overlays]")).toHaveCount(0);
     await expect(toggle).toBeDisabled();
     expect(writeRequests).toBe(0);
@@ -4237,7 +4432,7 @@ test("single-sale badges share settings and respect click toggles, visibility, r
     await widget.locator(".sale").click();
     await expect(input).toHaveValue("12");
     await settings
-      .getByRole("switch", { name: "Show Lowest Listed price", exact: true })
+      .getByRole("checkbox", { name: "Show Lowest Listed price", exact: true })
       .uncheck();
     await expect(
       settings.getByRole("switch", {
@@ -4251,7 +4446,7 @@ test("single-sale badges share settings and respect click toggles, visibility, r
       .getByRole("switch", { name: "Enable sales overlay", exact: true })
       .uncheck();
     await expect(settings).toHaveClass(/settings-group-disabled/);
-    await save.click();
+    await expect(save).toBeDisabled();
     await expect(widget).toHaveCount(0);
     await options.reload();
     await expect(

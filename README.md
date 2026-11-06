@@ -4,7 +4,7 @@
 2. In Chrome, open `chrome://extensions` and turn on **Developer mode**.
 3. Click **Load unpacked** and select the extracted folder containing `manifest.json`.
 4. Open Kosmora and refresh any tabs that were already open.
-5. Click KosMore in Chrome's Extensions menu to configure it. Save each settings group you change.
+5. Click KosMore in Chrome's Extensions menu to configure it. The top-right feature switches save and apply immediately. Use Save for other settings changes; Save and Cancel are disabled while a feature is off. Unsaved options remain available when you turn it back on.
 
 ## Update
 
@@ -33,6 +33,12 @@ Hover or focus the purple friend indicator inside the card hover tooltip to see 
 On a player's profile, click **✦ KosMore** above the header to edit the same private family preferences and notes used on Social. The top-right pin moves the editor into a profile widget above Albums, with families on the left and notes on the right (stacked on narrow screens). When pinned, the standalone control above the header is hidden and the KosMore label sits at the top left of the widget, with the unpin button at the top right. Pinning keeps the widget available on other profiles; unpin to return to the popup. The notes box tracks the token box’s height as families are added or removed. Add sits below the token box on the right. Status messages sit at the bottom left, with Cancel and Save grouped on the right in both profile and Social editors. Save and Cancel work as on Social, and moving between popup and widget preserves unsaved edits.
 
 **Settings → Profile reminders** can disable this feature or choose whether reminders stay pinned. Notes and profile display preferences are included in Backup & restore.
+
+### Trade reminders
+
+When proposing a trade, the selected player's saved families appear below the “Only the cards…” text and above **Possible Interest** on **Their card**. On **Your card**, the families and breakdown also appear above the search bar, below the trade rule. On other trade steps, the families appear below the step numbers. **Possible Interest** shows how many of your available copies match any of those families, grouped by rarity using Kosmora's gem symbols. Counts cover the full matching collection, exclude locked copies and cards for sale, include available shiny and full art copies, and count a copy only once when families overlap. Zero-count rarities and an empty breakdown stay hidden. Search filters on their cards do not change your counts.
+
+**Settings → Trade reminders**, immediately after Profile reminders, lets you enable the feature, show or hide family badges and interest counts independently, and use rarity names instead of symbols. This group has its own Save and Cancel controls, works independently of hover tooltips, and is included in Backup & restore.
 
 ## Sale rate
 

@@ -1,0 +1,110 @@
+:host {
+  display: block;
+  color: #e8dff2;
+  font:
+    13px/1.5 system-ui,
+    sans-serif;
+  margin: 12px 0 16px;
+}
+:host([hidden]) {
+  display: none;
+}
+* {
+  box-sizing: border-box;
+}
+.families,
+.interest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.family-badge {
+  border: 1px solid #796294;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: #271b38;
+  color: #e0cbfb;
+  overflow-wrap: anywhere;
+}
+.interest {
+  gap: 8px 14px;
+}
+.label {
+  color: #d9c8ed;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.breakdown {
+  display: grid;
+  flex: 1 1 300px;
+  min-width: 0;
+}
+.breakdown-reservation,
+.breakdown-values {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  align-items: center;
+  gap: 8px 14px;
+}
+.breakdown-reservation {
+  visibility: hidden;
+  pointer-events: none;
+}
+.rarity-count,
+.rarity-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rarity-symbol,
+.symbol-space {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+.spinner {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 2px solid #b393df40;
+  border-top-color: #e3ceff;
+  border-radius: 50%;
+  visibility: hidden;
+}
+.loading .spinner {
+  visibility: visible;
+  animation: interest-spin 800ms linear infinite;
+}
+@keyframes interest-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading .spinner {
+    animation: none;
+  }
+}
+.error {
+  color: #d9c8ed;
+}
+button {
+  background: #271b38;
+  color: #e0cbfb;
+  border: 1px solid #796294;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+button:focus-visible {
+  outline: 2px solid #efd08d;
+  outline-offset: 2px;
+}
