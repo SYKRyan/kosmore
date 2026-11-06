@@ -752,30 +752,30 @@ test("settings groups are ordered with separate account controls and a fixed anc
         ),
     ).toEqual([
       "Hover tooltip",
-      "Friend tooltip",
-      "Profile reminders",
       "Pinned albums",
       "Tooltip stat boxes",
       "Card overlays",
+      "Friend tooltip",
+      "Profile reminders",
       "Sales Overlay",
       "Navigation hotkeys",
-      "Connected account",
       "Backup & restore",
+      "Connected account",
     ]);
     const connection = options.locator("#connected-account"),
       albums = options.locator("#pinned-albums"),
       nav = options.getByRole("navigation", { name: "Settings groups" });
     await expect(nav.getByRole("link")).toHaveText([
       "Hover tooltip",
-      "Friend tooltip",
-      "Profile reminders",
       "Pinned albums",
       "Tooltip stat boxes",
       "Card overlays",
+      "Friend tooltip",
+      "Profile reminders",
       "Sales Overlay",
       "Navigation hotkeys",
-      "Connected account",
       "Backup & restore",
+      "Connected account",
     ]);
     await expect(connection.getByLabel("Kosmora account")).toBeVisible();
     await expect(
@@ -824,15 +824,15 @@ test("settings groups are ordered with separate account controls and a fixed anc
     const initial = (await nav.boundingBox())!;
     for (const [label, id] of [
       ["Hover tooltip", "hover-tooltip"],
-      ["Friend tooltip", "friend-tooltip"],
-      ["Profile reminders", "profile-reminders"],
       ["Pinned albums", "pinned-albums"],
       ["Tooltip stat boxes", "stat-boxes"],
       ["Card overlays", "card-overlays"],
+      ["Friend tooltip", "friend-tooltip"],
+      ["Profile reminders", "profile-reminders"],
       ["Sales Overlay", "sales-overlay"],
       ["Navigation hotkeys", "navigation-hotkeys"],
-      ["Connected account", "connected-account"],
       ["Backup & restore", "backup-restore"],
+      ["Connected account", "connected-account"],
     ]) {
       await nav.getByRole("link", { name: label, exact: true }).click();
       await expect(options).toHaveURL(new RegExp(`#${id}$`));

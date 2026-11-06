@@ -594,18 +594,6 @@ const settingsGroups = [
     path: "M4 3h16v13H9l-5 5V3Z M8 7h8 M8 11h5",
   },
   {
-    id: "friend-tooltip",
-    label: "Friend tooltip",
-    host: friendTooltipSettings.host,
-    path: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-4 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
-  },
-  {
-    id: "profile-reminders",
-    label: "Profile reminders",
-    host: profileSettings,
-    path: "M4 3h16v18H4Z M8 15h8 M8 18h5 M15 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
-  },
-  {
     id: "pinned-albums",
     label: "Pinned albums",
     host: albumSettings,
@@ -624,6 +612,18 @@ const settingsGroups = [
     path: "M7 3h14v14H7Z M3 7v14h14 M12 7h4 M12 11h4",
   },
   {
+    id: "friend-tooltip",
+    label: "Friend tooltip",
+    host: friendTooltipSettings.host,
+    path: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-4 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+  },
+  {
+    id: "profile-reminders",
+    label: "Profile reminders",
+    host: profileSettings,
+    path: "M4 3h16v18H4Z M8 15h8 M8 18h5 M15 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
+  },
+  {
     id: "sales-overlay",
     label: "Sales Overlay",
     host: salesSettings.host,
@@ -636,16 +636,16 @@ const settingsGroups = [
     path: "M3 5h18v14H3Z M7 9h.01 M11 9h.01 M15 9h.01 M7 12h.01 M11 12h.01 M15 12h.01 M7 15h10",
   },
   {
-    id: "connected-account",
-    label: "Connected account",
-    host: connection,
-    path: "M20 21v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2 M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
-  },
-  {
     id: "backup-restore",
     label: "Backup & restore",
     host: backupSettings.host,
     path: "M12 3v12 M7 10l5 5 5-5 M4 15v6h16v-6",
+  },
+  {
+    id: "connected-account",
+    label: "Connected account",
+    host: connection,
+    path: "M20 21v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2 M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
   },
 ];
 app.append(...settingsGroups.map((group) => group.host));

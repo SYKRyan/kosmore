@@ -48,11 +48,31 @@ function o(e) {
 	}) || t.op === "albums" && Number.isInteger(t.tabId) && t.tabId >= 0 && /^[a-z0-9_]{1,24}$/.test(t.accountKey));
 }
 // src/shared/types.ts
-function s(e) {
+var s = [
+	"plain",
+	"veil",
+	"fullart"
+], c = {
+	plain: "Standard",
+	veil: "Shiny",
+	fullart: "Full art"
+};
+function l(e) {
 	return e instanceof Error ? e.message : "The request failed. Please try again.";
 }
+// src/shared/sale-observations.ts
+var u = (e, t) => ({
+	sold: e,
+	total: t,
+	percent: t ? Math.round(e / t * 100) : null
+});
+function d(e, t) {
+	let n = 0, r = 0;
+	for (let i of t) n += e[i].sold, r += e[i].total;
+	return u(n, r);
+}
 // src/shared/stat-catalog.ts
-var c = [
+var f = [
 	{
 		id: "minPrice",
 		label: "Min Price",
@@ -129,14 +149,40 @@ var c = [
 			value: typeof e.activeAuctions == "number" ? e.activeAuctions.toLocaleString() : "—",
 			title: e.activeAuctions instanceof Error ? e.activeAuctions.message : typeof e.activeAuctions == "number" ? "Active listings for this exact card across all finishes. Counts are cached for up to 30 seconds; Refresh checks again." : e.cardError ?? "Loading active auctions…"
 		})
+	},
+	{
+		id: "saleRate",
+		label: "Sale Rate · 30 days",
+		description: "Share of this card's observed listings that sold, for the selected variants. Kosmora does not report unsold listings, so KosMore records the listings the Market shows you and settles them from sale histories.",
+		source: "observed",
+		preview: { value: "67% · 3" },
+		read: (e) => p(e)
 	}
-], l = () => c.map(({ id: e }) => ({
+];
+function p(e) {
+	if (!e.saleRates) return {
+		value: "—",
+		title: "Loading card details…"
+	};
+	let t = d(e.saleRates, e.finishes), n = `${s.filter((t) => e.finishes.includes(t)).map((t) => {
+		let n = e.saleRates[t];
+		return `${c[t]}: ${n.total ? `${n.sold} of ${n.total} sold` : "none observed"}`;
+	}).join(" · ")}. Observed locally from listings KosMore saw on the Market, settled from sale histories. Listings ended in the last 30 days.`;
+	return t.percent === null ? {
+		value: "—",
+		title: n
+	} : {
+		value: `${t.percent}% · ${t.total}`,
+		title: n
+	};
+}
+var m = () => f.map(({ id: e }) => ({
 	id: e,
 	enabled: !0
 }));
-function u(e) {
-	if (!Array.isArray(e)) return l();
-	let t = new Map(c.map((e) => [e.id, e])), n = /* @__PURE__ */ new Set(), r = [];
+function h(e) {
+	if (!Array.isArray(e)) return m();
+	let t = new Map(f.map((e) => [e.id, e])), n = /* @__PURE__ */ new Set(), r = [];
 	for (let i of e) {
 		if (!i || typeof i != "object") continue;
 		let { id: e, enabled: a } = i;
@@ -145,10 +191,10 @@ function u(e) {
 			enabled: typeof a != "boolean" || a
 		}));
 	}
-	return [...r, ...l().filter((e) => !n.has(e.id))];
+	return [...r, ...m().filter((e) => !n.has(e.id))];
 }
 // src/shared/hotkeys.ts
-var d = [
+var g = [
 	{
 		id: "home",
 		label: "Home",
@@ -220,14 +266,14 @@ var d = [
 		path: null
 	}
 ];
-function f(e) {
+function _(e) {
 	return `${e.ctrl}-${e.alt}-${e.shift}-${e.meta}-${e.code}`;
 }
-function p(e) {
+function v(e) {
 	let t = {}, n = /* @__PURE__ */ new Set();
 	if (!e || typeof e != "object") return t;
 	let r = e;
-	for (let e of d) {
+	for (let e of g) {
 		let i = r[e.id];
 		if (!i || typeof i != "object") continue;
 		let a = i;
@@ -243,24 +289,24 @@ function p(e) {
 			alt: a.alt,
 			shift: a.shift,
 			meta: a.meta
-		}, s = f(o);
+		}, s = _(o);
 		n.has(s) || (n.add(s), t[e.id] = o);
 	}
 	return t;
 }
 // src/shared/sales-prices.ts
-function m(e) {
+function y(e) {
 	if (typeof e != "number" || !Number.isFinite(e)) return;
 	let t = String(e).match(/^(-?)(\d+)(?:\.(\d{1,6}))?$/);
 	if (!t) return;
 	let n = BigInt(t[2]) * 1000000n + BigInt((t[3] ?? "").padEnd(6, "0"));
 	if (!(n > BigInt(2 ** 53 - 1))) return t[1] ? -n : n;
 }
-function h(e) {
-	return m(e) !== void 0;
+function b(e) {
+	return y(e) !== void 0;
 }
 // src/shared/settings.ts
-var g = "kosmore.settings", _ = () => ({
+var x = "kosmore.settings", S = () => ({
 	schemaVersion: 1,
 	enabled: !0,
 	profileRemindersEnabled: !0,
@@ -296,16 +342,16 @@ var g = "kosmore.settings", _ = () => ({
 	showOnSaleOverlay: !0,
 	showFriendInterestOverlay: !0,
 	showQuestOverlay: !0,
-	stats: l(),
+	stats: m(),
 	hotkeys: {},
 	pinnedAlbums: {}
 });
-function v(e) {
-	let t = _();
+function C(e) {
+	let t = S();
 	if (!e || typeof e != "object") return t;
 	let r = e;
 	if (r.schemaVersion !== 1) return t;
-	t.stats = u(r.stats), t.hotkeys = p(r.hotkeys), t.popupPosition = n(r.popupPosition), t.friendTooltipPosition = n(r.friendTooltipPosition), typeof r.enabled == "boolean" && (t.enabled = r.enabled);
+	t.stats = h(r.stats), t.hotkeys = v(r.hotkeys), t.popupPosition = n(r.popupPosition), t.friendTooltipPosition = n(r.friendTooltipPosition), typeof r.enabled == "boolean" && (t.enabled = r.enabled);
 	for (let e of [
 		"profileRemindersEnabled",
 		"profileRemindersPinned",
@@ -320,7 +366,7 @@ function v(e) {
 		"statBoxesEnabled",
 		"pinnedAlbumsEnabled"
 	]) typeof r[e] == "boolean" && (t[e] = r[e]);
-	for (let e of ["salesLastSaleAdjustment", "salesLowestListingAdjustment"]) h(r[e]) && (t[e] = r[e]);
+	for (let e of ["salesLastSaleAdjustment", "salesLowestListingAdjustment"]) b(r[e]) && (t[e] = r[e]);
 	typeof r.closeTooltipWhenAddedToAlbum == "boolean" && (t.closeTooltipWhenAddedToAlbum = r.closeTooltipWhenAddedToAlbum), typeof r.applyCloseBehaviorToPinnedTooltips == "boolean" && (t.applyCloseBehaviorToPinnedTooltips = r.applyCloseBehaviorToPinnedTooltips), typeof r.showSaleHistoryOverlay == "boolean" && (t.showSaleHistoryOverlay = r.showSaleHistoryOverlay), typeof r.showLastSalePriceOverlay == "boolean" && (t.showLastSalePriceOverlay = r.showLastSalePriceOverlay), typeof r.showActiveAuctionsOverlay == "boolean" && (t.showActiveAuctionsOverlay = r.showActiveAuctionsOverlay), typeof r.showLowestListingPriceOverlay == "boolean" && (t.showLowestListingPriceOverlay = r.showLowestListingPriceOverlay), typeof r.showOnSaleOverlay == "boolean" && (t.showOnSaleOverlay = r.showOnSaleOverlay), typeof r.showFriendInterestOverlay == "boolean" && (t.showFriendInterestOverlay = r.showFriendInterestOverlay), typeof r.showQuestOverlay == "boolean" && (t.showQuestOverlay = r.showQuestOverlay), typeof r.hoverDelayMs == "number" && Number.isFinite(r.hoverDelayMs) && (t.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(r.hoverDelayMs))));
 	for (let [e, n, i] of [
 		[
@@ -370,47 +416,47 @@ function v(e) {
 	});
 	return t;
 }
-async function y() {
-	return v((await chrome.storage.local.get(g))[g]);
+async function w() {
+	return C((await chrome.storage.local.get(x))[x]);
 }
-async function b(e) {
-	await chrome.storage.local.set({ [g]: v(e) });
+async function T(e) {
+	await chrome.storage.local.set({ [x]: C(e) });
 }
 // src/background.ts
-var x = Promise.resolve();
+var E = Promise.resolve();
 chrome.tabs.onRemoved.addListener((n) => {
 	chrome.storage.session.remove([`${e}${n}`, `${t}${n}`]);
 }), chrome.action.onClicked.addListener(() => {
 	chrome.runtime.openOptionsPage();
-}), chrome.runtime.onMessage.addListener((i, a, c) => {
+}), chrome.runtime.onMessage.addListener((i, a, s) => {
 	if (a.id !== chrome.runtime.id || !o(i)) return !1;
-	let l = a.url === chrome.runtime.getURL("options.html"), u = !!a.tab && a.url?.startsWith("https://kosmora.io/");
+	let c = a.url === chrome.runtime.getURL("options.html"), u = !!a.tab && a.url?.startsWith("https://kosmora.io/");
 	if ((i.op === "popupState" || i.op === "popupLayout" || i.op === "friendPopupState" || i.op === "friendPopupLayout") && u && a.tab?.id !== void 0 && a.frameId === 0) {
-		let o = i.op === "friendPopupState" || i.op === "friendPopupLayout", l = `${o ? t : e}${a.tab.id}`, u = x.then(async () => {
-			let e = r((await chrome.storage.session.get(l))[l]);
+		let o = i.op === "friendPopupState" || i.op === "friendPopupLayout", c = `${o ? t : e}${a.tab.id}`, u = E.then(async () => {
+			let e = r((await chrome.storage.session.get(c))[c]);
 			if (i.op === "popupState" || i.op === "friendPopupState") return e;
 			let t = i.change;
-			if (t.pinned !== void 0 && (e.pinned = t.pinned), t.position && (e.position = n(t.position)), await chrome.storage.session.set({ [l]: e }), t.position || t.width !== void 0 || t.height !== void 0) {
-				let e = await y();
-				t.position && (e[o ? "friendTooltipPosition" : "popupPosition"] = n(t.position)), t.width !== void 0 && (e[o ? "friendTooltipWidth" : "popupWidth"] = Math.round(t.width)), t.height !== void 0 && (e[o ? "friendTooltipHeight" : "popupHeight"] = Math.round(t.height)), await b(e);
+			if (t.pinned !== void 0 && (e.pinned = t.pinned), t.position && (e.position = n(t.position)), await chrome.storage.session.set({ [c]: e }), t.position || t.width !== void 0 || t.height !== void 0) {
+				let e = await w();
+				t.position && (e[o ? "friendTooltipPosition" : "popupPosition"] = n(t.position)), t.width !== void 0 && (e[o ? "friendTooltipWidth" : "popupWidth"] = Math.round(t.width)), t.height !== void 0 && (e[o ? "friendTooltipHeight" : "popupHeight"] = Math.round(t.height)), await T(e);
 			}
 			return e;
 		});
-		return x = u.then(() => {}, () => {}), u.then((e) => c({
+		return E = u.then(() => {}, () => {}), u.then((e) => s({
 			requestId: i.requestId,
 			ok: !0,
 			data: e
-		}), (e) => c({
+		}), (e) => s({
 			requestId: i.requestId,
 			ok: !1,
-			error: s(e)
+			error: l(e)
 		})), !0;
 	}
-	return i.op === "openOptions" && u ? (chrome.runtime.openOptionsPage().then(() => c({
+	return i.op === "openOptions" && u ? (chrome.runtime.openOptionsPage().then(() => s({
 		requestId: i.requestId,
 		ok: !0,
 		data: null
-	})), !0) : l ? ((async () => {
+	})), !0) : c ? ((async () => {
 		if (i.op === "sessions") {
 			let e = await chrome.tabs.query({ url: "https://kosmora.io/*" });
 			return (await Promise.allSettled(e.filter((e) => e.id !== void 0).map(async (e) => {
@@ -436,14 +482,14 @@ chrome.tabs.onRemoved.addListener((n) => {
 			return e.data;
 		}
 		throw Error("Unsupported request.");
-	})().then((e) => c({
+	})().then((e) => s({
 		requestId: i.requestId,
 		ok: !0,
 		data: e
-	}), (e) => c({
+	}), (e) => s({
 		requestId: i.requestId,
 		ok: !1,
-		error: s(e)
+		error: l(e)
 	})), !0) : !1;
 });
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "KosMore",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Card insights and pinned album shortcuts for Kosmora, including pack reveals and summaries.",
   "minimum_chrome_version": "120",
   "permissions": ["storage"],
@@ -10,6 +10,12 @@
   "options_ui": { "page": "options.html", "open_in_tab": true },
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [
+    {
+      "matches": ["https://kosmora.io/*"],
+      "js": ["page-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
     {
       "matches": ["https://kosmora.io/*"],
       "js": ["content.js"],
