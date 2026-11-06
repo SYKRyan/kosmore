@@ -8,6 +8,11 @@ import { parseFamilyChoices } from "./families";
 import { parseFamilyCountsPage, parseMilestones } from "./fusion";
 import { parseFriends } from "./friends";
 import { parseQuestSubjects } from "./quests";
+import {
+  parseInterestPage,
+  interestCounts,
+  type InterestEntry,
+} from "./trade-interest";
 import { activeAuctionSummary, type AuctionListing } from "./auctions";
 import type {
   Account,
@@ -46,6 +51,7 @@ export class GameClient implements KosmoraClient {
   private openingReads = new ReadCache(40, 30_000);
   private accountReads = new ReadCache(1, 2_000);
   private auctionReads = new ReadCache(100, 30_000);
+  private collectionReads = new ReadCache(60, 30_000);
   private scheduler = new RequestScheduler(3);
   private accountVersion = 0;
   private accountListeners = new Set<() => void>();
@@ -85,6 +91,7 @@ export class GameClient implements KosmoraClient {
       this.albumReads,
       this.openingReads,
       this.auctionReads,
+      this.collectionReads,
     ])
       cache.clear();
   }
@@ -326,6 +333,52 @@ export class GameClient implements KosmoraClient {
       false,
       ["/families"],
     );
+  async possibleInterest(
+    familyIds: string[],
+    signal?: AbortSignal,
+    fresh = false,
+  ) {
+    const entries: InterestEntry[] = [];
+    for (const family of new Set(familyIds)) {
+      if (!family || family.length > 200)
+        throw new Error("Invalid family identifier.");
+      entries.push(
+        ...(await this.cached(
+          this.collectionReads,
+          `interest:${family}`,
+          async (shared) => {
+            const rows: InterestEntry[] = [],
+              cursors = new Set<string>();
+            let cursor: string | null = null;
+            do {
+              const params = new URLSearchParams({
+                family,
+                split: "1",
+                status: "available",
+                sendable: "1",
+                sort: "name",
+                limit: "100",
+              });
+              if (cursor) params.set("cursor", cursor);
+              const page = parseInterestPage(
+                await this.read(`/collection?${params}`, shared),
+              );
+              rows.push(...page.items);
+              cursor = page.cursor;
+              if (cursor && (cursors.has(cursor) || rows.length >= 100_000))
+                throw new Error(
+                  "The complete collection could not be counted.",
+                );
+              if (cursor) cursors.add(cursor);
+            } while (cursor);
+            return rows;
+          },
+          signal,
+          fresh,
+        )),
+      );
+    }
+    return interestCounts(entries);
   }
   friends(signal?: AbortSignal, fresh = false) {
     return this.cached(

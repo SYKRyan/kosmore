@@ -93,6 +93,10 @@ export interface Settings {
   enabled: boolean;
   profileRemindersEnabled: boolean;
   profileRemindersPinned: boolean;
+  tradeRemindersEnabled: boolean;
+  showTradeFamilyBadges: boolean;
+  showTradePossibleInterest: boolean;
+  tradeRaritySymbols: boolean;
   friendTooltipEnabled: boolean;
   friendHoverDelayMs: number;
   friendDismissDelayMs: number;
@@ -130,6 +134,11 @@ export interface Settings {
   pinnedAlbums: Record<string, string[]>;
 }
 export interface KosmoraClient {
+  possibleInterest(
+    familyIds: string[],
+    signal?: AbortSignal,
+    fresh?: boolean,
+  ): Promise<import("../kosmora/trade-interest").InterestCounts>;
   account(signal?: AbortSignal, fresh?: boolean): Promise<Account>;
   friends(signal?: AbortSignal, fresh?: boolean): Promise<Friend[]>;
   questSubjects(signal?: AbortSignal, fresh?: boolean): Promise<string[]>;

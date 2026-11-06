@@ -4,8 +4,8 @@
     -apple-system,
     "Segoe UI",
     sans-serif;
-  color: #ece7f3;
-  background: #100b20;
+  color: #f0eafb;
+  background: #07061a;
   color-scheme: dark;
 }
 * {
@@ -13,9 +13,23 @@
 }
 body {
   margin: 0;
-  background: radial-gradient(ellipse at 20% 0, #35234d66, transparent 60%);
+  position: relative;
+  isolation: isolate;
   min-height: 100vh;
   padding-left: 228px;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    url("./starfield.svg") repeat,
+    radial-gradient(1100px 700px at 85% -5%, #6e46dc38, transparent 60%),
+    radial-gradient(900px 600px at -10% 35%, #4456b025, transparent 60%),
+    radial-gradient(800px 500px at 50% 110%, #b477db12, transparent 60%),
+    #07061a;
 }
 main {
   max-width: 1120px;
@@ -31,10 +45,14 @@ main {
   max-height: calc(100vh - 32px);
   overflow: auto;
   padding: 14px 10px;
-  border: 1px solid #6b518060;
-  border-radius: 14px;
-  background: #1b132bf5;
-  box-shadow: 0 8px 30px #0003;
+  border: 1px solid #ae91e333;
+  border-radius: 16px;
+  background:
+    radial-gradient(ellipse at 0 0, #9b76ed18, transparent 65%),
+    linear-gradient(165deg, #1b1539fa, #0e0b24fa);
+  box-shadow:
+    inset 0 1px 0 #e6d6ff0d,
+    0 16px 40px #02011166;
 }
 .nav-heading {
   color: #dabc7e;
@@ -60,13 +78,16 @@ main {
   flex: 0 0 auto;
 }
 .settings-nav-link:hover {
-  background: #30213f;
-  color: #ffe5a7;
+  background: linear-gradient(110deg, #65459a36, #43316820);
+  color: #f1e6ff;
 }
 .settings-nav-link[aria-current="location"] {
-  background: #3a294c;
-  border-color: #8d7144;
+  background: linear-gradient(110deg, #7856bb4d, #3a2a6638);
+  border-color: #bda0ed55;
   color: #ffe5a7;
+  box-shadow:
+    inset 0 1px 0 #e9d8ff0c,
+    0 3px 12px #03011633;
 }
 .panel[id] {
   scroll-margin-top: 20px;
@@ -89,13 +110,13 @@ select {
 button {
   cursor: pointer;
   color: #edddbb;
-  background: #302342;
-  border: 1px solid #655039;
+  background: linear-gradient(160deg, #352656, #211939);
+  border: 1px solid #9876c966;
   border-radius: 9px;
   padding: 9px 16px;
 }
 button:hover:not(:disabled) {
-  background: #47335f;
+  background: linear-gradient(160deg, #493472, #30214e);
   border-color: #e2c47e;
 }
 button:disabled {
@@ -104,14 +125,20 @@ button:disabled {
 }
 button.primary {
   color: #271a29;
-  background: linear-gradient(#ffedb7, #d9af5c);
+  background: linear-gradient(#fff0be, #edca78 48%, #c79540);
   font-weight: 650;
   border-color: #ffdf95;
+  box-shadow:
+    inset 0 1px 0 #fff8dc99,
+    0 3px 12px #e5bc5826;
+}
+button.primary:hover:not(:disabled) {
+  background: linear-gradient(#fff5d6, #f4d68f 48%, #d8a84f);
 }
 button.ghost {
-  background: transparent;
-  color: #c4afd8;
-  border-color: #554168;
+  background: linear-gradient(160deg, #a77ae90b, #21193933);
+  color: #d6c4ee;
+  border-color: #9876c94d;
 }
 button.small {
   padding: 5px 11px;
@@ -132,12 +159,19 @@ input[type="checkbox"] {
 input[type="search"],
 input[type="number"],
 select {
-  background: #171127;
+  background: linear-gradient(180deg, #0c0923, #17102f);
   color: #f1eafa;
-  border: 1px solid #59466f;
+  border: 1px solid #9a7bce55;
   border-radius: 8px;
   padding: 10px 12px;
   width: 100%;
+  box-shadow:
+    inset 0 2px 5px #03011040,
+    0 1px 0 #dac8ff08;
+}
+select option {
+  background: #17102f;
+  color: #f1eafa;
 }
 input[type="number"] {
   max-width: 120px;
@@ -158,8 +192,10 @@ h1 {
   letter-spacing: -1px;
 }
 h2 {
-  font-size: 15px;
-  color: #f3dfb4;
+  font:
+    600 17px/1.4 Georgia,
+    serif;
+  color: #f0e7ff;
   letter-spacing: 0.01em;
 }
 .brand {
@@ -171,7 +207,7 @@ h2 {
 }
 .intro {
   max-width: 610px;
-  color: #b6a3cb;
+  color: #c6b8dc;
   margin-top: 14px;
   font-size: 15px;
 }
@@ -179,24 +215,49 @@ h2 {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 28px;
+  border: 1px solid #b394ed38;
+  border-radius: 20px;
+  background:
+    radial-gradient(ellipse at 15% 0, #a982ff29, transparent 70%),
+    radial-gradient(ellipse at 100% 100%, #7354b21a, transparent 65%),
+    linear-gradient(145deg, #21164b, #110c2e 75%);
+  box-shadow:
+    inset 0 1px 0 #e9d6ff14,
+    0 18px 45px #03011440;
   margin-bottom: 32px;
+}
+.header > div {
+  flex: 1 1 400px;
+  min-width: 0;
 }
 .badge {
   font-size: 11px;
   color: #c0a4e5;
-  background: #b38be115;
-  border: 1px solid #b38be133;
+  background: linear-gradient(130deg, #a47af026, #6f4f9e12);
+  border: 1px solid #b38be144;
   border-radius: 20px;
   padding: 5px 11px;
   white-space: nowrap;
 }
 .panel {
-  background: linear-gradient(110deg, #241936cc, #1b132bdd);
-  border: 1px solid #6b518034;
-  border-radius: 15px;
+  background:
+    radial-gradient(ellipse at 0 0, #aa82ff0b, transparent 65%),
+    linear-gradient(145deg, #100c25d9, #0c091dcc 55%, #080617bf);
+  border: 1px solid #b096df30;
+  border-radius: 18px;
   padding: 22px;
   margin-bottom: 18px;
-  box-shadow: 0 7px 25px #0001;
+  box-shadow:
+    inset 0 1px 0 #eadcff0f,
+    0 12px 30px #02011238;
+}
+.panel .panel {
+  background: linear-gradient(145deg, #20173c, #100c26);
+  border-color: #b096df24;
+  box-shadow: inset 0 1px 0 #eadcff08;
 }
 .settings-group-heading {
   display: flex;
@@ -216,14 +277,14 @@ h2 {
 }
 .settings-group-state {
   color: #c4afd8;
-  background: #35283f;
+  background: linear-gradient(150deg, #352644, #241c32);
   border: 1px solid #6b5180;
   border-radius: 20px;
   padding: 2px 8px;
   font-size: 11px;
 }
 .settings-group-disabled {
-  background: #1b1526;
+  background: linear-gradient(145deg, #151020d9, #0b0916c7);
   border-style: dashed;
   border-color: #685276;
 }
@@ -242,7 +303,8 @@ input.section-switch {
   margin: 0;
   border: 1px solid #715a87;
   border-radius: 999px;
-  background: #30233f;
+  background: linear-gradient(#19102d, #352647);
+  box-shadow: inset 0 1px 3px #03010e66;
   cursor: pointer;
 }
 input.section-switch::before {
@@ -256,12 +318,15 @@ input.section-switch::before {
   background: #c3b2d4;
 }
 input.section-switch:checked {
-  background: #dabc7e;
-  border-color: #e7c87e;
+  background: linear-gradient(135deg, #b190ee, #7954c2);
+  border-color: #c7a7ff;
+  box-shadow:
+    inset 0 1px 0 #ecdcff40,
+    0 0 12px #9970ef26;
 }
 input.section-switch:checked::before {
   transform: translateX(18px);
-  background: #271a29;
+  background: #f4eaff;
 }
 @media (prefers-reduced-motion: no-preference) {
   input.section-switch,
@@ -296,10 +361,10 @@ input.section-switch:checked::before {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border: 1px solid #ffffff0b;
+  border: 1px solid #b69be81f;
   border-radius: 9px;
   padding: 12px;
-  background: #130e2133;
+  background: linear-gradient(135deg, #4c327a1f, #0d092b33);
 }
 .stat-choice .label {
   flex: 1;
@@ -317,7 +382,7 @@ input.section-switch:checked::before {
 }
 .sub {
   font-size: 12px;
-  color: #a995be;
+  color: #b9a8d0;
   margin-top: 5px;
 }
 .label {
@@ -329,7 +394,8 @@ input.section-switch:checked::before {
   flex-shrink: 0;
 }
 .rule {
-  border-top: 1px solid #ffffff0c;
+  height: 1px;
+  background: linear-gradient(90deg, #b397e830, #b397e80d);
   margin: 18px 0;
 }
 .grid {
@@ -362,8 +428,8 @@ input.section-switch:checked::before {
   justify-content: space-between;
   gap: 12px;
   padding: 11px 12px;
-  border: 1px solid #ffffff09;
-  background: #ffffff03;
+  border: 1px solid #b69be81f;
+  background: linear-gradient(135deg, #4c327a1f, #0d092b33);
   border-radius: 10px;
 }
 .album-name {
@@ -442,7 +508,8 @@ input.section-switch:checked::before {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border: 1px solid #ffffff0b;
+  border: 1px solid #b69be81f;
+  background: linear-gradient(135deg, #4c327a1f, #0d092b33);
   border-radius: 9px;
   padding: 10px 12px;
 }
@@ -464,7 +531,7 @@ input.section-switch:checked::before {
   color: #ffe8af;
 }
 .hint {
-  color: #b09bc4;
+  color: #beadd4;
   font-size: 12px;
 }
 #delay-label {
@@ -499,6 +566,8 @@ input.section-switch:checked::before {
   padding: 16px;
   border: 1px solid #6b5180;
   border-radius: 10px;
+  background: linear-gradient(145deg, #2c1d4c66, #0e092a66);
+  box-shadow: inset 0 1px 0 #eadcff0d;
   overflow-wrap: anywhere;
 }
 .backup-preview h3 {
@@ -617,4 +686,12 @@ input.section-switch:checked::before {
   h1 {
     font-size: 36px;
   }
+  .header {
+    padding: 22px 18px;
+  }
+}
+.stat-preview .metric {
+  background: linear-gradient(145deg, #30204d, #19112e);
+  border-color: #b69be82b;
+  box-shadow: inset 0 1px 0 #e9d6ff0a;
 }

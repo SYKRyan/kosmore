@@ -32,6 +32,7 @@ import { SalesOverlays } from "./sales-overlays";
 import { observePage } from "./page-changes";
 import { FriendTooltip } from "./friend-tooltip";
 import { ProfileReminders } from "./profile-reminders";
+import { TradeInterest } from "./trade-interest";
 import { MarketOutcomes } from "./market-outcomes";
 import { HistoryResolver, listenToPageRelay } from "./sale-rate-feed";
 import { saleObservations } from "./sale-observation-store";
@@ -43,6 +44,8 @@ const friendTooltip = new FriendTooltip(client, () => {
 });
 new SocialReminders(client).start();
 new ProfileReminders(client).start();
+const tradeInterest = new TradeInterest(client);
+tradeInterest.start();
 const overlays = new CardOverlays(client);
 overlays.start();
 const salesOverlays = new SalesOverlays(client);
@@ -466,6 +469,7 @@ observePage(() => {
   }
 });
 client.onAccountChange(() => {
+  tradeInterest.refresh();
   friendTooltip.reset();
   navigationAway();
   overlays.invalidate();
