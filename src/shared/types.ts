@@ -89,6 +89,14 @@ export interface OpeningCard {
 export interface Settings {
   schemaVersion: 1;
   enabled: boolean;
+  profileRemindersEnabled: boolean;
+  profileRemindersPinned: boolean;
+  friendTooltipEnabled: boolean;
+  friendHoverDelayMs: number;
+  friendDismissDelayMs: number;
+  friendTooltipWidth: number;
+  friendTooltipHeight: number;
+  friendTooltipPosition: import("./popup-layout").PopupPosition | null;
   navigationHotkeysEnabled: boolean;
   cardOverlaysEnabled: boolean;
   salesOverlaysEnabled: boolean;

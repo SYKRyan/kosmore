@@ -13,6 +13,7 @@ export interface PopupLayoutChange {
   height?: number;
 }
 export const POPUP_SESSION_PREFIX = "kosmore.popup.";
+export const FRIEND_POPUP_SESSION_PREFIX = "kosmore.friendPopup.";
 export function parsePopupPosition(value: unknown): PopupPosition | null {
   if (!value || typeof value !== "object") return null;
   const position = value as PopupPosition;
@@ -36,6 +37,7 @@ export function parsePopupState(value: unknown): PopupState {
 }
 export function isPopupLayoutChange(
   value: unknown,
+  limits = { minWidth: 320, minHeight: 480 },
 ): value is PopupLayoutChange {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const change = value as PopupLayoutChange;
@@ -48,11 +50,11 @@ export function isPopupLayoutChange(
       parsePopupPosition(change.position) !== null) &&
     (change.width === undefined ||
       (Number.isFinite(change.width) &&
-        change.width >= 320 &&
+        change.width >= limits.minWidth &&
         change.width <= 1200)) &&
     (change.height === undefined ||
       (Number.isFinite(change.height) &&
-        change.height >= 480 &&
+        change.height >= limits.minHeight &&
         change.height <= 1600))
   );
 }
@@ -66,6 +68,7 @@ export function resizedBounds(
   dx: number,
   dy: number,
   viewport: { width: number; height: number },
+  limits = { minWidth: 320, minHeight: 480 },
 ): PopupBounds {
   const bounds = { ...start },
     right = start.left + start.width,
@@ -75,20 +78,20 @@ export function resizedBounds(
   if (edge.includes("e"))
     bounds.width = clamp(
       start.width + dx,
-      Math.min(320, viewport.width - 12 - start.left),
+      Math.min(limits.minWidth, viewport.width - 12 - start.left),
       Math.min(1200, viewport.width - 12 - start.left),
     );
   if (edge.includes("s"))
     bounds.height = clamp(
       start.height + dy,
-      Math.min(480, viewport.height - 12 - start.top),
+      Math.min(limits.minHeight, viewport.height - 12 - start.top),
       Math.min(1600, viewport.height - 12 - start.top),
     );
   if (edge.includes("w")) {
     bounds.left = clamp(
       start.left + dx,
       Math.max(12, right - 1200),
-      right - Math.min(320, right - 12),
+      right - Math.min(limits.minWidth, right - 12),
     );
     bounds.width = right - bounds.left;
   }
@@ -96,7 +99,7 @@ export function resizedBounds(
     bounds.top = clamp(
       start.top + dy,
       Math.max(12, bottom - 1600),
-      bottom - Math.min(480, bottom - 12),
+      bottom - Math.min(limits.minHeight, bottom - 12),
     );
     bounds.height = bottom - bounds.top;
   }
