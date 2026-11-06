@@ -54,11 +54,11 @@ export class SalesSettings {
         nested = false,
       ) => {
         const row = el("div", `row${nested ? " settings-subsetting" : ""}`),
-          input = el("input", "section-switch price-switch"),
+          input = el("input", nested ? "section-switch price-switch" : ""),
           text = el("label", "label settings-toggle", label);
         input.type = "checkbox";
         input.id = key;
-        input.setAttribute("role", "switch");
+        if (nested) input.setAttribute("role", "switch");
         text.prepend(input);
         row.append(text, el("span", "hint", hint));
         input.addEventListener("change", () => {

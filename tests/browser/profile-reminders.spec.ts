@@ -361,20 +361,18 @@ test("profile settings disable immediately without removing stored notes and can
     await section
       .getByRole("switch", { name: "Enable profile reminders", exact: true })
       .uncheck();
-    await section
-      .getByRole("button", {
-        name: "Cancel profile reminder settings changes",
-        exact: true,
-      })
-      .click();
-    await expect(section.getByRole("switch")).toBeChecked();
-    await section.getByRole("switch").uncheck();
-    await section
-      .getByRole("button", {
+    await expect(
+      section.getByRole("button", {
         name: "Save profile reminder settings",
         exact: true,
-      })
-      .click();
+      }),
+    ).toBeDisabled();
+    await expect(
+      section.getByRole("button", {
+        name: "Cancel profile reminder settings changes",
+        exact: true,
+      }),
+    ).toBeDisabled();
     await expect(page.locator("#kosmore-profile-trigger")).toHaveCount(0);
     await expect(editor()).toHaveCount(0);
     expect(
@@ -384,12 +382,7 @@ test("profile settings disable immediately without removing stored notes and can
       ),
     ).toMatchObject({ notes: "Bring a gift 🌌\nPrivate profile note" });
     await section.getByRole("switch").check();
-    await section
-      .getByRole("button", {
-        name: "Save profile reminder settings",
-        exact: true,
-      })
-      .click();
+    await expect(section.getByRole("status")).toContainText("Saved.");
     await expect(trigger()).toBeVisible();
     await open();
   } finally {
