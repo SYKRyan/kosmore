@@ -8,6 +8,7 @@ import { face, OPENING } from "../fixtures/data";
 import { batchSellRow, sellPickerTile } from "../fixtures/sell-many";
 import {
   activityRow,
+  journalRow,
   marketActivityFixture,
 } from "../fixtures/market-activity";
 beforeEach(() => {
@@ -123,6 +124,33 @@ it("does not treat auction IDs or action controls as card identity", () => {
   expect(resolveCard(document.querySelector("button")!)).toBeNull();
   document.querySelector(".kc-article")!.remove();
   expect(resolveCard(document.querySelector(".mk-act-name")!)).toBeNull();
+});
+it("resolves both expanded and collapsed journal rows from their card face and visible name", () => {
+  history.replaceState(null, "", "/market?tab=overview&view=mine");
+  for (const container of ["md-journal", "md-results"]) {
+    document.body.innerHTML = `<section class="${container}"><ul class="md-ledger">${journalRow("48", "Cassini", "kc-veil")}</ul></section>`;
+    const link = document.querySelector("a")!;
+    for (const target of [
+      link,
+      document.querySelector("img")!,
+      document.querySelector(".md-ledger-name")!,
+      document.querySelector(".md-ledger-amount")!,
+    ]) {
+      expect(resolveCard(target)).toMatchObject({
+        subjectId: "48",
+        name: "Cassini",
+        anchor: link,
+        variant: { veil: true, fullArt: false },
+      });
+      expect(resolveCard(target)?.copyId).toBeUndefined();
+    }
+    expect([...cardOverlayTargets()]).toHaveLength(0);
+    document.querySelector("li")!.hidden = true;
+    expect(resolveCard(link)).toBeNull();
+    document.querySelector("li")!.hidden = false;
+    document.querySelector(".kc-article")!.remove();
+    expect(resolveCard(link)).toBeNull();
+  }
 });
 it("keeps hidden rows, mystery backs and unrelated decorative cards excluded", () => {
   history.replaceState(null, "", "/market?tab=overview&view=mine");

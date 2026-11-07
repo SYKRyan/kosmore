@@ -4,7 +4,7 @@ import { el } from "./ui";
 import { formatKosmo } from "../kosmora/contracts";
 import { enableMarketLink, marketSearchPath } from "./market-links";
 
-export const MARKET_BADGE_CSS = `.sale{background:#171027ed;border-color:#b6955a;color:#f4d68c}.auction{background:#8d2034ed;border-color:#ff7185;color:#fff1f3}`;
+export const MARKET_BADGE_CSS = `.sale{background:#171027ed;border-color:#b6955a;color:#f4d68c}.auction{background:#8d2034ed;border-color:#ff7185;color:#fff1f3}.history{background:#21182fed;border-color:#9a7fc6;color:#d1b7fc}`;
 export const SIGNAL_BADGE_CSS = `${MARKET_BADGE_CSS}.signal-badge.quest{display:inline-flex;align-items:center;justify-content:center;width:auto;padding:0 6px;gap:4px;border-radius:6px;white-space:nowrap;background:#f4d68c;border-color:#b6955a;color:#171027}.signal-badge.friend{background:#171027ed;border-color:#9a7fc6;color:#d1b7fc}.friend-trigger{pointer-events:auto;cursor:pointer;padding:0;font:inherit}.friend-trigger:hover{filter:brightness(1.2)}.friend-trigger:focus-visible{outline:2px solid #e7cb84;outline-offset:2px}`;
 
 export function signalBadges(

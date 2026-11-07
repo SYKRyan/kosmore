@@ -268,6 +268,138 @@ test("friend tooltip lists associated current friends and expands one complete s
   });
 });
 
+test("Trade tab shares friend details and supports one expanded friend, keyboard toggles and live notes", async () => {
+  await open();
+  await dialog().getByRole("button", { name: "batu", exact: true }).click();
+  const reference = await dialog()
+    .getByRole("region", { name: "batu details", exact: true })
+    .textContent();
+  await dialog()
+    .getByRole("button", { name: "Close friend tooltip", exact: true })
+    .click();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await popup.getByRole("tab", { name: "Trade", exact: true }).click();
+  const list = popup.getByRole("list", {
+    name: "Matching friends",
+    exact: true,
+  });
+  await expect(list.locator(".friend-name")).toHaveText(["batu", "FriendB"]);
+  await expect(
+    list.locator('.friend-summary[aria-expanded="true"]'),
+  ).toHaveCount(0);
+  await list.getByRole("button", { name: "batu", exact: true }).click();
+  const batu = list.getByRole("region", { name: "batu details", exact: true });
+  expect(await batu.textContent()).toBe(reference);
+  await expect(batu.locator(".family-badge.matched")).toHaveText("Astronomy");
+  await list.getByRole("button", { name: "FriendB", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(batu).toBeHidden();
+  await expect(
+    list.locator('.friend-summary[aria-expanded="true"]'),
+  ).toHaveCount(1);
+  const friendB = list.getByRole("region", {
+    name: "FriendB details",
+    exact: true,
+  });
+  await expect(friendB.locator(".family-badge")).toHaveText([
+    "Space Exploration",
+    "Film and Television Actors",
+  ]);
+  await expect(friendB.locator(".notes")).toHaveText("Friend B note");
+  await page.keyboard.press("Enter");
+  await expect(
+    list.locator('.friend-summary[aria-expanded="true"]'),
+  ).toHaveCount(0);
+  await list.getByRole("button", { name: "batu", exact: true }).click();
+  await popup.getByRole("tab", { name: "Market", exact: true }).click();
+  await popup.getByRole("tab", { name: "Trade", exact: true }).click();
+  await expect(batu).toBeVisible();
+  await worker.evaluate(async () => {
+    await chrome.storage.local.set({
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        families: ["Astronomy", "Oceanography", "Arts, Crafts & Design"],
+        notes: "Updated private notes\nBring two spare cards.",
+      },
+    });
+  });
+  await expect(batu.locator(".notes")).toHaveText(
+    "Updated private notes\nBring two spare cards.",
+  );
+  await expect(
+    list.locator('.friend-summary[aria-expanded="true"]'),
+  ).toHaveCount(1);
+  const profileLink = batu.getByRole("link", { name: "Profile", exact: true });
+  await profileLink.scrollIntoViewIfNeeded();
+  await expect(profileLink).toBeInViewport();
+  await settings({ statBoxesEnabled: false, pinnedAlbumsEnabled: false });
+  await mkdir("test-results/screenshots", { recursive: true });
+  for (const width of [440, 320]) {
+    await settings({ popupWidth: width });
+    await expect
+      .poll(async () => (await popup.boundingBox())?.width)
+      .toBe(width);
+    expect(
+      await popup
+        .locator(".tab-content")
+        .evaluate((el) => el.scrollWidth <= el.clientWidth),
+    ).toBe(true);
+    await popup.locator(".tab-content").evaluate((el) => {
+      el.scrollTop = 0;
+    });
+    await popup.locator(".tab-workspace").screenshot({
+      path: `test-results/screenshots/trade-friend-details-${width}.png`,
+    });
+  }
+});
+
+test("Trade tab expands a single friend by default and works independently of the friend tooltip switch", async () => {
+  await settings({ friendTooltipEnabled: false, cardOverlaysEnabled: false });
+  await page.locator('main>a[href="/card/43"] .kc-article').hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("tab", { name: "Trade", exact: true }).click();
+  const list = popup.getByRole("list", {
+    name: "Matching friends",
+    exact: true,
+  });
+  await expect(list.locator(".friend-name")).toHaveText(["batu"]);
+  await expect(
+    list.getByRole("button", { name: "batu", exact: true }),
+  ).toHaveAttribute("aria-expanded", "true");
+  const details = list.getByRole("region", {
+    name: "batu details",
+    exact: true,
+  });
+  await expect(details.locator(".family-badge.matched")).toHaveText(
+    "Oceanography",
+  );
+  await expect(details.locator(".notes")).toContainText("Private astro note");
+  await expect(
+    details.getByRole("link", { name: "Social", exact: true }),
+  ).toHaveAttribute("href", "/social?f=batu");
+  await expect(
+    details.getByRole("link", { name: "Profile", exact: true }),
+  ).toHaveAttribute("href", "/u/batu");
+  await expect(dialog()).toHaveCount(0);
+});
+
+test("Trade tab friend actions navigate to the selected friend's Social and Profile pages", async () => {
+  for (const action of ["Social", "Profile"]) {
+    await cardTooltip();
+    const popup = page.locator("#kosmore-root");
+    await popup.getByRole("tab", { name: "Trade", exact: true }).click();
+    await popup.getByRole("button", { name: "FriendB", exact: true }).click();
+    await popup.getByRole("link", { name: action, exact: true }).press("Enter");
+    await expect(page).toHaveURL(
+      action === "Social"
+        ? "https://kosmora.io/social?f=FriendB"
+        : "https://kosmora.io/u/FriendB",
+    );
+    await page.goto("https://kosmora.io/collection");
+  }
+});
+
 test("friend tooltip opens from the card tooltip and keeps its parent usable while moving into friend details", async () => {
   await page.locator('main>a[href="/card/42"] .kc-article').hover();
   const parent = page.locator("#kosmore-root"),

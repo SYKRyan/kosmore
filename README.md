@@ -2,15 +2,16 @@
 
 A browser extension that adds card insights, shortcuts, and private reminders to Kosmora.
 
-- **Card hover tooltips:** view card details, family links, market history, interested friends, and private card notes while browsing, including pack reveals and summaries.
+- **Card tooltips:** view market analytics, your listing history, matching friends, and private notes while browsing, including pack reveals, trade pickers, and Market Activity.
+- **Mobile-friendly controls:** open tooltips with a Kosmora overlay button, optionally center them at full size, and dismiss them without activating the control underneath.
 - **Pinned albums:** add owned copies to your favourite albums or remove cards from them through ordered tooltip shortcuts.
 - **Customizable statistics:** choose and reorder price, interest, readership, auction, sales, and local sale-rate boxes.
 - **Card overlays:** spot active auctions, recent sales, your listed cards, quest cards, and matches for friends' saved family preferences.
-- **Fusion family impact:** see which Fusion cards can be fused without losing a family tier, accounting for cards already in the tray.
+- **Family impact:** see whether fusing or trading a card would lower a family tier, accounting for other copies and cards already in the Fusion tray.
 - **Friend tooltip:** expand matching friends' saved families and notes in a separate popup with Social and Profile links.
 - **Social and profile reminders:** keep private family preferences and notes for players, with an optional pinned profile editor.
-- **Trade reminders:** see a player's preferred families and a rarity breakdown of your available matching cards while proposing a trade.
-- **Sales Overlay:** compare Last Sale and Lowest Listed prices on single and batch selling screens, with optional click-to-fill price adjustments.
+- **Trade reminders:** see preferred families, saved notes, and a rarity breakdown of your available matching cards while proposing a trade.
+- **Sales Overlay:** compare Last Sale, Lowest Listed, and My Last Listing prices on single and batch selling screens, with independent click-to-fill adjustments.
 - **Navigation hotkeys:** assign keyboard shortcuts to 15 Kosmora destinations.
 - **Backup & restore:** export and import settings, album shortcuts, family preferences, and private notes across browsers or computers.
 - **Account-aware data:** keep album shortcuts and private reminders associated with the correct Kosmora account.
@@ -25,7 +26,7 @@ The release ZIP contains the ready-to-load extension. Node.js, pnpm, and a sourc
 2. Open your browser's Extensions page: `chrome://extensions` in Chrome, `edge://extensions` in Edge, or `vivaldi://extensions` in Vivaldi.
 3. Turn on **Developer mode**, click **Load unpacked**, and select the extracted folder containing `manifest.json`.
 4. Open Kosmora and refresh any tabs that were already open.
-5. Open KosMore from the browser's Extensions menu to configure it. You can also use **Settings** in a card tooltip.
+5. Open KosMore from the browser's Extensions menu to configure it. You can also use the **Settings gear** in a card tooltip.
 
 Keep the extracted folder in place; the browser loads the extension from that location.
 
@@ -55,15 +56,16 @@ Card overlays, Sales Overlay, profile reminders, trade reminders, and navigation
 
 ### Hover tooltip
 
-Hover a supported card to open KosMore's card popup. It includes the card's rarity, finish, family badges, market indicators, album shortcuts, stat boxes, and three tabs:
+Hover a supported card, or press its overlay button when enabled, to open KosMore's card popup. It includes rarity, finish, family links, market indicators, album shortcuts, stat boxes, and four icon tabs. The last selected tab is remembered for the next tooltip in that browser tab.
 
-- **Market:** completed-sale history, a price chart, and a per-finish summary for Standard, Shiny, and Full art. Toggle finishes to change the displayed history and related statistics. Recent sales can be expanded with **Show All**. Last Sold and Listed For appear in the header when data exists; Listed For opens the card's Market search.
-- **Trade:** current friends whose saved family preferences match the card, with the matching families and links to Social.
+- **Market (chart):** completed-sale history, a price chart, and a per-finish summary for Standard, Shiny, and Full art. Toggle finishes to change the history and related statistics; expand recent sales with **Show All**. **Last Sale** and **Listed For** appear in the header when data exists; Listed For opens the card's Market search.
+- **My listing history (history):** your original starting prices for this card across finishes, newest listings first. Auction end dates/times appear on the left and prices on the right. Selecting the tab loads one batch; **Load more** retrieves older listings. Leaving the tab stops its loading, and returning restores cached results. Incomplete results are identified; the Market tab does not request personal history.
+- **Trade (friends):** current friends whose saved family preferences match the card. Expand a friend to see all saved families, highlighted matches, private notes, and **Social**/**Profile** links. One friend expands at a time; a single match opens automatically. This uses the same content and behavior as the companion friend tooltip.
 - **Notes:** private notes for the card, shared across its copies and finishes within your account. Save or cancel edits here; these notes are stored in the extension.
 
 Click a family badge to view that family in your collection. The footer's **Sell** button opens Kosmora's sell form for an eligible owned copy; you still complete the sale in Kosmora.
 
-Pin the tooltip to keep it available across page navigation in the current tab. Drag its header to move it and resize it from an edge or corner. Position and dimensions save automatically. On a new page, a pinned tooltip shows **No Card Selected** until you hover a card. Unpin it to return to opening beside cards.
+Pin the tooltip to keep it available across page navigation in the current tab. Drag its header to move it and resize it from an edge or corner. Position and dimensions save automatically. On a new page, a pinned tooltip shows **No Card Selected** until you hover a card or press its overlay button. Unpin it to return to opening beside cards. Use the header icons to refresh the selected tab, pin/unpin, or close the tooltip.
 
 Configurable options:
 
@@ -73,12 +75,18 @@ Configurable options:
 - **Close Unpinned Tooltips When Added to Album:** close after a successful album addition.
 - **Also Close Pinned Tooltips:** a subsetting that extends the same close behavior to pinned tooltips.
 
+The **Mobile Friendly** subgroup below tooltip height contains three options, all off by default:
+
+- **Use Overlay Button Instead of Hover:** press the round Kosmora logo near a card's bottom-left corner. Hover and link focus stay disabled while its button is showing, and press-opened tooltips stay open until dismissed. On Sell Many, the button anchors to the listing box; on Market Activity, it anchors to Your Turn, bids, sale boxes, and journal rows, including Day by Day. Buttons scroll with their controls and leave native actions available.
+- **Outside Click Closes Tooltip Only:** an outside click/tap closes an unpinned tooltip without opening or selecting the card underneath. The next click works normally. Pinned tooltips retain their normal behavior.
+- **Full Screen & Centered on Open:** fill the visible viewport with a 24-pixel margin for outside-click closing. Saved size and position return when this option is turned off; dragging and resizing are unavailable in this mode.
+
 ### Pinned albums
 
 Choose the albums that appear as shortcuts in the card tooltip. Keep a signed-in Kosmora tab open and use **Connected account** to choose whose albums you are configuring.
 
 - Search **Your albums**, then pin or unpin entries.
-- Reorder **Pinned shortcuts** with the move controls; the tooltip follows this order and displays three shortcuts per row.
+- Reorder **Pinned shortcuts** with the move controls; the tooltip follows this order and displays three compact shortcuts per row, aligned with the stat boxes. Long album names use ellipses.
 - Save the group to store the selection and order for that account.
 - In a card tooltip, choose the owned copy when necessary and click an album shortcut to add it. Existing membership is shown, with a remove control for removing the card from that album.
 
@@ -107,16 +115,19 @@ Sale observations stay in this browser, are limited to 20,000 listings with 35-d
 
 Add indicators to visible cards and tooltip headers. Each indicator can be configured independently:
 
-- **Active auctions:** a red gavel for current listings, with an optional lowest listed price. The price uses the highest bid, or the starting price when a listing has no bids, across all finishes. The auction badge links to the card's Market search.
+- **Active auctions:** a red sale tag for current listings, with an optional lowest listed price. The price uses the highest bid, or the starting price when a listing has no bids, across all finishes. The badge links to the card's Market search.
 - **For Sale:** a black-and-white label when you have a copy listed on the Market.
-- **Sale history:** a history indicator for completed sales in the last 30 days, with an optional last sale price across all finishes.
+- **Sale history:** a gavel for final sale prices in the last 30 days, with an optional last sale price across all finishes.
 - **Interested friends:** a purple friend indicator when the card's families match preferences you saved for current friends.
 - **Quest:** a gold Quest badge when the card belongs to any quest, whether you follow it or not.
 - **Family impact on the Fusion page:** a badge at the bottom left of each card's art showing **✓ Safe** when no family loses a tier, or **⚠ Loses Asteroids I** when fusing it drops that family from tier I. A `+1` indicates another affected family. Counts include cards already in the tray and all families the card counts toward. Keeping another copy preserves that card's family contribution.
+- **Family impact on the Trade page:** show **Safe** or the affected family tiers while choosing your card to trade. It uses the same family checks as Fusion; trading a copy preserves the family contribution when you still own another copy. This has its own **Show family impact on the Trade page** setting.
 
 Fusion impact follows complete batches in the order you choose cards. A chosen card still waiting for its batch has a dashed outline. Badges do not block card selection. Use **Show family impact on the Fusion page** to turn them on or off.
 
 The price switches are subsettings of their respective indicators. Friend indicators on cards are passive; use the indicator inside the card tooltip to open the companion friend popup.
+
+Compact Market Activity and journal thumbnails omit price/signal overlays. They still support the tooltip overlay button when enabled.
 
 ### Friend tooltip
 
@@ -148,11 +159,12 @@ When proposing a trade, KosMore shows the selected player's saved family prefere
 - On **Their card**, family badges sit below the “Only the cards…” text, above the breakdown and search bar.
 - On **Your card**, the families and breakdown sit below the trade rule and above the search bar.
 - On other trade steps, the family badges appear below the step numbers.
+- A filled **Notes** badge appears after the family badges when saved notes exist, with a small disclosure icon when unpinned. Tap, hover, or focus to read them; pin them as a read-only **Notes** block below the badges and above Possible Interest. Unpin from the notes header.
 - Counts include only your **available** matching copies, excluding locked copies and copies currently for sale. Standard, Shiny, and Full art copies are included, and each copy counts once even when families overlap.
 - Results are grouped by rarity: Common, Uncommon, Rare, Epic, Legendary, and Mythic. Zero-count rarities and an empty breakdown are hidden. Filtering their cards does not change your counts.
 - A spinner beside **Possible Interest** indicates calculation is in progress. Space is reserved for the counts to keep the search controls from shifting as results arrive.
 
-Settings let you show or hide **preferred family badges** and **possible interest counts** separately. **Use rarity symbols**, a subsetting of the counts option, selects Kosmora's rarity gems; turn it off to show rarity names. Save family preferences on Social or the player's profile before using this feature.
+Settings control **preferred family badges**, **possible interest counts**, and **saved notes** separately. **Use rarity symbols** selects Kosmora's rarity gems instead of names. Notes have their own pin setting, hover/dismiss delays, and tooltip width/height controls. Save family preferences and notes on Social or the player's profile.
 
 ### Sales Overlay
 
@@ -160,10 +172,13 @@ Show price helpers beneath the starting-price field on both the single sell scre
 
 - **Show Last Sale price:** display the latest completed-sale price across all finishes in Kosmora's 30-day history.
 - **Show Lowest Listed price:** display the lowest current listing price across all finishes, using the highest bid or the starting price when there are no bids.
+- **Show My Last Listing price:** display your newest confirmed original starting price for the card, across finishes, labeled **My Last Listing:**. This uses your listing history rather than a winning bid or final sale price.
 - **Set price when clicked:** each price has its own subsetting to fill that card's starting-price field when clicked.
 - **Price adjustment:** add or subtract a fixed amount of Kosmo from the clicked price. For example, `-1` prices one Kosmo lower. The default is `0`, and adjustments support up to six decimal places. The resulting starting price must be greater than zero.
 
 The price visibility options are checkboxes; click-to-fill options are nested switches. Clicking a price fills only that card's starting price. Review and submit listings using Kosmora's usual sale controls.
+
+My Last Listing uses a small account-specific local cache that survives browser restarts. Saved prices appear immediately; prices older than five minutes are rechecked on sale screens or an active History tab. Lookups are shared across cards/tabs, resolve each card independently, and stop once its latest price is confirmed. Successful new listings invalidate the cache. A first lookup for an older or never-listed card can take longer; it does not require opening the full History tab.
 
 ### Navigation hotkeys
 
@@ -186,7 +201,7 @@ Backups include saved feature preferences, ordered pinned album shortcuts, marke
 - **Merge:** retain destination-only entries and use backup values for matching settings and notes.
 - **Replace:** remove existing supported entries absent from the backup. This requires confirmation; export the destination's data first if you want to keep a copy.
 
-Save or cancel unsaved settings edits before importing. Unsaved edits, temporary per-tab tooltip pinning, and Sale Rate observations are excluded from backups. JSON files contain readable private notes, so store them somewhere you trust.
+Save or cancel unsaved settings edits before importing. Unsaved edits, temporary per-tab tooltip state, Sale Rate observations, and disposable listing-history/price caches are excluded from backups. JSON files contain readable private notes, so store them somewhere you trust.
 
 ### Connected account
 

@@ -8,8 +8,11 @@ export interface TradeMatch {
   friend: Friend;
   families: CardFamily[];
 }
+export interface FriendDetails extends TradeMatch {
+  reminder: FriendReminder;
+}
 export interface TradeMatches {
-  matches: TradeMatch[];
+  matches: FriendDetails[];
   friendsWithPreferences: number;
   unreadable: number;
 }
@@ -49,7 +52,10 @@ export async function readTradeMatches(
     friends,
   );
   return {
-    matches: matchFriends(families, friends, reminders),
+    matches: matchFriends(families, friends, reminders).map((match) => ({
+      ...match,
+      reminder: reminders.get(match.friend.key)!,
+    })),
     friendsWithPreferences: [...reminders.values()].filter(
       (r) => r.families.length,
     ).length,

@@ -10,6 +10,7 @@ import {
   isRelayMessage,
   RELAY_DATA,
   RELAY_READY,
+  RELAY_LISTED,
 } from "../../src/shared/page-relay";
 import type { Finish, MarketHistory } from "../../src/shared/types";
 import { auction } from "../fixtures/auctions";
@@ -75,6 +76,40 @@ it("never relays failed responses and never breaks the page's request", async ()
   expect((await win.fetch("/api/auctions")).status).toBe(429);
   await flush();
   expect(win.postMessage).not.toHaveBeenCalled();
+});
+
+it("invalidates personal prices only after successful single or batch listings, never quotes or failures", async () => {
+  const original = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    return new Response(
+      JSON.stringify(
+        path.includes("batch") ? { listed: 1 } : { auctionId: auction(1).id },
+      ),
+      { status: path.includes("failed") ? 503 : 200 },
+    );
+  });
+  const { win, dispatch } = fakeWindow(original as typeof fetch);
+  installPageRelay(win);
+  dispatch({ type: RELAY_READY });
+  await win.fetch("/api/auctions", { method: "POST" });
+  await win.fetch("/api/market/listings/batch", { method: "POST" });
+  await win.fetch("/api/auctions/quote", { method: "POST" });
+  await win.fetch("/api/collection", { method: "POST" });
+  await win.fetch("https://evil.example/api/auctions", { method: "POST" });
+  await flush();
+  expect(win.postMessage.mock.calls.map(([message]) => message)).toEqual([
+    { type: RELAY_LISTED, path: "/api/auctions" },
+    { type: RELAY_LISTED, path: "/api/market/listings/batch" },
+  ]);
+  expect(original).toHaveBeenCalledTimes(5);
+  const failed = fakeWindow(
+    vi.fn(() => json({}, 503)) as unknown as typeof fetch,
+  );
+  installPageRelay(failed.win);
+  failed.dispatch({ type: RELAY_READY });
+  await failed.win.fetch("/api/auctions", { method: "POST" });
+  await flush();
+  expect(failed.win.postMessage).not.toHaveBeenCalled();
 });
 
 it("validates relay messages by type and allow-listed path", () => {

@@ -9,6 +9,7 @@ export const defaults = (): Settings => ({
   enabled: true,
   useOverlayButtonInsteadOfHover: false,
   outsideClickClosesTooltipOnly: false,
+  fullScreenCenteredOnOpen: false,
   profileRemindersEnabled: true,
   profileRemindersPinned: false,
   tradeRemindersEnabled: true,
@@ -36,6 +37,9 @@ export const defaults = (): Settings => ({
   showSalesLowestListing: true,
   salesLowestListingSetsPrice: true,
   salesLowestListingAdjustment: 0,
+  showSalesMyLastListing: true,
+  salesMyLastListingSetsPrice: true,
+  salesMyLastListingAdjustment: 0,
   statBoxesEnabled: true,
   pinnedAlbumsEnabled: true,
   closeTooltipWhenAddedToAlbum: false,
@@ -71,6 +75,7 @@ export function parseSettings(value: unknown): Settings {
   for (const key of [
     "useOverlayButtonInsteadOfHover",
     "outsideClickClosesTooltipOnly",
+    "fullScreenCenteredOnOpen",
     "profileRemindersEnabled",
     "profileRemindersPinned",
     "tradeRemindersEnabled",
@@ -88,6 +93,8 @@ export function parseSettings(value: unknown): Settings {
     "salesLastSaleSetsPrice",
     "showSalesLowestListing",
     "salesLowestListingSetsPrice",
+    "showSalesMyLastListing",
+    "salesMyLastListingSetsPrice",
     "statBoxesEnabled",
     "pinnedAlbumsEnabled",
   ] as const)
@@ -95,6 +102,7 @@ export function parseSettings(value: unknown): Settings {
   for (const key of [
     "salesLastSaleAdjustment",
     "salesLowestListingAdjustment",
+    "salesMyLastListingAdjustment",
   ] as const)
     if (validSaleAdjustment(v[key])) d[key] = v[key];
   if (typeof v.closeTooltipWhenAddedToAlbum === "boolean")

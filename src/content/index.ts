@@ -38,8 +38,11 @@ import { HistoryResolver, listenToPageRelay } from "./sale-rate-feed";
 import { saleObservations } from "./sale-observation-store";
 import { FusionFamilyImpact } from "./fusion-family";
 import { TooltipButtons } from "./tooltip-buttons";
+import { RELAY_LISTED, LISTING_WRITES } from "../shared/page-relay";
 
 const client = new GameClient();
+const listingReads = new Map<string, AbortController>();
+const canceledListingReads = new Set<string>();
 const friendTooltip = new FriendTooltip(client, () => {
   if (popup && !popup.isPinned) laterHide();
 });
@@ -58,6 +61,21 @@ tooltipButtons.start();
 new MarketOutcomes(saleObservations).start();
 listenToPageRelay(saleObservations);
 const historyResolver = new HistoryResolver(saleObservations);
+let listingInvalidationTimer: ReturnType<typeof setTimeout> | undefined;
+window.addEventListener("message", (event) => {
+  if (
+    event.source !== window ||
+    event.origin !== location.origin ||
+    event.data?.type !== RELAY_LISTED ||
+    typeof event.data.path !== "string" ||
+    !LISTING_WRITES.test(event.data.path)
+  )
+    return;
+  clearTimeout(listingInvalidationTimer);
+  listingInvalidationTimer = setTimeout(() => {
+    void client.invalidateListings().catch(() => {});
+  }, 100);
+});
 client.onHistoryLoaded((subjectId, history, loadedAt) =>
   historyResolver.receive(subjectId, history, loadedAt),
 );
@@ -238,7 +256,7 @@ function createView(
           left: Math.max(12, innerWidth - settings.popupWidth - 12),
           top: 12,
         }),
-      tab: "market",
+      tab: pinnedState.tab ?? "market",
     };
   const view = new Popup(
     context,
@@ -267,6 +285,7 @@ function createView(
     },
     (change) => saveLayout(view, change),
     friendTooltip,
+    pinnedState.tab,
   );
   popup = view;
   view.host.addEventListener("pointerenter", cancelClose);
@@ -281,6 +300,8 @@ function createView(
 }
 function saveLayout(view: Popup, change: PopupLayoutChange) {
   pinnedState = {
+    ...pinnedState,
+    ...(change.tab ? { tab: change.tab } : {}),
     pinned: change.pinned ?? pinnedState.pinned,
     position: change.position ?? pinnedState.position,
   };
@@ -472,7 +493,11 @@ window.addEventListener("blur", () => {
 document.addEventListener(
   "pointerdown",
   (event) => {
-    if (!buttonOpened || popup?.isPinned) return;
+    if (
+      (!buttonOpened && !(settings.fullScreenCenteredOnOpen && popup)) ||
+      popup?.isPinned
+    )
+      return;
     if (
       event
         .composedPath()
@@ -580,6 +605,8 @@ window.addEventListener("scroll", () => popup?.position(), {
   capture: true,
 });
 window.addEventListener("resize", () => popup?.position());
+window.visualViewport?.addEventListener("resize", () => popup?.position());
+window.visualViewport?.addEventListener("scroll", () => popup?.position());
 window.addEventListener("popstate", checkUrl);
 window.addEventListener("hashchange", checkUrl);
 const navigation = (window as Window & { navigation?: EventTarget }).navigation;
@@ -634,6 +661,10 @@ client.onAccountChange(() => {
   navigationAway();
   overlays.invalidate();
   salesOverlays.invalidate();
+});
+client.onListingsChanged(() => {
+  popup?.invalidateListingHistory();
+  salesOverlays.invalidateListings();
 });
 const recheckAccount = () => {
   void client.account().catch(() => {});
@@ -690,6 +721,41 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     !isTabRequest(message)
   )
     return false;
+  if (message.op === "cancelListingBatch") {
+    const controller = listingReads.get(message.target);
+    if (controller) controller.abort();
+    else {
+      canceledListingReads.add(message.target);
+      setTimeout(() => canceledListingReads.delete(message.target), 30_000);
+    }
+    respond({ requestId: message.requestId, ok: true, data: null });
+    return false;
+  }
+  if (message.op === "listingCacheChanged") {
+    client.listingsChanged(message.accountKey);
+    respond({ requestId: message.requestId, ok: true, data: null });
+    return false;
+  }
+  if (message.op === "readListingBatch") {
+    const controller = new AbortController();
+    listingReads.set(message.requestId, controller);
+    if (canceledListingReads.delete(message.requestId)) controller.abort();
+    void client
+      .readListingBatch(message.accountKey, message.limits, controller.signal)
+      .then(
+        (data) => respond({ requestId: message.requestId, ok: true, data }),
+        (error) =>
+          respond({
+            requestId: message.requestId,
+            ok: false,
+            error: messageOf(error),
+            status: error?.status,
+            retryAt: error?.retryAt,
+          }),
+      )
+      .finally(() => listingReads.delete(message.requestId));
+    return true;
+  }
   void (async () => {
     const account = await client.account();
     if (message.op === "session") return account;

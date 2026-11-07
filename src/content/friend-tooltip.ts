@@ -5,9 +5,8 @@ import { FRIEND_TOOLTIP_ID, topDialog } from "../kosmora/dom";
 import {
   matchFriends,
   readFriendPreferences,
-  type TradeMatch,
+  type FriendDetails,
 } from "../shared/trade-matches";
-import type { FriendReminder } from "../shared/friend-reminders";
 import { defaults } from "../shared/settings";
 import { messageOf, type KosmoraClient, type Settings } from "../shared/types";
 import {
@@ -20,20 +19,16 @@ import {
 } from "../shared/popup-layout";
 import { request } from "../shared/messages";
 import { button, el } from "./ui";
-import { enableMarketLink as enablePageLink } from "./market-links";
+import { FriendList } from "./friend-list";
+import friendListCss from "./friend-list.css?inline";
 import { observePage } from "./page-changes";
 
-interface FriendDetails extends TradeMatch {
-  reminder: FriendReminder;
-}
 interface Source {
   anchor: HTMLElement;
   subjectId: string;
   owner?: HTMLElement;
 }
 const LIMITS = { minWidth: 240, minHeight: 160 };
-const familyKey = (name: string) =>
-  name.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 
 /** A single account-scoped companion popup for the card hover tooltip. */
 export class FriendTooltip {
@@ -403,10 +398,9 @@ class FriendTooltipView {
   private body = el("div", "body");
   private status = el("p", "status");
   private privacy = el("p", "privacy");
-  private list = el("div", "friends");
+  private friends = new FriendList();
+  private list = this.friends.element;
   private pin = button("", () => this.togglePin(), "icon pin-button");
-  private data: FriendDetails[] = [];
-  private expanded?: string;
   private observer: ResizeObserver;
   private frame = 0;
   private disposed = false;
@@ -428,7 +422,7 @@ class FriendTooltipView {
     this.host.setAttribute("role", "dialog");
     this.host.setAttribute("aria-label", "Interested friends");
     const style = el("style");
-    style.textContent = css + headerCss;
+    style.textContent = css + friendListCss + headerCss;
     const header = el("header", "top"),
       reload = button("", refresh, "icon refresh-button"),
       dismiss = button("", close, "icon close");
@@ -475,9 +469,7 @@ class FriendTooltipView {
     this.mount();
   }
   clear() {
-    this.expanded = undefined;
-    this.data = [];
-    this.list.replaceChildren();
+    this.friends.clear();
     this.privacy.textContent = "";
     this.status.className = "status";
     this.status.textContent = "Hover the friend icon in a card tooltip.";
@@ -489,8 +481,7 @@ class FriendTooltipView {
     this.status.textContent = "Loading matching friends…";
   }
   failed(error: unknown) {
-    this.data = [];
-    this.list.replaceChildren();
+    this.friends.clear();
     this.privacy.textContent = "";
     this.status.className = "status error";
     this.status.textContent = messageOf(error);
@@ -500,10 +491,6 @@ class FriendTooltipView {
     this.status.textContent = `Could not save friend tooltip layout. ${messageOf(error)}`;
   }
   setData(data: FriendDetails[], unreadable: number) {
-    this.data = data;
-    this.list.replaceChildren();
-    if (!data.some((item) => item.friend.key === this.expanded))
-      this.expanded = undefined;
     this.privacy.textContent = `${data.length} ${data.length === 1 ? "friend matches" : "friends match"} this card`;
     this.status.className = "status";
     this.status.textContent = unreadable
@@ -511,103 +498,7 @@ class FriendTooltipView {
       : data.length
         ? ""
         : "No matching friends for this card.";
-    for (const detail of data) {
-      const row = el("section", "friend-row");
-      row.dataset.friend = detail.friend.key;
-      const summary = button(
-        "",
-        () =>
-          this.expand(
-            this.expanded === detail.friend.key ? undefined : detail.friend.key,
-          ),
-        "friend-summary",
-      );
-      const avatar = el(
-        "span",
-        "friend-avatar",
-        detail.friend.handle.slice(0, 2).toUpperCase(),
-      );
-      avatar.setAttribute("aria-hidden", "true");
-      const label = el("span", "friend-label"),
-        chevron = el("span", "chevron", "▾");
-      chevron.setAttribute("aria-hidden", "true");
-      label.append(
-        el("b", "friend-name", detail.friend.handle),
-        el(
-          "span",
-          "match-count",
-          `${detail.families.length} matching ${detail.families.length === 1 ? "family" : "families"}`,
-        ),
-      );
-      summary.append(avatar, label, chevron);
-      summary.setAttribute("aria-label", detail.friend.handle);
-      summary.setAttribute(
-        "aria-controls",
-        `friend-details-${detail.friend.key}`,
-      );
-      const content = el("div", "friend-details");
-      content.id = `friend-details-${detail.friend.key}`;
-      content.setAttribute("role", "region");
-      content.setAttribute("aria-label", `${detail.friend.handle} details`);
-      row.append(summary, content);
-      this.list.append(row);
-    }
-    this.expand(this.expanded);
-  }
-  private expand(key?: string) {
-    if (this.data.length === 1) key = this.data[0].friend.key;
-    this.expanded = key;
-    for (const row of this.list.children) {
-      const open = (row as HTMLElement).dataset.friend === key,
-        summary = row.querySelector<HTMLButtonElement>(".friend-summary")!,
-        content = row.querySelector<HTMLElement>(".friend-details")!;
-      summary.setAttribute("aria-expanded", String(open));
-      row.toggleAttribute("data-expanded", open);
-      content.hidden = !open;
-      content.replaceChildren();
-      if (!open) continue;
-      const detail = this.data.find((item) => item.friend.key === key)!;
-      const families = el("div", "families");
-      families.setAttribute("aria-label", "Saved families");
-      const matched = new Set(detail.families.map((f) => familyKey(f.name)));
-      for (const family of detail.reminder.families)
-        families.append(
-          el(
-            "span",
-            `family-badge${matched.has(familyKey(family)) ? " matched" : ""}`,
-            family,
-          ),
-        );
-      const familySection = el("section", "detail-section");
-      familySection.append(
-        el("h3", "detail-title", "Family preferences"),
-        families,
-      );
-      const noteSection = el("section", "detail-section note-section");
-      noteSection.append(
-        el("h3", "detail-title", "Private notes"),
-        el(
-          "p",
-          `notes${detail.reminder.notes ? "" : " empty"}`,
-          detail.reminder.notes || "No notes saved yet.",
-        ),
-      );
-      content.append(familySection, noteSection);
-      const footer = el("footer", "friend-links"),
-        social = el("a", "", "Social"),
-        profile = el("a", "", "Profile");
-      social.href = `/social?${new URLSearchParams({ f: detail.friend.handle })}`;
-      profile.href = `/u/${encodeURIComponent(detail.friend.handle)}`;
-      for (const link of [social, profile]) {
-        link.setAttribute("aria-label", link.textContent!);
-        const arrow = el("span", "link-arrow", "↗");
-        arrow.setAttribute("aria-hidden", "true");
-        link.append(arrow);
-        enablePageLink(link);
-      }
-      footer.append(social, profile);
-      content.append(footer);
-    }
+    this.friends.setData(data);
   }
   setSettings(settings: Settings) {
     if (this.finishInteraction) return;
@@ -845,6 +736,6 @@ class FriendTooltipView {
     cancelAnimationFrame(this.frame);
     this.observer.disconnect();
     this.host.remove();
-    this.data = [];
+    this.friends.clear();
   }
 }

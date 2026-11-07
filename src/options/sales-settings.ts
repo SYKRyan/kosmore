@@ -10,6 +10,9 @@ export const SALES_SETTINGS_KEYS = [
   "showSalesLowestListing",
   "salesLowestListingSetsPrice",
   "salesLowestListingAdjustment",
+  "showSalesMyLastListing",
+  "salesMyLastListingSetsPrice",
+  "salesMyLastListingAdjustment",
 ] as const;
 const OPTIONS = [
   {
@@ -25,6 +28,13 @@ const OPTIONS = [
     click: "salesLowestListingSetsPrice",
     adjustment: "salesLowestListingAdjustment",
     help: "Lowest current listing price across all finishes: highest bid, or starting price when there are no bids.",
+  },
+  {
+    name: "My Last Listing",
+    show: "showSalesMyLastListing",
+    click: "salesMyLastListingSetsPrice",
+    adjustment: "salesMyLastListingAdjustment",
+    help: "Your most recent starting price for this card, from My Sales history across all finishes.",
   },
 ] as const;
 

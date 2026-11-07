@@ -2,8 +2,13 @@ import type { CardContext } from "../shared/types";
 export const HOST_ID = "kosmore-root";
 export const FRIEND_TOOLTIP_ID = "kosmore-friend-tooltip";
 export const OVERLAY_ATTR = "data-kosmore-card-overlays";
+export const MARKET_ACTIVITY_LINK =
+  "a.mk-act-main, a.md-lot-link, .md-ledger > li > a";
+export const MARKET_ACTIVITY_ROW = ".mk-act, .md-lot, .md-ledger > li";
 export function cardOverlaysAllowed(root: Element): boolean {
-  return !root.closest(".md-turn, .md-bids, .md-sale, .bsell-row");
+  return !root.closest(
+    ".md-turn, .md-bids, .md-sale, .mk-act, .md-lot, .md-ledger, .bsell-row",
+  );
 }
 export function cardOverlayTargets(
   doc: Document = document,
@@ -59,7 +64,7 @@ export function resolveCard(
   // auction links are visible interactive cards with an independently readable ID.
   const activityLink =
     doc.location.pathname === "/market"
-      ? target.closest<HTMLAnchorElement>("a.mk-act-main, a.md-lot-link")
+      ? target.closest<HTMLAnchorElement>(MARKET_ACTIVITY_LINK)
       : null;
   if (activityLink) {
     const href = new URL(
@@ -69,7 +74,7 @@ export function resolveCard(
     if (
       href.origin !== doc.location.origin ||
       !/^\/market\/[^/]+$/.test(href.pathname) ||
-      !activityLink.closest(".mk-act, .md-lot") ||
+      !activityLink.closest(MARKET_ACTIVITY_ROW) ||
       !activityLink.querySelector(".kc-article")
     )
       return null;
@@ -148,7 +153,9 @@ export function resolveCard(
       (batchHead?.querySelector(".bsell-name")?.textContent?.trim() ||
         undefined) ??
       (activityLink
-        ?.querySelector(".mk-act-name > b, .md-lot-name > b")
+        ?.querySelector(
+          ".mk-act-name > b, .md-lot-name > b, .md-ledger-name > b",
+        )
         ?.textContent?.trim() ||
         undefined) ??
       root.querySelector(".kc-name")?.textContent?.trim() ??

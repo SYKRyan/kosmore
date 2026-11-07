@@ -7,6 +7,8 @@ import {
   FRIEND_POPUP_SESSION_PREFIX,
 } from "./shared/popup-layout";
 import { readSettings, saveSettings } from "./shared/settings";
+import { installListingBackground } from "./listing-background";
+installListingBackground();
 let layoutWrites = Promise.resolve();
 chrome.tabs.onRemoved.addListener((tabId) => {
   void chrome.storage.session.remove([
@@ -40,6 +42,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (message.op === "popupState" || message.op === "friendPopupState")
         return state;
       const change = message.change;
+      if (change.tab !== undefined) state.tab = change.tab;
       if (change.pinned !== undefined) state.pinned = change.pinned;
       if (change.position) state.position = parsePopupPosition(change.position);
       await chrome.storage.session.set({ [key]: state });

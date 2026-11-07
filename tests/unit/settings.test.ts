@@ -107,6 +107,17 @@ it("keeps consuming outside tooltip clicks off by default and accepts only boole
         .outsideClickClosesTooltipOnly,
     ).toBe(value === true);
 });
+it("keeps full-screen centered tooltips opt-in for old and new settings", () => {
+  expect(parseSettings(undefined).fullScreenCenteredOnOpen).toBe(false);
+  expect(parseSettings({ schemaVersion: 1 }).fullScreenCenteredOnOpen).toBe(
+    false,
+  );
+  for (const value of [true, false, "true", 1, null])
+    expect(
+      parseSettings({ schemaVersion: 1, fullScreenCenteredOnOpen: value })
+        .fullScreenCenteredOnOpen,
+    ).toBe(value === true);
+});
 it("defaults overlay prices on and preserves independent price choices when their parent icons are disabled", () => {
   for (const key of [
     "showLastSalePriceOverlay",

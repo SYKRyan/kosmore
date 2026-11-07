@@ -4,6 +4,8 @@ import {
   contextKey,
   resolveCard,
   topDialog,
+  MARKET_ACTIVITY_LINK,
+  MARKET_ACTIVITY_ROW,
 } from "../kosmora/dom";
 import type { CardContext, Settings } from "../shared/types";
 import { affected, observePage, type PageChanges } from "./page-changes";
@@ -88,6 +90,10 @@ export class TooltipButtons {
     );
   }
   private contextOf(root: HTMLElement) {
+    if (location.pathname === "/market" && root.matches(MARKET_ACTIVITY_ROW)) {
+      const link = root.querySelector<HTMLAnchorElement>(MARKET_ACTIVITY_LINK);
+      return link ? resolveCard(link) : null;
+    }
     if (root.matches(".bsell-row")) {
       const head = root.querySelector<HTMLElement>(".bsell-head");
       return location.pathname === "/market/sell/batch" && head
@@ -98,6 +104,19 @@ export class TooltipButtons {
   }
   private targets(scope: Document | Element) {
     const targets = cardOverlayTargets(document, scope);
+    if (location.pathname === "/market") {
+      const enclosing =
+        scope instanceof Element
+          ? scope.closest<HTMLElement>(MARKET_ACTIVITY_ROW)
+          : null;
+      for (const row of [
+        ...(enclosing ? [enclosing] : []),
+        ...scope.querySelectorAll<HTMLElement>(MARKET_ACTIVITY_ROW),
+      ]) {
+        const context = this.contextOf(row);
+        if (context) targets.set(row, context);
+      }
+    }
     if (location.pathname === "/market/sell/batch") {
       const enclosing =
         scope instanceof Element

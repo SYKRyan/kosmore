@@ -5,6 +5,12 @@
  */
 export const RELAY_DATA = "kosmore.pageData";
 export const RELAY_READY = "kosmore.relayReady";
+export const RELAY_LISTED = "kosmore.listingChanged";
+export const LISTING_WRITES = /^\/api\/(?:auctions|market\/listings\/batch)$/;
+export interface ListingChangedMessage {
+  type: typeof RELAY_LISTED;
+  path: string;
+}
 /** Auction list/search and single-auction reads (Sale Rate). */
 export const RELAY_AUCTIONS =
   /^\/api\/auctions(?:\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/i;

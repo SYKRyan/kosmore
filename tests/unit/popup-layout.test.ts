@@ -23,6 +23,14 @@ it("validates stored positions, session pinning and layout messages", () => {
   expect(
     parsePopupState({ pinned: "true", position: { left: 20, top: 30 } }),
   ).toEqual({ pinned: false, position: { left: 20, top: 30 } });
+  expect(parsePopupState({ tab: "notes" })).toEqual({
+    pinned: false,
+    position: null,
+    tab: "notes",
+  });
+  expect(parsePopupState({ tab: "unknown" })).not.toHaveProperty("tab");
+  for (const tab of ["market", "history", "trade", "notes"])
+    expect(isPopupLayoutChange({ tab })).toBe(true);
   expect(
     isPopupLayoutChange({
       width: 500,
@@ -37,6 +45,8 @@ it("validates stored positions, session pinning and layout messages", () => {
     { position: { left: 20 } },
     { tabId: 4 },
     { pinned: "true" },
+    { tab: "unknown" },
+    { tab: 1 },
   ])
     expect(isPopupLayoutChange(change)).toBe(false);
   expect(

@@ -112,6 +112,7 @@ function backupSettings(value: unknown): Settings {
   for (const key of [
     "salesLastSaleAdjustment",
     "salesLowestListingAdjustment",
+    "salesMyLastListingAdjustment",
   ] as const)
     if (Object.hasOwn(raw, key) && !validSaleAdjustment(raw[key]))
       throw new Error(`Setting ${key} is not a valid price adjustment.`);

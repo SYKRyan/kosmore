@@ -6,8 +6,9 @@
  * needs the recipes and cards the Fusion page loads. This script passes copies of
  * the game's own successful `GET /api/auctions`, `GET /api/auctions/{id}`,
  * `GET /api/fusion`, `GET /api/fusion/cards` and `GET /api/families` responses to
- * the content script. It sends no requests of its own, relays nothing else, and
- * returns the page's original response untouched.
+ * the content script. Successful native single/batch listing submissions also
+ * emit an invalidation-only notification, without their request body or prices.
+ * The observer sends no requests and returns the page's response untouched.
  */
 import {
   RELAY_BUFFER,
@@ -15,6 +16,9 @@ import {
   RELAY_PATH,
   RELAY_READY,
   type RelayMessage,
+  RELAY_LISTED,
+  LISTING_WRITES,
+  type ListingChangedMessage,
 } from "./shared/page-relay";
 
 declare global {
@@ -27,11 +31,11 @@ export function installPageRelay(win: Window = window) {
   if (win.__kosmoreRelay) return;
   win.__kosmoreRelay = true;
   const original = win.fetch;
-  const buffer: RelayMessage[] = [];
+  const buffer: (RelayMessage | ListingChangedMessage)[] = [];
   let ready = false;
-  const send = (message: RelayMessage) =>
+  const send = (message: RelayMessage | ListingChangedMessage) =>
     win.postMessage(message, win.location.origin);
-  const relay = (message: RelayMessage) => {
+  const relay = (message: RelayMessage | ListingChangedMessage) => {
     if (ready) send(message);
     else {
       buffer.push(message);
@@ -60,6 +64,29 @@ export function installPageRelay(win: Window = window) {
       const method = (
         init?.method ?? (input instanceof Request ? input.method : "GET")
       ).toUpperCase();
+      if (
+        method === "POST" &&
+        url.origin === win.location.origin &&
+        LISTING_WRITES.test(url.pathname)
+      ) {
+        void response
+          .then(async (res) => {
+            if (!res.ok) return;
+            const data = (await res.clone().json()) as {
+              auctionId?: unknown;
+              listed?: unknown;
+            };
+            const changed =
+              url.pathname === "/api/auctions"
+                ? typeof data.auctionId === "string" &&
+                  /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(
+                    data.auctionId,
+                  )
+                : typeof data.listed === "number" && data.listed > 0;
+            if (changed) relay({ type: RELAY_LISTED, path: url.pathname });
+          })
+          .catch(() => {});
+      }
       if (
         method === "GET" &&
         url.origin === win.location.origin &&

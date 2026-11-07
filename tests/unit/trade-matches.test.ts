@@ -42,6 +42,7 @@ it("reads only current-account and current-friend keys, isolating malformed reco
   vi.stubGlobal("chrome", { storage: { local: { get } } });
   const result = await readTradeMatches("me", families, friends);
   expect(result.matches.map((m) => m.friend.handle)).toEqual(["batu"]);
+  expect(result.matches[0].reminder).toEqual(reminder("Astronomy"));
   expect(result.unreadable).toBe(1);
   expect(result.friendsWithPreferences).toBe(1);
   expect(get).toHaveBeenCalledWith([

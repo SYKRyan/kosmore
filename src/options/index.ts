@@ -56,12 +56,7 @@ const header = el("header", "header"),
   head = el("div");
 head.append(
   el("p", "brand", "✦ KosMore"),
-  el("h1", "", "A little more Kosmora."),
-  el(
-    "p",
-    "intro",
-    "Card insights when you need them. Your favourite albums, one click away.",
-  ),
+  el("h1", "", "More Kosmora"),
 );
 header.append(head, el("span", "badge", "LOCAL BROWSER SETTINGS"));
 app.append(header);
@@ -76,6 +71,8 @@ general.append(
 );
 const enabled = sectionToggle(general, "enabled", "Enable card hover tooltips");
 general.append(el("div", "rule"));
+const mobileFriendly = el("fieldset", "settings-subgroup");
+mobileFriendly.append(el("legend", "", "Mobile Friendly"));
 const useOverlayButton = el("input");
 useOverlayButton.type = "checkbox";
 useOverlayButton.id = "use-overlay-button-instead-of-hover";
@@ -94,7 +91,7 @@ useOverlayButtonRow.append(
     "Press the round Kosmora button at the bottom-left corner of a card to open its tooltip. Hover is disabled on cards showing the button. Tapped tooltips stay open until dismissed. Useful on touch screens.",
   ),
 );
-general.append(useOverlayButtonRow, el("div", "rule"));
+mobileFriendly.append(useOverlayButtonRow, el("div", "rule"));
 useOverlayButton.addEventListener("change", () => {
   draft.useOverlayButtonInsteadOfHover = useOverlayButton.checked;
 });
@@ -116,9 +113,32 @@ outsideClickRow.append(
     "When the tooltip is unpinned, an outside click or tap closes it without opening a card, changing selection, or activating the control underneath. The next click works normally. Pinned tooltips keep their normal behavior.",
   ),
 );
-general.append(outsideClickRow, el("div", "rule"));
+mobileFriendly.append(outsideClickRow, el("div", "rule"));
 outsideClickOnly.addEventListener("change", () => {
   draft.outsideClickClosesTooltipOnly = outsideClickOnly.checked;
+});
+const fullScreenCentered = el("input");
+fullScreenCentered.type = "checkbox";
+fullScreenCentered.id = "full-screen-centered-on-open";
+const fullScreenLabel = el(
+  "label",
+  "label settings-toggle",
+  "Full Screen & Centered on Open",
+);
+fullScreenLabel.prepend(fullScreenCentered);
+const fullScreenRow = el("div", "row");
+fullScreenRow.append(
+  fullScreenLabel,
+  el(
+    "span",
+    "hint",
+    "Open centered and fill the visible viewport, leaving a 24-pixel margin on every side for outside-click closing. Saved size and position apply again when turned off. Drag and resize are unavailable in this mode; pinned tooltips stay open.",
+  ),
+);
+mobileFriendly.append(fullScreenRow);
+fullScreenCentered.addEventListener("change", () => {
+  draft.fullScreenCenteredOnOpen = fullScreenCentered.checked;
+  syncTooltipSizing();
 });
 const closeAfterAlbumAdd = el("input");
 closeAfterAlbumAdd.type = "checkbox";
@@ -224,9 +244,15 @@ const popupInputs = (
   });
   return { field, input, title, min, max };
 });
+general.append(el("div", "rule"), mobileFriendly);
 const hotkeySettings = new HotkeySettings((hotkeys) => {
   draft.hotkeys = hotkeys;
 });
+function syncTooltipSizing() {
+  for (const { field, input } of popupInputs)
+    if (field === "popupWidth" || field === "popupHeight")
+      input.disabled = draft.fullScreenCenteredOnOpen;
+}
 function sectionToggle(host: HTMLElement, key: FeatureKey, label: string) {
   const heading = host.querySelector("h2")!;
   const row = el("div", "settings-group-heading"),
@@ -369,7 +395,7 @@ function overlayPriceToggle(
 const auctionOverlay = overlayToggle(
   "active-auctions-overlay",
   "Show active auctions icon on cards",
-  "Red gavel · active listings at the top right",
+  "Red sale tag · current listings at the top right",
   (checked) => {
     draft.showActiveAuctionsOverlay = checked;
   },
@@ -394,7 +420,7 @@ const onSaleOverlay = overlayToggle(
 const saleOverlay = overlayToggle(
   "sale-history-overlay",
   "Show sale history icon on cards",
-  "History · completed sales in the last 30 days, at the top right",
+  "Gavel · final sale prices in the last 30 days, at the top right",
   (checked) => {
     draft.showSaleHistoryOverlay = checked;
   },
@@ -574,6 +600,7 @@ groupControls({
     "enabled",
     "useOverlayButtonInsteadOfHover",
     "outsideClickClosesTooltipOnly",
+    "fullScreenCenteredOnOpen",
     "closeTooltipWhenAddedToAlbum",
     "applyCloseBehaviorToPinnedTooltips",
     "hoverDelayMs",
@@ -584,6 +611,11 @@ groupControls({
   render: renderSettings,
   validate: () => {
     for (const { field, input, title, min, max } of popupInputs) {
+      if (
+        draft.fullScreenCenteredOnOpen &&
+        (field === "popupWidth" || field === "popupHeight")
+      )
+        continue;
       if (
         !Number.isInteger(draft[field]) ||
         draft[field] < min ||
@@ -782,6 +814,8 @@ function renderSettings() {
   enabled.checked = draft.enabled;
   useOverlayButton.checked = draft.useOverlayButtonInsteadOfHover;
   outsideClickOnly.checked = draft.outsideClickClosesTooltipOnly;
+  fullScreenCentered.checked = draft.fullScreenCenteredOnOpen;
+  syncTooltipSizing();
   closeAfterAlbumAdd.checked = draft.closeTooltipWhenAddedToAlbum;
   applyCloseToPinned.checked = draft.applyCloseBehaviorToPinnedTooltips;
   applyCloseToPinned.disabled = !draft.closeTooltipWhenAddedToAlbum;
