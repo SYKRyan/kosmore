@@ -19,6 +19,8 @@ it("enables new feature groups for older settings and keeps configuration when g
     "showTradeFamilyBadges",
     "showTradePossibleInterest",
     "tradeRaritySymbols",
+    "showTradeNotes",
+    "showTradeFamilyOverlay",
     "cardOverlaysEnabled",
     "statBoxesEnabled",
     "pinnedAlbumsEnabled",
@@ -41,11 +43,80 @@ it("enables new feature groups for older settings and keeps configuration when g
     expect(disabled.hotkeys.home?.code).toBe("KeyH");
   }
 });
+it("bounds trade notes sizes and delays and preserves the pin preference", () => {
+  const old = parseSettings({ schemaVersion: 1 });
+  expect([
+    old.tradeNotesPinned,
+    old.tradeNotesWidth,
+    old.tradeNotesHeight,
+  ]).toEqual([false, 320, 240]);
+  const small = parseSettings({
+    schemaVersion: 1,
+    tradeNotesWidth: 1,
+    tradeNotesHeight: 1,
+    tradeNotesHoverDelayMs: 1,
+    tradeNotesDismissDelayMs: -1,
+    tradeNotesPinned: true,
+  });
+  expect([
+    small.tradeNotesWidth,
+    small.tradeNotesHeight,
+    small.tradeNotesHoverDelayMs,
+    small.tradeNotesDismissDelayMs,
+    small.tradeNotesPinned,
+  ]).toEqual([240, 120, 100, 0, true]);
+  const large = parseSettings({
+    schemaVersion: 1,
+    tradeNotesWidth: 99999,
+    tradeNotesHeight: 99999,
+    tradeNotesHoverDelayMs: 99999,
+    tradeNotesDismissDelayMs: 99999,
+  });
+  expect([
+    large.tradeNotesWidth,
+    large.tradeNotesHeight,
+    large.tradeNotesHoverDelayMs,
+    large.tradeNotesDismissDelayMs,
+  ]).toEqual([1200, 1600, 2000, 30000]);
+});
 it("handles unknown schemas and bounds the delay", () => {
   expect(parseSettings({ schemaVersion: 2 }).hoverDelayMs).toBe(300);
   expect(
     parseSettings({ schemaVersion: 1, hoverDelayMs: 0 }).hoverDelayMs,
   ).toBe(100);
+});
+it("keeps the tooltip overlay button opt-in for new and old settings", () => {
+  expect(parseSettings(undefined).useOverlayButtonInsteadOfHover).toBe(false);
+  expect(
+    parseSettings({ schemaVersion: 1 }).useOverlayButtonInsteadOfHover,
+  ).toBe(false);
+  for (const value of [true, false, "true", 1, null])
+    expect(
+      parseSettings({ schemaVersion: 1, useOverlayButtonInsteadOfHover: value })
+        .useOverlayButtonInsteadOfHover,
+    ).toBe(value === true);
+});
+it("keeps consuming outside tooltip clicks off by default and accepts only booleans", () => {
+  expect(parseSettings(undefined).outsideClickClosesTooltipOnly).toBe(false);
+  expect(
+    parseSettings({ schemaVersion: 1 }).outsideClickClosesTooltipOnly,
+  ).toBe(false);
+  for (const value of [true, false, "true", 1, null])
+    expect(
+      parseSettings({ schemaVersion: 1, outsideClickClosesTooltipOnly: value })
+        .outsideClickClosesTooltipOnly,
+    ).toBe(value === true);
+});
+it("keeps full-screen centered tooltips opt-in for old and new settings", () => {
+  expect(parseSettings(undefined).fullScreenCenteredOnOpen).toBe(false);
+  expect(parseSettings({ schemaVersion: 1 }).fullScreenCenteredOnOpen).toBe(
+    false,
+  );
+  for (const value of [true, false, "true", 1, null])
+    expect(
+      parseSettings({ schemaVersion: 1, fullScreenCenteredOnOpen: value })
+        .fullScreenCenteredOnOpen,
+    ).toBe(value === true);
 });
 it("defaults overlay prices on and preserves independent price choices when their parent icons are disabled", () => {
   for (const key of [

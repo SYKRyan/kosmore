@@ -14,6 +14,16 @@ import {
   type InterestEntry,
 } from "./trade-interest";
 import { activeAuctionSummary, type AuctionListing } from "./auctions";
+import {
+  listingPath,
+  parseListingBatch,
+  type ListingBatch,
+  type ListingCache,
+  type ListingLimits,
+  type LatestListing,
+} from "./my-listings";
+import type { HistoryMode } from "../shared/listing-cache";
+import type { Result } from "../shared/messages";
 import type {
   Account,
   Album,
@@ -51,6 +61,7 @@ export class GameClient implements KosmoraClient {
   private openingReads = new ReadCache(40, 30_000);
   private accountReads = new ReadCache(1, 2_000);
   private auctionReads = new ReadCache(100, 30_000);
+  private listingListenersChanged = new Set<() => void>();
   private collectionReads = new ReadCache(60, 30_000);
   private scheduler = new RequestScheduler(3);
   private accountVersion = 0;
@@ -240,6 +251,133 @@ export class GameClient implements KosmoraClient {
     fresh = false,
   ) {
     return (await this.auctionSummary(id, name, signal, fresh)).count;
+  }
+  onListingsChanged(listener: () => void) {
+    this.listingListenersChanged.add(listener);
+  }
+  listingsChanged(account: string) {
+    if (account === this.lastAccount?.key)
+      for (const listener of this.listingListenersChanged) listener();
+  }
+  async invalidateListings() {
+    const account = await this.account(undefined, false);
+    await this.listingRequest("listingInvalidate", account.key, "0");
+  }
+  async cachedListings(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<ListingCache> {
+    const account = await this.account(signal, false);
+    return this.listingRequest(
+      "listingCache",
+      account.key,
+      subjectId(id),
+      signal,
+    );
+  }
+  async listingHistory(
+    id: string,
+    mode: HistoryMode,
+    signal?: AbortSignal,
+    limits?: ListingLimits,
+  ): Promise<ListingBatch> {
+    const account = await this.account(signal, false);
+    return this.listingRequest(
+      "listingHistory",
+      account.key,
+      subjectId(id),
+      signal,
+      { mode, limits },
+    );
+  }
+  async latestListing(
+    id: string,
+    signal?: AbortSignal,
+    onCached?: (result: LatestListing) => void,
+  ): Promise<LatestListing> {
+    const account = await this.account(signal, false);
+    id = subjectId(id);
+    const cache = await this.listingRequest<ListingCache>(
+      "listingCache",
+      account.key,
+      id,
+      signal,
+    );
+    if (cache.latest) onCached?.(cache.latest);
+    return this.listingRequest("listingLatest", account.key, id, signal);
+  }
+  async readListingBatch(
+    account: string,
+    limits: ListingLimits,
+    signal: AbortSignal,
+  ) {
+    if ((await this.account(signal)).key !== account)
+      throw new Error("Your Kosmora account changed. Reopen the popup.");
+    const version = this.accountVersion;
+    const batch = parseListingBatch(
+      await this.read(listingPath(limits), signal),
+      account,
+      limits,
+    );
+    signal.throwIfAborted();
+    if (this.accountVersion !== version)
+      throw new DOMException(
+        "Your Kosmora account changed. Reopen the popup.",
+        "AbortError",
+      );
+    return batch;
+  }
+  private async listingRequest<T>(
+    op: string,
+    accountKey: string,
+    id: string,
+    signal?: AbortSignal,
+    extra = {},
+  ): Promise<T> {
+    signal?.throwIfAborted();
+    const version = this.accountVersion,
+      requestId = crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      const cancel = () => {
+        void chrome.runtime
+          .sendMessage({
+            requestId: crypto.randomUUID(),
+            op: "listingCancel",
+            target: requestId,
+          })
+          .catch(() => {});
+        reject(
+          signal?.reason ??
+            new DOMException("Listing lookup canceled.", "AbortError"),
+        );
+      };
+      signal?.addEventListener("abort", cancel, { once: true });
+      void chrome.runtime
+        .sendMessage({ requestId, op, accountKey, subjectId: id, ...extra })
+        .then((raw: unknown) => {
+          if (signal?.aborted) return;
+          if (version !== this.accountVersion)
+            throw new DOMException(
+              "Your Kosmora account changed. Reopen the popup.",
+              "AbortError",
+            );
+          const result = raw as Result<T> & {
+            status?: number;
+            retryAt?: number;
+          };
+          if (!result || result.requestId !== requestId || !result.ok)
+            throw new ApiError(
+              result && !result.ok
+                ? result.error
+                : "Your listing history is unavailable.",
+              result?.status,
+              result?.retryAt,
+            );
+          resolve(result.data);
+        })
+        .catch(reject)
+        .finally(() => signal?.removeEventListener("abort", cancel));
+    });
   }
   async lowestListingPrice(
     id: string,

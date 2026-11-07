@@ -7,12 +7,21 @@ export const SETTINGS_KEY = "kosmore.settings";
 export const defaults = (): Settings => ({
   schemaVersion: 1,
   enabled: true,
+  useOverlayButtonInsteadOfHover: false,
+  outsideClickClosesTooltipOnly: false,
+  fullScreenCenteredOnOpen: false,
   profileRemindersEnabled: true,
   profileRemindersPinned: false,
   tradeRemindersEnabled: true,
   showTradeFamilyBadges: true,
   showTradePossibleInterest: true,
   tradeRaritySymbols: true,
+  showTradeNotes: true,
+  tradeNotesPinned: false,
+  tradeNotesHoverDelayMs: 300,
+  tradeNotesDismissDelayMs: 200,
+  tradeNotesWidth: 320,
+  tradeNotesHeight: 240,
   friendTooltipEnabled: true,
   friendHoverDelayMs: 300,
   friendDismissDelayMs: 200,
@@ -28,6 +37,9 @@ export const defaults = (): Settings => ({
   showSalesLowestListing: true,
   salesLowestListingSetsPrice: true,
   salesLowestListingAdjustment: 0,
+  showSalesMyLastListing: true,
+  salesMyLastListingSetsPrice: true,
+  salesMyLastListingAdjustment: 0,
   statBoxesEnabled: true,
   pinnedAlbumsEnabled: true,
   closeTooltipWhenAddedToAlbum: false,
@@ -45,6 +57,7 @@ export const defaults = (): Settings => ({
   showFriendInterestOverlay: true,
   showQuestOverlay: true,
   showFusionFamilyOverlay: true,
+  showTradeFamilyOverlay: true,
   stats: defaultStats(),
   hotkeys: {},
   pinnedAlbums: {},
@@ -60,12 +73,18 @@ export function parseSettings(value: unknown): Settings {
   d.friendTooltipPosition = parsePopupPosition(v.friendTooltipPosition);
   if (typeof v.enabled === "boolean") d.enabled = v.enabled;
   for (const key of [
+    "useOverlayButtonInsteadOfHover",
+    "outsideClickClosesTooltipOnly",
+    "fullScreenCenteredOnOpen",
     "profileRemindersEnabled",
     "profileRemindersPinned",
     "tradeRemindersEnabled",
     "showTradeFamilyBadges",
     "showTradePossibleInterest",
     "tradeRaritySymbols",
+    "showTradeNotes",
+    "tradeNotesPinned",
+    "showTradeFamilyOverlay",
     "friendTooltipEnabled",
     "navigationHotkeysEnabled",
     "cardOverlaysEnabled",
@@ -74,6 +93,8 @@ export function parseSettings(value: unknown): Settings {
     "salesLastSaleSetsPrice",
     "showSalesLowestListing",
     "salesLowestListingSetsPrice",
+    "showSalesMyLastListing",
+    "salesMyLastListingSetsPrice",
     "statBoxesEnabled",
     "pinnedAlbumsEnabled",
   ] as const)
@@ -81,6 +102,7 @@ export function parseSettings(value: unknown): Settings {
   for (const key of [
     "salesLastSaleAdjustment",
     "salesLowestListingAdjustment",
+    "salesMyLastListingAdjustment",
   ] as const)
     if (validSaleAdjustment(v[key])) d[key] = v[key];
   if (typeof v.closeTooltipWhenAddedToAlbum === "boolean")
@@ -106,6 +128,10 @@ export function parseSettings(value: unknown): Settings {
   if (typeof v.hoverDelayMs === "number" && Number.isFinite(v.hoverDelayMs))
     d.hoverDelayMs = Math.min(2000, Math.max(100, Math.round(v.hoverDelayMs)));
   for (const [key, min, max] of [
+    ["tradeNotesHoverDelayMs", 100, 2000],
+    ["tradeNotesDismissDelayMs", 0, 30000],
+    ["tradeNotesWidth", 240, 1200],
+    ["tradeNotesHeight", 120, 1600],
     ["friendHoverDelayMs", 100, 2000],
     ["friendDismissDelayMs", 0, 30000],
     ["friendTooltipWidth", 240, 1200],

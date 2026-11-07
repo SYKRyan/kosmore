@@ -19,6 +19,25 @@ import { MARKET_FINISHES_KEY } from "../../src/shared/market-preferences";
 import { ALBUM_A, ALBUM_B } from "../fixtures/data";
 
 const note = (text: string) => ({ schemaVersion: 1 as const, text });
+it("excludes disposable listing-price and history caches from exports", () => {
+  const backup = serializeBackup(
+    createBackup(
+      {
+        ...values(),
+        "kosmore.myListingPrices": {
+          v: 1,
+          entries: { "player:42": { privateCache: "cached-listing-only" } },
+        },
+        "kosmore.listingHistory.player": {
+          privateCache: "cached-history-only",
+        },
+      },
+      "1.2.0",
+    ),
+  );
+  expect(backup).not.toContain("cached-listing-only");
+  expect(backup).not.toContain("cached-history-only");
+});
 const reminder = (
   notes: string,
   families = ["Film and Television Actors", "Arts, Crafts & Design"],
@@ -210,6 +229,9 @@ describe("invalid backups", () => {
     },
     (b: KosMoreBackup) => {
       b.settings.salesLastSaleAdjustment = NaN;
+    },
+    (b: KosMoreBackup) => {
+      b.settings.salesMyLastListingAdjustment = NaN;
     },
     (b: KosMoreBackup) => {
       b.settings.pinnedAlbums.player = ["bad-id"];

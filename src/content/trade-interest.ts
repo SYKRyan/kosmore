@@ -16,6 +16,7 @@ import { messageOf, type KosmoraClient } from "../shared/types";
 import { observePage } from "./page-changes";
 import { button, el } from "./ui";
 import { raritySymbol } from "./rarity-symbol";
+import { TradeNotes } from "./trade-notes";
 
 type Surface = NonNullable<ReturnType<typeof tradeSurface>>;
 interface Active {
@@ -29,6 +30,7 @@ interface Active {
   counting: boolean;
   counted: boolean;
   fresh: boolean;
+  notes?: TradeNotes;
 }
 function host(kind: string) {
   const host = el("div");
@@ -81,6 +83,7 @@ export class TradeInterest {
     this.scan(fresh);
   }
   private clear() {
+    this.active?.notes?.dispose();
     this.active?.abort.abort();
     this.active?.badges.remove();
     this.active?.summary.remove();
@@ -154,12 +157,19 @@ export class TradeInterest {
         `Saved families for ${active.surface.handle}`,
       );
       badges.replaceChildren(
-        ...reminder.families.map((family) =>
-          el("span", "family-badge", family),
+        ...(this.settings.showTradeFamilyBadges ? reminder.families : []).map(
+          (family) => el("span", "family-badge", family),
         ),
       );
-      active.badges.hidden =
-        !this.settings.showTradeFamilyBadges || !reminder.families.length;
+      if (this.settings.showTradeNotes && reminder.notes.trim()) {
+        active.notes = new TradeNotes(
+          reminder.notes,
+          this.settings,
+          active.surface.handle,
+        );
+        badges.append(active.notes.badge, active.notes.inline);
+      }
+      active.badges.hidden = !badges.childElementCount;
       this.scan();
     } catch {
       /* Private preferences remain hidden if the account or storage cannot be verified. */

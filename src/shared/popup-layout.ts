@@ -1,3 +1,12 @@
+export type PopupTab = "market" | "history" | "trade" | "notes";
+function isPopupTab(value: unknown): value is PopupTab {
+  return (
+    value === "market" ||
+    value === "history" ||
+    value === "trade" ||
+    value === "notes"
+  );
+}
 export interface PopupPosition {
   left: number;
   top: number;
@@ -5,8 +14,10 @@ export interface PopupPosition {
 export interface PopupState {
   pinned: boolean;
   position: PopupPosition | null;
+  tab?: PopupTab;
 }
 export interface PopupLayoutChange {
+  tab?: PopupTab;
   pinned?: boolean;
   position?: PopupPosition;
   width?: number;
@@ -33,6 +44,7 @@ export function parsePopupState(value: unknown): PopupState {
   return {
     pinned: state.pinned === true,
     position: parsePopupPosition(state.position),
+    ...(isPopupTab(state.tab) ? { tab: state.tab } : {}),
   };
 }
 export function isPopupLayoutChange(
@@ -43,8 +55,9 @@ export function isPopupLayoutChange(
   const change = value as PopupLayoutChange;
   return (
     Object.keys(change).every((key) =>
-      ["pinned", "position", "width", "height"].includes(key),
+      ["pinned", "position", "width", "height", "tab"].includes(key),
     ) &&
+    (change.tab === undefined || isPopupTab(change.tab)) &&
     (change.pinned === undefined || typeof change.pinned === "boolean") &&
     (change.position === undefined ||
       parsePopupPosition(change.position) !== null) &&

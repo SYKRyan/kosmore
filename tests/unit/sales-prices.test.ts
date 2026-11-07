@@ -31,6 +31,9 @@ it("defaults shared sales badges and click behavior on with zero adjustments and
   expect(old.salesLowestListingSetsPrice).toBe(true);
   expect(old.salesLastSaleAdjustment).toBe(0);
   expect(old.salesLowestListingAdjustment).toBe(0);
+  expect(old.showSalesMyLastListing).toBe(true);
+  expect(old.salesMyLastListingSetsPrice).toBe(true);
+  expect(old.salesMyLastListingAdjustment).toBe(0);
   const saved = parseSettings({
     ...old,
     salesOverlaysEnabled: false,
@@ -38,9 +41,11 @@ it("defaults shared sales badges and click behavior on with zero adjustments and
     salesLastSaleSetsPrice: false,
     salesLastSaleAdjustment: -1,
     salesLowestListingAdjustment: 0.25,
+    salesMyLastListingAdjustment: -0.123456,
   });
   expect(saved.salesLastSaleAdjustment).toBe(-1);
   expect(saved.salesLowestListingAdjustment).toBe(0.25);
+  expect(saved.salesMyLastListingAdjustment).toBe(-0.123456);
   expect(saved.salesLastSaleSetsPrice).toBe(false);
   expect(saved.showSalesLastSale).toBe(false);
   expect(saved.showSalesLowestListing).toBe(true);

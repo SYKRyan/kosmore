@@ -32,6 +32,12 @@ interface Entry {
   editable: boolean;
   signals?: CardSignals;
   error?: string;
+  myPrice?: string;
+  myAccount?: string;
+  mineRequest?: AbortController;
+  mineLoading?: boolean;
+  mineResolved?: boolean;
+  mineError?: string;
 }
 const KEYS = [
   "salesOverlaysEnabled",
@@ -41,6 +47,9 @@ const KEYS = [
   "showSalesLowestListing",
   "salesLowestListingSetsPrice",
   "salesLowestListingAdjustment",
+  "showSalesMyLastListing",
+  "salesMyLastListingSetsPrice",
+  "salesMyLastListingAdjustment",
 ] as const;
 
 export class SalesOverlays {
@@ -54,7 +63,7 @@ export class SalesOverlays {
   private scheduled = false;
   private notBefore = 0;
   private timer?: ReturnType<typeof setTimeout>;
-  constructor(client: KosmoraClient) {
+  constructor(private client: KosmoraClient) {
     this.provider = new CardSignalProvider(client);
     this.intersection = new IntersectionObserver((records) => {
       for (const record of records) {
@@ -63,16 +72,33 @@ export class SalesOverlays {
         entry.visible = record.isIntersecting;
         if (entry.visible && entry.loading) this.queue.add(entry);
         else this.queue.delete(entry);
+        if (entry.visible) void this.loadMyPrice(entry);
+        else {
+          entry.mineRequest?.abort();
+          entry.mineRequest = undefined;
+          entry.mineLoading = false;
+        }
       }
       this.pump();
     });
   }
   start() {
+    window.addEventListener("pagehide", () => {
+      this.generation++;
+      this.provider.reset();
+      for (const entry of this.entries.values()) entry.mineRequest?.abort();
+    });
     observePage((changes) => this.scan(changes));
     window.addEventListener("popstate", () => this.invalidate());
     window.addEventListener("focus", () => this.invalidate(false));
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) this.invalidate(false);
+      else
+        for (const entry of this.entries.values()) {
+          entry.mineRequest?.abort();
+          entry.mineRequest = undefined;
+          entry.mineLoading = false;
+        }
     });
     setInterval(() => {
       if (!document.hidden) this.invalidate(false);
@@ -88,7 +114,9 @@ export class SalesOverlays {
   private enabled() {
     return (
       this.settings?.salesOverlaysEnabled &&
-      (this.settings.showSalesLastSale || this.settings.showSalesLowestListing)
+      (this.settings.showSalesLastSale ||
+        this.settings.showSalesLowestListing ||
+        this.settings.showSalesMyLastListing)
     );
   }
   invalidate(clear = true) {
@@ -99,15 +127,23 @@ export class SalesOverlays {
     for (const entry of this.entries.values()) {
       if (clear) this.remove(entry);
       else {
+        entry.mineRequest?.abort();
+        entry.mineRequest = undefined;
+        entry.mineLoading = false;
+        entry.mineResolved = false;
+        entry.mineError = undefined;
         entry.loading = true;
         entry.fetching = false;
         entry.error = undefined;
+        entry.myPrice = undefined;
+        entry.myAccount = undefined;
         if (entry.visible) this.queue.add(entry);
       }
     }
     this.schedule();
   }
   private remove(entry: Entry) {
+    entry.mineRequest?.abort();
     this.intersection.unobserve(entry.target.input);
     this.queue.delete(entry);
     entry.host.remove();
@@ -143,6 +179,7 @@ export class SalesOverlays {
       if (target.after.nextElementSibling !== entry.host)
         target.after.after(entry.host);
       if (entry.editable !== editableSalesInput(input)) this.render(entry);
+      if (entry.visible) void this.loadMyPrice(entry);
     }
     for (const [input, target] of targets) {
       if (this.entries.has(input)) continue;
@@ -217,55 +254,121 @@ export class SalesOverlays {
       context = entry.target.context;
     this.running++;
     entry.fetching = true;
-    void this.provider
-      .get(
-        context.subjectId,
-        this.priceSettings(),
-        context.variant.fullArt
-          ? "fullart"
-          : context.variant.veil
-            ? "veil"
-            : "plain",
-        (signals) => {
-          if (this.valid(entry, generation)) {
-            entry.signals = signals;
-            this.render(entry);
-          }
-        },
-      )
-      .then(
-        (signals) => {
-          if (this.valid(entry, generation)) entry.signals = signals;
-        },
-        (error) => {
-          if (!this.valid(entry, generation)) return;
-          entry.error = messageOf(error);
-          if (error instanceof ApiError && error.status === 429)
-            this.notBefore = error.retryAt || Date.now() + 30_000;
-          if (error instanceof ApiError && error.status === 401)
-            this.notBefore = Infinity;
-        },
-      )
-      .finally(() => {
-        if (this.valid(entry, generation)) {
-          entry.loading = false;
-          entry.fetching = false;
-          this.render(entry);
-        }
-        this.running--;
-        this.pump();
-      });
+    const marketJob =
+      this.settings!.showSalesLastSale || this.settings!.showSalesLowestListing
+        ? this.provider
+            .get(
+              context.subjectId,
+              this.priceSettings(),
+              context.variant.fullArt
+                ? "fullart"
+                : context.variant.veil
+                  ? "veil"
+                  : "plain",
+              (signals) => {
+                if (this.valid(entry, generation)) {
+                  entry.signals = signals;
+                  this.render(entry);
+                }
+              },
+            )
+            .then(
+              (signals) => {
+                if (this.valid(entry, generation)) entry.signals = signals;
+              },
+              (error) => {
+                if (!this.valid(entry, generation)) return;
+                entry.error = messageOf(error);
+                if (error instanceof ApiError && error.status === 429)
+                  this.notBefore = error.retryAt || Date.now() + 30_000;
+                if (error instanceof ApiError && error.status === 401)
+                  this.notBefore = Infinity;
+              },
+            )
+        : Promise.resolve();
+    void marketJob.finally(() => {
+      if (this.valid(entry, generation)) {
+        entry.loading = false;
+        entry.fetching = false;
+        this.render(entry);
+      }
+      this.running--;
+      this.pump();
+    });
     this.pump();
+  }
+  invalidateListings() {
+    for (const entry of this.entries.values()) {
+      entry.mineRequest?.abort();
+      entry.mineRequest = undefined;
+      entry.mineResolved = false;
+      entry.mineLoading = false;
+      entry.mineError = undefined;
+      if (entry.visible) void this.loadMyPrice(entry);
+    }
+  }
+  private async loadMyPrice(entry: Entry) {
+    if (
+      !this.settings?.showSalesMyLastListing ||
+      document.hidden ||
+      !entry.visible ||
+      entry.mineRequest ||
+      entry.mineResolved ||
+      !this.valid(entry) ||
+      Date.now() < this.notBefore
+    )
+      return;
+    const request = new AbortController(),
+      generation = this.generation;
+    entry.mineRequest = request;
+    entry.mineLoading = true;
+    entry.mineError = undefined;
+    const valid = () =>
+      !request.signal.aborted &&
+      entry.mineRequest === request &&
+      this.valid(entry, generation);
+    this.render(entry);
+    try {
+      const account = await this.client.account(request.signal, false);
+      const apply = (
+        result: import("../kosmora/my-listings").LatestListing,
+      ) => {
+        if (!valid()) return;
+        entry.myAccount = account.key;
+        entry.myPrice = result.listing?.startPrice;
+        this.render(entry);
+      };
+      const result = await this.client.latestListing(
+        entry.target.context.subjectId,
+        request.signal,
+        apply,
+      );
+      apply(result);
+    } catch (error) {
+      if (!valid()) return;
+      entry.mineError = `Your listing history: ${messageOf(error)}`;
+      if (error instanceof ApiError && error.status === 429)
+        this.notBefore = error.retryAt || Date.now() + 30_000;
+      if (error instanceof ApiError && error.status === 401)
+        this.notBefore = Infinity;
+    } finally {
+      if (valid()) {
+        entry.mineRequest = undefined;
+        entry.mineLoading = false;
+        entry.mineResolved = true;
+        this.render(entry);
+      }
+    }
   }
   private render(entry: Entry) {
     entry.editable = editableSalesInput(entry.target.input);
     entry.body.replaceChildren();
-    if (entry.loading) {
+    if (entry.loading || entry.mineLoading) {
       entry.status.className = "status loading";
       entry.status.textContent = "Loading market prices…";
-    } else if (entry.error) {
+    } else if (entry.error || entry.mineError) {
       entry.status.className = "status error";
-      entry.status.textContent = entry.error;
+      entry.status.textContent = entry.error ?? entry.mineError!;
     } else if (entry.status.classList.contains("loading"))
       entry.status.textContent = "";
     const s = this.settings!;
@@ -286,11 +389,21 @@ export class SalesOverlays {
         s.salesLowestListingAdjustment,
         entry.signals?.lowestListingPrice,
       ],
+      [
+        "history",
+        "My Last Listing:",
+        s.showSalesMyLastListing,
+        s.salesMyLastListingSetsPrice,
+        s.salesMyLastListingAdjustment,
+        entry.myPrice,
+      ],
     ] as const) {
       const hasData =
         kind === "sale"
           ? entry.signals?.saleHistory
-          : entry.signals?.activeAuctions;
+          : kind === "history"
+            ? entry.myPrice !== undefined
+            : entry.signals?.activeAuctions;
       if (!visible || !hasData) continue;
       const canClick = clickable && price !== undefined;
       const badge = canClick
@@ -299,10 +412,12 @@ export class SalesOverlays {
       const text = price === undefined ? "—" : `$${formatKosmo(price)}`;
       badge.append(cardIcon(kind), el("span", "amount", `${label} ${text}`));
       badge.title =
-        entry.error ??
-        `${label}: ${price === undefined ? "unavailable" : `${formatKosmo(price)} Kosmo`}, across all finishes.${clickable ? ` Click to set the starting price with an adjustment of ${adjustment} Kosmo.` : ""}`;
+        (kind === "history" ? entry.mineError : entry.error) ??
+        `${label.replace(/:$/, "")}: ${price === undefined ? "unavailable" : `${formatKosmo(price)} Kosmo`}, across all finishes.${clickable ? ` Click to set the starting price with an adjustment of ${adjustment} Kosmo.` : ""}`;
       if (canClick && !entry.editable)
         badge.title += " The starting price is read-only.";
+      if (kind === "history" && entry.mineLoading && price !== undefined)
+        badge.title += " Saved price; checking for newer listings…";
       badge.setAttribute(
         "aria-label",
         `${label} ${text}${canClick ? `; set starting price with ${adjustment} Kosmo adjustment` : ""}`,
@@ -310,7 +425,7 @@ export class SalesOverlays {
       if (badge instanceof HTMLButtonElement) {
         badge.type = "button";
         badge.disabled = !entry.editable;
-        badge.addEventListener("click", (event) => {
+        badge.addEventListener("click", async (event) => {
           event.preventDefault();
           event.stopPropagation();
           if (!this.valid(entry) || !editableSalesInput(entry.target.input))
@@ -319,15 +434,29 @@ export class SalesOverlays {
           if (
             kind === "sale"
               ? !current.showSalesLastSale || !current.salesLastSaleSetsPrice
-              : !current.showSalesLowestListing ||
-                !current.salesLowestListingSetsPrice
+              : kind === "history"
+                ? !current.showSalesMyLastListing ||
+                  !current.salesMyLastListingSetsPrice
+                : !current.showSalesLowestListing ||
+                  !current.salesLowestListingSetsPrice
           )
             return;
           try {
+            if (kind === "history") {
+              const account = await this.client.account();
+              if (
+                !this.valid(entry) ||
+                account.key !== entry.myAccount ||
+                !editableSalesInput(entry.target.input)
+              )
+                return;
+            }
             const offset =
               kind === "sale"
                 ? current.salesLastSaleAdjustment
-                : current.salesLowestListingAdjustment;
+                : kind === "history"
+                  ? current.salesMyLastListingAdjustment
+                  : current.salesLowestListingAdjustment;
             const value = adjustedSalePrice(price!, offset);
             fillSalesInput(entry.target.input, value);
             entry.status.className = "status";
@@ -341,6 +470,10 @@ export class SalesOverlays {
       entry.body.append(badge);
     }
     entry.host.hidden =
-      !entry.loading && !entry.body.children.length && !entry.error;
+      !entry.loading &&
+      !entry.mineLoading &&
+      !entry.body.children.length &&
+      !entry.error &&
+      !entry.mineError;
   }
 }

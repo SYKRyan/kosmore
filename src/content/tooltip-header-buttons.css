@@ -1,0 +1,36 @@
+.top button.icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  border: 1px solid #443852;
+  border-radius: 8px;
+  background: #2a2043;
+  color: #c3b9d6;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.top button.icon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+.top button.icon:hover:not(:disabled) {
+  background: #3d3059;
+  border-color: #d4b875;
+}
+.top button.icon:focus-visible {
+  outline: 2px solid #f6d386;
+  outline-offset: 3px;
+}
+.top button.icon:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.top button.icon.pin-button[aria-pressed="true"] {
+  color: #ffe8af;
+  background: #48344e;
+  border-color: #d4b875;
+}

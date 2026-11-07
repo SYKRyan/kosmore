@@ -1,5 +1,9 @@
-import { pinIcon } from "./icons";
+import { headerIcon, pinIcon, tooltipIcon } from "./icons";
 import css from "./popup.css?inline";
+import headerCss from "./tooltip-header-buttons.css?inline";
+import friendListCss from "./friend-list.css?inline";
+import { FriendList } from "./friend-list";
+import { ListingHistory } from "./listing-history";
 import statCss from "./stat-box.css?inline";
 import { defaults } from "../shared/settings";
 import {
@@ -39,9 +43,9 @@ import {
   resizedBounds,
   type PopupBounds,
   type PopupLayoutChange,
+  type PopupTab,
 } from "../shared/popup-layout";
 import { lastSaleSummary } from "../shared/last-sale";
-type PopupTab = "market" | "trade" | "notes";
 export interface PopupPlacement {
   left: number;
   top: number;
@@ -66,6 +70,9 @@ export class Popup {
   private marketLegend?: HTMLElement;
   private marketFrame = 0;
   private tradeArea = el("section", "trade-panel");
+  private listingArea = el("section", "listing-history-panel");
+  private listingHistory?: ListingHistory;
+  private tradeFriends = new FriendList();
   private notesArea = el("section", "card-notes-panel");
   private notes?: CardNotes;
   private familyBadges = el("div", "family-badges");
@@ -76,9 +83,10 @@ export class Popup {
   private layoutStatus = el("p", "layout-status");
   private resizeBounds?: PopupBounds;
   private finishInteraction?: () => void;
-  private marketTab = button("Market", () => this.selectTab("market"), "tab");
-  private tradeTab = button("Trade", () => this.selectTab("trade"), "tab");
-  private notesTab = button("Notes", () => this.selectTab("notes"), "tab");
+  private marketTab = button("", () => this.selectTab("market"), "tab");
+  private historyTab = button("", () => this.selectTab("history"), "tab");
+  private tradeTab = button("", () => this.selectTab("trade"), "tab");
+  private notesTab = button("", () => this.selectTab("notes"), "tab");
   private selectedTab: PopupTab = "market";
   private tradeResult?: TradeMatches;
   private tradeError?: string;
@@ -141,10 +149,17 @@ export class Popup {
     private onPinChange: () => void = () => {},
     private onLayoutChange: (change: PopupLayoutChange) => void = () => {},
     private friendTooltip?: FriendTooltip,
+    initialTab: PopupTab = "market",
   ) {
     this.placement = placement ? { ...placement } : undefined;
     if (context)
       this.notes = new CardNotes(this.notesArea, context.subjectId, client);
+    if (context)
+      this.listingHistory = new ListingHistory(
+        this.listingArea,
+        context.subjectId,
+        client,
+      );
     this.hidden = new Set(FINISHES.filter((f) => !finishes.includes(f)));
     this.host.id = HOST_ID;
     this.host.popover = "manual";
@@ -155,24 +170,34 @@ export class Popup {
     );
     this.host.toggleAttribute("data-empty", !context);
     const style = el("style");
-    style.textContent = statCss + css + SIGNAL_BADGE_CSS;
+    style.textContent =
+      statCss + css + friendListCss + headerCss + SIGNAL_BADGE_CSS;
     this.shadow.append(style);
     const top = el("header", "top"),
       actions = el("div", "actions");
     actions.append(
       button(
-        "Refresh",
+        "",
         () =>
           this.selectedTab === "trade"
             ? this.refreshTrade(true)
-            : this.selectedTab === "notes"
-              ? this.notes?.refresh()
-              : onRefresh(),
+            : this.selectedTab === "history"
+              ? this.listingHistory?.refresh()
+              : this.selectedTab === "notes"
+                ? this.notes?.refresh()
+                : onRefresh(),
         "icon refresh-button",
       ),
       this.pinButton,
-      button("×", onClose, "icon"),
+      button("", onClose, "icon"),
     );
+    const refreshButton = actions.firstElementChild as HTMLButtonElement;
+    refreshButton.append(headerIcon("refresh"));
+    refreshButton.setAttribute("aria-label", "Refresh");
+    refreshButton.title = "Refresh";
+    actions.lastElementChild!.append(headerIcon("close"));
+    (actions.lastElementChild as HTMLButtonElement).title =
+      "Close KosMore popup";
     this.pinButton.append(pinIcon());
     this.renderPin();
     this.enableDragging(top);
@@ -223,14 +248,31 @@ export class Popup {
     const tabs = el("div", "tabs");
     tabs.setAttribute("role", "tablist");
     tabs.setAttribute("aria-label", "Card insights");
-    const names: PopupTab[] = ["market", "trade", "notes"];
-    const buttons = [this.marketTab, this.tradeTab, this.notesTab];
-    const panels = [this.market, this.tradeArea, this.notesArea];
+    const names: PopupTab[] = ["market", "history", "trade", "notes"];
+    const buttons = [
+      this.marketTab,
+      this.historyTab,
+      this.tradeTab,
+      this.notesTab,
+    ];
+    const panels = [
+      this.market,
+      this.listingArea,
+      this.tradeArea,
+      this.notesArea,
+    ];
     for (const [index, tab] of buttons.entries()) {
       const panel = panels[index];
       tab.id = `kosmore-${names[index]}-tab`;
       panel.id = `kosmore-${names[index]}-panel`;
       tab.setAttribute("role", "tab");
+      const label =
+        names[index] === "history"
+          ? "My listing history"
+          : names[index][0].toUpperCase() + names[index].slice(1);
+      tab.setAttribute("aria-label", label);
+      tab.title = label;
+      tab.append(tooltipIcon(names[index]));
       tab.setAttribute("aria-controls", panel.id);
       panel.setAttribute("role", "tabpanel");
       panel.setAttribute("aria-labelledby", tab.id);
@@ -254,26 +296,34 @@ export class Popup {
     const body = el("div", "body");
     this.statArea.append(this.metrics, this.priceScope, this.metricError);
     const tabContent = el("div", "tab-content");
-    tabContent.append(this.market, this.tradeArea, this.notesArea);
+    tabContent.append(
+      this.market,
+      this.listingArea,
+      this.tradeArea,
+      this.notesArea,
+    );
     const tabWorkspace = el("div", "tab-workspace");
     tabWorkspace.append(tabs, tabContent);
     body.append(this.albumArea, this.statArea, tabWorkspace);
     const footer = el("footer", "footer");
+    const settingsButton = button("", openSettings, "icon settings-button");
+    settingsButton.setAttribute("aria-label", "Settings");
+    settingsButton.title = "Settings";
+    settingsButton.append(tooltipIcon("settings"));
     footer.append(
       el("span", "brand", "✦ KosMore"),
       this.sellButton,
-      button("Settings", openSettings, "link"),
+      settingsButton,
     );
-    body.append(footer);
     const empty = el("div", "empty-state", "No Card Selected");
     empty.setAttribute("role", "status");
     this.layoutStatus.setAttribute("role", "status");
-    this.shadow.append(top, empty, body, this.layoutStatus);
+    this.shadow.append(top, empty, body, footer, this.layoutStatus);
     this.enableResizing();
     this.metrics.setAttribute("aria-live", "polite");
     this.albumArea.setAttribute("aria-live", "polite");
     this.tradeArea.setAttribute("aria-live", "polite");
-    this.selectTab(this.placement?.tab ?? "market");
+    this.selectTab(this.placement?.tab ?? initialTab, false);
     if (context) {
       this.renderMetrics();
       this.renderMarket();
@@ -317,6 +367,7 @@ export class Popup {
     this.auctionRequest?.abort();
     this.stopObservations();
     this.notes?.dispose();
+    this.listingHistory?.dispose();
     this.reposition.disconnect();
     this.host.remove();
   }
@@ -350,20 +401,41 @@ export class Popup {
       this.isPinned ? "Unpin popup" : "Pin popup",
     );
     this.pinButton.title = this.isPinned
-      ? "Unpin popup · drag the header to move"
+      ? this.settings.fullScreenCenteredOnOpen
+        ? "Unpin popup"
+        : "Unpin popup · drag the header to move"
       : "Pin popup to keep it visible";
   }
   private applySize() {
+    this.host.toggleAttribute(
+      "data-full-screen",
+      this.settings.fullScreenCenteredOnOpen,
+    );
+    const viewport = this.visibleViewport();
     this.host.style.setProperty(
       "--popup-width",
-      `${this.settings.popupWidth}px`,
+      `${this.settings.fullScreenCenteredOnOpen ? Math.max(0, viewport.width - 48) : this.settings.popupWidth}px`,
     );
     this.host.style.setProperty(
       "--popup-height",
-      `${this.settings.popupHeight}px`,
+      `${this.settings.fullScreenCenteredOnOpen ? Math.max(0, viewport.height - 48) : this.settings.popupHeight}px`,
     );
   }
+  private visibleViewport() {
+    const viewport = window.visualViewport;
+    return {
+      width: viewport?.width ?? innerWidth,
+      height: viewport?.height ?? innerHeight,
+      left: viewport?.offsetLeft ?? 0,
+      top: viewport?.offsetTop ?? 0,
+    };
+  }
   private saveLayout() {
+    if (this.settings.fullScreenCenteredOnOpen) {
+      this.layoutStatus.textContent = "";
+      this.onLayoutChange({ pinned: this.isPinned });
+      return;
+    }
     const position = this.placement
       ? {
           left: Math.round(this.placement.left),
@@ -430,6 +502,7 @@ export class Popup {
         this.saveLayout();
       };
       handle.addEventListener("pointerdown", (event) => {
+        if (this.settings.fullScreenCenteredOnOpen) return;
         if (event.button !== 0 || !event.isPrimary) return;
         event.preventDefault();
         event.stopPropagation();
@@ -471,6 +544,7 @@ export class Popup {
         handle.addEventListener("lostpointercapture", stop);
       });
       handle.addEventListener("keydown", (event) => {
+        if (this.settings.fullScreenCenteredOnOpen) return;
         if (
           !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
             event.key,
@@ -514,6 +588,7 @@ export class Popup {
       | undefined;
     header.addEventListener("pointerdown", (event) => {
       if (
+        this.settings.fullScreenCenteredOnOpen ||
         !this.isPinned ||
         event.button !== 0 ||
         !event.isPrimary ||
@@ -569,6 +644,13 @@ export class Popup {
   }
   position() {
     if (this.closed) return;
+    if (this.settings.fullScreenCenteredOnOpen) {
+      this.applySize();
+      const viewport = this.visibleViewport();
+      this.host.style.left = `${viewport.left + (viewport.width - this.host.offsetWidth) / 2}px`;
+      this.host.style.top = `${viewport.top + (viewport.height - this.host.offsetHeight) / 2}px`;
+      return;
+    }
     if (this.resizeBounds) {
       this.host.style.left = `${this.resizeBounds.left}px`;
       this.host.style.top = `${this.resizeBounds.top}px`;
@@ -688,6 +770,7 @@ export class Popup {
   setAccount(account: Account, pinned: string[], fresh = false) {
     this.account = account;
     this.notes?.setAccount(account);
+    this.listingHistory?.setAccount(account);
     this.pinned = pinned;
     this.renderAlbums();
     void this.loadAlbums(fresh);
@@ -702,13 +785,16 @@ export class Popup {
     this.renderTrade();
     if (this.selectedTab === "trade") void this.loadTrade(fresh);
   }
-  private selectTab(tab: PopupTab) {
+  private selectTab(tab: PopupTab, remember = true) {
     this.selectedTab = tab;
+    if (remember) this.onLayoutChange({ tab });
     this.market.hidden = tab !== "market";
+    this.listingArea.hidden = tab !== "history";
     this.tradeArea.hidden = tab !== "trade";
     this.notesArea.hidden = tab !== "notes";
     for (const [name, button] of [
       ["market", this.marketTab],
+      ["history", this.historyTab],
       ["trade", this.tradeTab],
       ["notes", this.notesTab],
     ] as const) {
@@ -717,6 +803,7 @@ export class Popup {
     }
     if (tab === "trade") void this.loadTrade();
     if (tab === "notes") this.notes?.activate();
+    this.listingHistory?.setActive(tab === "history");
   }
   private async loadTrade(fresh = false) {
     this.renderTrade();
@@ -753,12 +840,12 @@ export class Popup {
       }
     }
   }
+  invalidateListingHistory() {
+    this.listingHistory?.invalidate();
+  }
   private renderTrade() {
     const area = this.tradeArea;
-    area.replaceChildren(
-      this.heading("Friends who may be interested"),
-      note("Based on family preferences you saved for friends."),
-    );
+    area.replaceChildren(this.heading("Friends who may be interested"));
     if (this.insightError) {
       area.append(note(this.insightError, true));
       return;
@@ -780,12 +867,6 @@ export class Popup {
       area.append(note("This card has no families to match."));
       return;
     }
-    const familyList = el(
-      "p",
-      "note card-families",
-      `Card families: ${this.details.families.map((f) => f.name).join(" · ")}`,
-    );
-    area.append(familyList);
     if (this.tradeError) {
       area.append(
         note(this.tradeError, true),
@@ -807,20 +888,8 @@ export class Popup {
         ),
       );
     } else {
-      const list = el("ul", "trade-matches");
-      list.setAttribute("aria-label", "Matching friends");
-      for (const match of result.matches) {
-        const row = el("li", "trade-match"),
-          link = el("a", "friend-link", match.friend.handle);
-        link.href = `/social?f=${encodeURIComponent(match.friend.handle)}`;
-        link.title = `Open ${match.friend.handle} on Social`;
-        const families = el("div", "matched-families");
-        for (const family of match.families)
-          families.append(el("span", "family-chip", family.name));
-        row.append(link, families);
-        list.append(row);
-      }
-      area.append(list);
+      this.tradeFriends.setData(result.matches);
+      area.append(this.tradeFriends.element);
     }
     if (result.unreadable)
       area.append(
@@ -888,6 +957,7 @@ export class Popup {
     return h;
   }
   setSettings(settings: Settings) {
+    if (settings.fullScreenCenteredOnOpen) this.finishInteraction?.();
     if (this.resizeBounds) {
       this.settings = {
         ...settings,
@@ -897,6 +967,7 @@ export class Popup {
       return;
     }
     this.settings = settings;
+    this.renderPin();
     this.applySize();
     this.position();
     if (!this.context) return;
@@ -1357,11 +1428,10 @@ export class Popup {
     for (const id of this.pinned) {
       const album = this.albums.find((a) => a.id === id);
       const tile = el("div", "album-tile");
-      const b = button(
-        album?.name ?? "Album unavailable",
-        () => void this.add(id, selected),
-        "album-add",
-      );
+      const b = button("", () => void this.add(id, selected), "album-add");
+      const albumName = album?.name ?? "Album unavailable";
+      b.append(el("span", "album-name", albumName));
+      b.title = albumName;
       const why = !album
         ? "Unavailable"
         : album.contains

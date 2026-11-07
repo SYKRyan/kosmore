@@ -91,12 +91,21 @@ export interface OpeningCard {
 export interface Settings {
   schemaVersion: 1;
   enabled: boolean;
+  useOverlayButtonInsteadOfHover: boolean;
+  outsideClickClosesTooltipOnly: boolean;
+  fullScreenCenteredOnOpen: boolean;
   profileRemindersEnabled: boolean;
   profileRemindersPinned: boolean;
   tradeRemindersEnabled: boolean;
   showTradeFamilyBadges: boolean;
   showTradePossibleInterest: boolean;
   tradeRaritySymbols: boolean;
+  showTradeNotes: boolean;
+  tradeNotesPinned: boolean;
+  tradeNotesHoverDelayMs: number;
+  tradeNotesDismissDelayMs: number;
+  tradeNotesWidth: number;
+  tradeNotesHeight: number;
   friendTooltipEnabled: boolean;
   friendHoverDelayMs: number;
   friendDismissDelayMs: number;
@@ -112,6 +121,9 @@ export interface Settings {
   showSalesLowestListing: boolean;
   salesLowestListingSetsPrice: boolean;
   salesLowestListingAdjustment: number;
+  showSalesMyLastListing: boolean;
+  salesMyLastListingSetsPrice: boolean;
+  salesMyLastListingAdjustment: number;
   statBoxesEnabled: boolean;
   pinnedAlbumsEnabled: boolean;
   closeTooltipWhenAddedToAlbum: boolean;
@@ -129,11 +141,27 @@ export interface Settings {
   showFriendInterestOverlay: boolean;
   showQuestOverlay: boolean;
   showFusionFamilyOverlay: boolean;
+  showTradeFamilyOverlay: boolean;
   stats: import("./stat-catalog").StatPreference[];
   hotkeys: import("./hotkeys").Hotkeys;
   pinnedAlbums: Record<string, string[]>;
 }
 export interface KosmoraClient {
+  cachedListings(
+    subjectId: string,
+    signal?: AbortSignal,
+  ): Promise<import("../kosmora/my-listings").ListingCache>;
+  listingHistory(
+    subjectId: string,
+    mode: import("./listing-cache").HistoryMode,
+    signal?: AbortSignal,
+    limits?: import("../kosmora/my-listings").ListingLimits,
+  ): Promise<import("../kosmora/my-listings").ListingBatch>;
+  latestListing(
+    subjectId: string,
+    signal?: AbortSignal,
+    onCached?: (result: import("../kosmora/my-listings").LatestListing) => void,
+  ): Promise<import("../kosmora/my-listings").LatestListing>;
   possibleInterest(
     familyIds: string[],
     signal?: AbortSignal,

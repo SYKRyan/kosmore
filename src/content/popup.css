@@ -32,17 +32,17 @@
   touch-action: none;
   user-select: none;
 }
+:host([data-full-screen][data-pinned]) .top {
+  cursor: default;
+}
+:host([data-full-screen]) {
+  animation: none;
+}
+:host([data-full-screen]) .resize-handle {
+  display: none;
+}
 :host([data-dragging]) .top {
   cursor: grabbing;
-}
-.pin-button {
-  display: grid;
-  place-items: center;
-}
-.pin-button[aria-pressed="true"] {
-  color: #ffe8af;
-  background: #48344e;
-  border-color: #d4b875;
 }
 :host([data-pinned]) {
   animation: none;
@@ -55,6 +55,7 @@
   display: none;
 }
 :host([data-empty]) .body,
+:host([data-empty]) .footer,
 :host([data-empty]) .title-row h2,
 :host([data-empty]) .header-details,
 :host([data-empty]) .header-prices,
@@ -328,11 +329,6 @@ button.link {
   color: #dfbf79;
   padding: 0;
 }
-button.icon {
-  padding: 7px 10px;
-  color: #c3b9d6;
-  border-color: #443852;
-}
 select {
   width: 100%;
   background: #231a39;
@@ -418,8 +414,10 @@ h3 {
 }
 .tab {
   flex: 1;
+  display: grid;
+  place-items: center;
   margin: 0 0 -1px;
-  padding: 11px 8px;
+  padding: 10px 8px;
   border: 1px solid transparent;
   border-bottom-color: #604a73;
   border-radius: 8px 8px 0 0;
@@ -448,49 +446,15 @@ h3 {
 [role="tabpanel"][hidden] {
   display: none;
 }
-.trade-matches {
-  list-style: none;
-  padding: 0;
+.trade-panel > .friends {
   margin: 14px 0;
-  display: grid;
-  gap: 9px;
 }
-.trade-match {
-  border: 1px solid #5f4b6b;
-  border-radius: 10px;
-  padding: 12px;
-  background: #211832;
-}
-.friend-link {
-  color: #ffe6ac;
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: none;
-  overflow-wrap: anywhere;
-}
-.friend-link:hover,
 .social-link:hover {
   text-decoration: underline;
 }
-.friend-link:focus-visible,
 .social-link:focus-visible {
   outline: 2px solid #f6d386;
   outline-offset: 3px;
-}
-.matched-families {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 7px;
-}
-.family-chip {
-  font-size: 10px;
-  color: #d9c8e9;
-  border: 1px solid #594461;
-  background: #30233d;
-  border-radius: 5px;
-  padding: 3px 6px;
-  overflow-wrap: anywhere;
 }
 .social-link {
   display: inline-block;
@@ -542,13 +506,10 @@ h3 {
   gap: 14px;
 }
 .pinned-albums {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-height: 50px;
-  max-height: 180px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  padding-right: 8px;
+  border-bottom: 1px solid #ffffff0b;
+  padding-bottom: 14px;
 }
 .tab-content {
   flex: 1;
@@ -562,8 +523,7 @@ h3 {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.tab-content,
-.pinned-albums {
+.tab-content {
   scrollbar-width: thin;
   scrollbar-color: #7e6a99 #211832;
 }
@@ -641,6 +601,29 @@ h3 {
   padding: 0;
   margin: 0;
 }
+.my-listings {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+.my-listing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid #ffffff0b;
+  font-size: 11px;
+}
+.my-listing time,
+.my-listing .finish {
+  display: block;
+}
+.my-listing b {
+  color: #f4dba1;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .sales li {
   display: grid;
   grid-template-columns: 1fr 75px auto;
@@ -668,15 +651,18 @@ h3 {
   gap: 7px;
 }
 .albums button {
-  text-align: left;
+  text-align: center;
   min-height: 37px;
-  overflow-wrap: anywhere;
 }
 .albums small {
-  display: block;
-  font-size: 9px;
+  display: flex;
+  align-items: center;
+  min-height: 18px;
+  font-size: 8px;
   color: #c4b7d4;
-  margin-top: 3px;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
 }
 .album-tile {
   position: relative;
@@ -684,21 +670,39 @@ h3 {
   min-width: 0;
 }
 .album-add {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
   width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+}
+.albums .album-add {
+  min-height: 40px;
+}
+.album-add:has(small) {
+  justify-content: space-between;
+}
+.album-name {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .album-tile:has(.album-remove) .album-add small {
-  padding-right: 24px;
-  min-height: 20px;
+  padding-right: 20px;
 }
 .albums .album-remove {
   position: absolute;
-  bottom: 4px;
-  right: 5px;
+  bottom: 2px;
+  right: 4px;
   display: grid;
   place-items: center;
-  width: 24px;
-  min-height: 24px;
-  padding: 4px;
+  width: 20px;
+  min-height: 20px;
+  padding: 2px;
   color: #f17683;
   background: transparent;
   border-color: transparent;
@@ -725,13 +729,22 @@ h3 {
 }
 .footer {
   flex: 0 0 auto;
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   border-top: 1px solid #ffffff0b;
-  padding-top: 10px;
+  padding: 10px 18px 18px;
   font-size: 10px;
   color: #9383a5;
+}
+.footer .brand {
+  justify-self: start;
+}
+.footer .sell-button {
+  justify-self: center;
+}
+.footer .settings-button {
+  justify-self: end;
 }
 @media (max-height: 740px) {
   .top {
@@ -744,8 +757,8 @@ h3 {
   .metric {
     padding: 7px;
   }
-  .pinned-albums {
-    max-height: 125px;
+  .footer {
+    padding: 10px 16px 12px;
   }
 }
 .loading {
