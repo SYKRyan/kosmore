@@ -1,0 +1,5 @@
+<!-- Kosmora wordmark SVG, from https://kosmora.io/ -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" color="#f2c66d">
+  <circle cx="12" cy="12" r="9.2" fill="none" stroke="currentColor" stroke-width="1.3"/>
+  <path d="M12 4.2l1.7 6.1 6.1 1.7-6.1 1.7L12 19.8l-1.7-6.1L4.2 12l6.1-1.7Z" fill="currentColor"/>
+</svg>

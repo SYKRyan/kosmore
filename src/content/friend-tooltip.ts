@@ -1,5 +1,6 @@
-import { pinIcon } from "./icons";
+import { headerIcon, pinIcon } from "./icons";
 import css from "./friend-tooltip.css?inline";
+import headerCss from "./tooltip-header-buttons.css?inline";
 import { FRIEND_TOOLTIP_ID, topDialog } from "../kosmora/dom";
 import {
   matchFriends,
@@ -403,7 +404,7 @@ class FriendTooltipView {
   private status = el("p", "status");
   private privacy = el("p", "privacy");
   private list = el("div", "friends");
-  private pin = button("", () => this.togglePin(), "pin");
+  private pin = button("", () => this.togglePin(), "icon pin-button");
   private data: FriendDetails[] = [];
   private expanded?: string;
   private observer: ResizeObserver;
@@ -427,13 +428,16 @@ class FriendTooltipView {
     this.host.setAttribute("role", "dialog");
     this.host.setAttribute("aria-label", "Interested friends");
     const style = el("style");
-    style.textContent = css;
+    style.textContent = css + headerCss;
     const header = el("header", "top"),
-      reload = button("↻", refresh),
-      dismiss = button("×", close, "close");
+      reload = button("", refresh, "icon refresh-button"),
+      dismiss = button("", close, "icon close");
+    reload.append(headerIcon("refresh"));
+    dismiss.append(headerIcon("close"));
     reload.setAttribute("aria-label", "Refresh friends");
     reload.title = "Refresh friends";
     dismiss.setAttribute("aria-label", "Close friend tooltip");
+    dismiss.title = "Close friend tooltip";
     header.append(
       el("h2", "", "Interested friends"),
       reload,

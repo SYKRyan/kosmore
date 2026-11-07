@@ -5,6 +5,7 @@ import { observePage } from "./page-changes";
 import { SocialReminders } from "./social";
 import type { FriendReminders } from "./friend-reminders";
 import { button, el } from "./ui";
+import { headerIcon } from "./icons";
 
 export class ProfileReminders {
   private profile?: ProfilePlayer;
@@ -22,7 +23,7 @@ export class ProfileReminders {
     () => void this.setPinned(!this.pinned),
     "profile-pin",
   );
-  private close = button("×", () => this.hidePopup(), "profile-close");
+  private close = button("", () => this.hidePopup(), "profile-close");
   private editor: SocialReminders;
 
   constructor(client: Pick<KosmoraClient, "account" | "families">) {
@@ -30,6 +31,7 @@ export class ProfileReminders {
     this.pin.innerHTML =
       '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4v4l-2 2-3-5-5-3 2-2h4l4-4 1-4Z M8 16l-5 5"/></svg>';
     this.close.setAttribute("aria-label", "Close profile reminders");
+    this.close.append(headerIcon("close"));
     this.editor = new SocialReminders(client, {
       select: () =>
         this.enabled && this.activated ? (this.profile ?? null) : null,

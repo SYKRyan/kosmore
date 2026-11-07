@@ -314,6 +314,8 @@ function b(e) {
 var x = "kosmore.settings", S = () => ({
 	schemaVersion: 1,
 	enabled: !0,
+	useOverlayButtonInsteadOfHover: !1,
+	outsideClickClosesTooltipOnly: !1,
 	profileRemindersEnabled: !0,
 	profileRemindersPinned: !1,
 	tradeRemindersEnabled: !0,
@@ -370,6 +372,8 @@ function C(e) {
 	if (r.schemaVersion !== 1) return t;
 	t.stats = h(r.stats), t.hotkeys = v(r.hotkeys), t.popupPosition = n(r.popupPosition), t.friendTooltipPosition = n(r.friendTooltipPosition), typeof r.enabled == "boolean" && (t.enabled = r.enabled);
 	for (let e of [
+		"useOverlayButtonInsteadOfHover",
+		"outsideClickClosesTooltipOnly",
 		"profileRemindersEnabled",
 		"profileRemindersPinned",
 		"tradeRemindersEnabled",

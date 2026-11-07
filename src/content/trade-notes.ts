@@ -1,7 +1,7 @@
 import type { Settings } from "../shared/types";
 import { readSettings, saveSettings } from "../shared/settings";
 import { button, el } from "./ui";
-import { disclosureIcon, pinIcon } from "./icons";
+import { disclosureIcon, headerIcon, pinIcon } from "./icons";
 import css from "./trade-interest.css?inline";
 
 /** Notes share the trade's verified account and lifetime; never read another player here. */
@@ -92,7 +92,8 @@ export class TradeNotes {
     pin.setAttribute("aria-pressed", String(pinned));
     header.append(el("strong", "", "Notes"), pin);
     if (!pinned) {
-      const close = button("×", () => this.hide(true));
+      const close = button("", () => this.hide(true));
+      close.append(headerIcon("close"));
       close.setAttribute("aria-label", "Close trade notes");
       header.append(close);
     }

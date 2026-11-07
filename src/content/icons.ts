@@ -1,3 +1,32 @@
+/** Matching refresh and close icons for tooltip controls. */
+export function headerIcon(
+  kind: "refresh" | "close",
+  size = 16,
+): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [key, value] of Object.entries({
+    viewBox: "0 0 24 24",
+    width: String(size),
+    height: String(size),
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "1.7",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+    "aria-hidden": "true",
+  }))
+    svg.setAttribute(key, value);
+  const path = document.createElementNS(svg.namespaceURI, "path");
+  path.setAttribute(
+    "d",
+    kind === "refresh"
+      ? "M3 12a9 9 0 0 1 15.36-6.36L21 8 M21 3v5h-5 M21 12a9 9 0 0 1-15.36 6.36L3 16 M3 21v-5h5"
+      : "M6 6l12 12 M18 6 6 18",
+  );
+  svg.append(path);
+  return svg;
+}
+
 export function cardIcon(
   kind: "auction" | "sale" | "friend" | "quest",
   size = 14,

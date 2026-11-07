@@ -864,7 +864,7 @@ test("trade notes settings validate sizes, save only their group, pin, cancel, a
       group.getByLabel("Show saved notes badge", { exact: true }),
     ).not.toBeChecked();
     await options
-      .getByLabel("Show family impact when choosing your trade card", {
+      .getByLabel("Show family impact on the Trade page", {
         exact: true,
       })
       .uncheck();

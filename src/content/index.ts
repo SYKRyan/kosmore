@@ -37,6 +37,7 @@ import { MarketOutcomes } from "./market-outcomes";
 import { HistoryResolver, listenToPageRelay } from "./sale-rate-feed";
 import { saleObservations } from "./sale-observation-store";
 import { FusionFamilyImpact } from "./fusion-family";
+import { TooltipButtons } from "./tooltip-buttons";
 
 const client = new GameClient();
 const friendTooltip = new FriendTooltip(client, () => {
@@ -52,6 +53,8 @@ const salesOverlays = new SalesOverlays(client);
 salesOverlays.start();
 const fusionFamily = new FusionFamilyImpact(client);
 fusionFamily.start();
+const tooltipButtons = new TooltipButtons(openFromButton);
+tooltipButtons.start();
 new MarketOutcomes(saleObservations).start();
 listenToPageRelay(saleObservations);
 const historyResolver = new HistoryResolver(saleObservations);
@@ -96,6 +99,7 @@ const preferencesReady = Promise.all([
   overlays.setSettings(settings);
   salesOverlays.setSettings(settings);
   fusionFamily.setSettings(settings);
+  tooltipButtons.setSettings(settings);
   if (!settings.enabled) hide();
   else if (pinnedState.pinned && !popup && !current) createView(null);
 });
@@ -107,11 +111,13 @@ let activeRequest: AbortController | undefined,
 let headerSignalRequest = 0;
 let lastUrl = location.href,
   hovered = false,
+  buttonOpened = false,
   dialog: HTMLDialogElement | undefined;
 function cancelClose() {
   clearTimeout(closeTimer);
 }
 function hide() {
+  buttonOpened = false;
   clearTimeout(openTimer);
   cancelClose();
   activeRequest?.abort();
@@ -121,7 +127,9 @@ function hide() {
   current = null;
 }
 function dismiss() {
+  const source = buttonOpened ? current : null;
   hide();
+  if (source) tooltipButtons.focus(source);
   pinnedState.pinned = false;
   void request<PopupState>({
     op: "popupLayout",
@@ -140,7 +148,7 @@ function checkUrl() {
 }
 function laterHide() {
   cancelClose();
-  if (popup?.isPinned) return;
+  if (popup?.isPinned || buttonOpened) return;
   closeTimer = setTimeout(() => {
     if (
       !popup?.isPinned &&
@@ -159,7 +167,12 @@ function options() {
 }
 async function show(context: CardContext, fresh = false) {
   await preferencesReady;
-  if (!settings.enabled || current !== context) return;
+  if (
+    !settings.enabled ||
+    current !== context ||
+    (!buttonOpened && tooltipButtons.showing(context))
+  )
+    return;
   activeRequest?.abort();
   const placement = popup?.pinnedPlacement();
   popup?.dispose();
@@ -304,17 +317,34 @@ function loadHeaderSignals(
     .catch(() => {});
 }
 function enter(target: Element) {
+  if (tooltipButtons.contains(target)) {
+    clearTimeout(openTimer);
+    cancelClose();
+    return;
+  }
   if (friendTooltip.contains(target)) {
     cancelClose();
     return;
   }
   if (target.closest(`#${HOST_ID}`)) {
+    if (
+      settings.outsideClickClosesTooltipOnly &&
+      popup &&
+      current !== popup.context
+    ) {
+      clearTimeout(openTimer);
+      current = popup.context;
+    }
     cancelClose();
     return;
   }
   const context = resolveCard(target);
   if (!context) {
     hovered = false;
+    return;
+  }
+  if (buttonOpened || tooltipButtons.showing(context)) {
+    clearTimeout(openTimer);
     return;
   }
   hovered = true;
@@ -325,13 +355,139 @@ function enter(target: Element) {
     current.anchor === context.anchor
   )
     return;
-  if (popup?.isPinned) clearTimeout(openTimer);
+  if (popup?.isPinned || (settings.outsideClickClosesTooltipOnly && popup))
+    clearTimeout(openTimer);
   else hide();
   current = context;
   openTimer = setTimeout(() => {
     if (current === context) void show(context);
   }, settings.hoverDelayMs);
 }
+function openFromButton(context: CardContext) {
+  clearTimeout(openTimer);
+  cancelClose();
+  if (
+    current &&
+    popup &&
+    current.anchor === context.anchor &&
+    contextKey(current) === contextKey(context)
+  ) {
+    dismiss();
+    return;
+  }
+  if (!popup?.isPinned) hide();
+  hovered = false;
+  buttonOpened = true;
+  current = context;
+  void show(context);
+}
+function insideTooltip(event: Event) {
+  return event
+    .composedPath()
+    .some(
+      (node) =>
+        node === popup?.host ||
+        (node instanceof Element && friendTooltip.contains(node)),
+    );
+}
+function closeOnlyOutside(event: Event) {
+  return (
+    settings.outsideClickClosesTooltipOnly &&
+    !!popup &&
+    !popup.isPinned &&
+    !insideTooltip(event)
+  );
+}
+function consumeDismissal(event: Event) {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}
+// Consume the entire press, including its later click after dismiss() removes the
+// tooltip. Otherwise links, native pointer handlers, and selection still fire.
+let outsidePress:
+  { pointerId: number; button: number; expires: number } | undefined;
+window.addEventListener(
+  "pointerdown",
+  (event) => {
+    outsidePress = undefined;
+    if (!closeOnlyOutside(event)) return;
+    outsidePress = {
+      pointerId: event.pointerId,
+      button: event.button,
+      expires: Infinity,
+    };
+    consumeDismissal(event);
+    dismiss();
+  },
+  { capture: true, passive: false },
+);
+for (const type of [
+  "pointerup",
+  "pointercancel",
+  "mousedown",
+  "mouseup",
+  "click",
+  "auxclick",
+  "contextmenu",
+]) {
+  window.addEventListener(
+    type,
+    (event) => {
+      if (outsidePress && Date.now() > outsidePress.expires)
+        outsidePress = undefined;
+      if (outsidePress) {
+        if (
+          event instanceof PointerEvent &&
+          type.startsWith("pointer") &&
+          event.pointerId !== outsidePress.pointerId
+        )
+          return;
+        if (
+          event instanceof MouseEvent &&
+          type !== "pointercancel" &&
+          event.button !== outsidePress.button
+        )
+          return;
+        consumeDismissal(event);
+        if (
+          ["click", "auxclick", "contextmenu", "pointercancel"].includes(type)
+        )
+          outsidePress = undefined;
+        else if (type === "pointerup") outsidePress.expires = Date.now() + 1000;
+      } else if (
+        ["click", "auxclick"].includes(type) &&
+        closeOnlyOutside(event)
+      ) {
+        // Keyboard/synthetic activation can arrive without a pointerdown.
+        consumeDismissal(event);
+        dismiss();
+      }
+    },
+    { capture: true, passive: false },
+  );
+}
+window.addEventListener("blur", () => {
+  outsidePress = undefined;
+});
+document.addEventListener(
+  "pointerdown",
+  (event) => {
+    if (!buttonOpened || popup?.isPinned) return;
+    if (
+      event
+        .composedPath()
+        .some(
+          (node) =>
+            (node instanceof Element && tooltipButtons.contains(node)) ||
+            node === popup?.host ||
+            (node instanceof Element && friendTooltip.contains(node)),
+        )
+    )
+      return;
+    dismiss();
+  },
+  true,
+);
 document.addEventListener(
   "pointerover",
   (event) => {
@@ -458,6 +614,10 @@ observePage(() => {
     return;
   }
   if (contextKey(next) !== contextKey(current)) {
+    if (settings.useOverlayButtonInsteadOfHover) {
+      navigationAway();
+      return;
+    }
     if (popup?.isPinned) {
       current = next;
       void show(next);
@@ -494,12 +654,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
       loadHeaderSignals(popup, current, activeRequest.signal);
   }
   if (area === "local" && changes[SETTINGS_KEY]) {
+    const previousOverlayMode = settings.useOverlayButtonInsteadOfHover;
     settings = parseSettings(changes[SETTINGS_KEY].newValue);
+    if (previousOverlayMode !== settings.useOverlayButtonInsteadOfHover)
+      navigationAway();
     friendTooltip.setSettings(settings);
     navigationHotkeys.settingsChanged();
     overlays.setSettings(settings);
     salesOverlays.setSettings(settings);
     fusionFamily.setSettings(settings);
+    tooltipButtons.setSettings(settings);
     if (!settings.enabled) hide();
     else if (popup) {
       popup.setSettings(settings);

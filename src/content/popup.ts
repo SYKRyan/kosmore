@@ -1,5 +1,6 @@
-import { pinIcon } from "./icons";
+import { headerIcon, pinIcon } from "./icons";
 import css from "./popup.css?inline";
+import headerCss from "./tooltip-header-buttons.css?inline";
 import statCss from "./stat-box.css?inline";
 import { defaults } from "../shared/settings";
 import {
@@ -155,13 +156,13 @@ export class Popup {
     );
     this.host.toggleAttribute("data-empty", !context);
     const style = el("style");
-    style.textContent = statCss + css + SIGNAL_BADGE_CSS;
+    style.textContent = statCss + css + headerCss + SIGNAL_BADGE_CSS;
     this.shadow.append(style);
     const top = el("header", "top"),
       actions = el("div", "actions");
     actions.append(
       button(
-        "Refresh",
+        "",
         () =>
           this.selectedTab === "trade"
             ? this.refreshTrade(true)
@@ -171,8 +172,15 @@ export class Popup {
         "icon refresh-button",
       ),
       this.pinButton,
-      button("×", onClose, "icon"),
+      button("", onClose, "icon"),
     );
+    const refreshButton = actions.firstElementChild as HTMLButtonElement;
+    refreshButton.append(headerIcon("refresh"));
+    refreshButton.setAttribute("aria-label", "Refresh");
+    refreshButton.title = "Refresh";
+    actions.lastElementChild!.append(headerIcon("close"));
+    (actions.lastElementChild as HTMLButtonElement).title =
+      "Close KosMore popup";
     this.pinButton.append(pinIcon());
     this.renderPin();
     this.enableDragging(top);

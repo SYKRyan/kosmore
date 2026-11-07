@@ -85,6 +85,28 @@ it("handles unknown schemas and bounds the delay", () => {
     parseSettings({ schemaVersion: 1, hoverDelayMs: 0 }).hoverDelayMs,
   ).toBe(100);
 });
+it("keeps the tooltip overlay button opt-in for new and old settings", () => {
+  expect(parseSettings(undefined).useOverlayButtonInsteadOfHover).toBe(false);
+  expect(
+    parseSettings({ schemaVersion: 1 }).useOverlayButtonInsteadOfHover,
+  ).toBe(false);
+  for (const value of [true, false, "true", 1, null])
+    expect(
+      parseSettings({ schemaVersion: 1, useOverlayButtonInsteadOfHover: value })
+        .useOverlayButtonInsteadOfHover,
+    ).toBe(value === true);
+});
+it("keeps consuming outside tooltip clicks off by default and accepts only booleans", () => {
+  expect(parseSettings(undefined).outsideClickClosesTooltipOnly).toBe(false);
+  expect(
+    parseSettings({ schemaVersion: 1 }).outsideClickClosesTooltipOnly,
+  ).toBe(false);
+  for (const value of [true, false, "true", 1, null])
+    expect(
+      parseSettings({ schemaVersion: 1, outsideClickClosesTooltipOnly: value })
+        .outsideClickClosesTooltipOnly,
+    ).toBe(value === true);
+});
 it("defaults overlay prices on and preserves independent price choices when their parent icons are disabled", () => {
   for (const key of [
     "showLastSalePriceOverlay",

@@ -91,6 +91,8 @@ export interface OpeningCard {
 export interface Settings {
   schemaVersion: 1;
   enabled: boolean;
+  useOverlayButtonInsteadOfHover: boolean;
+  outsideClickClosesTooltipOnly: boolean;
   profileRemindersEnabled: boolean;
   profileRemindersPinned: boolean;
   tradeRemindersEnabled: boolean;

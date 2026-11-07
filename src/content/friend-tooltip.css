@@ -68,38 +68,6 @@ h2 {
   color: #f5e5bb;
   letter-spacing: -0.015em;
 }
-.top button {
-  border: 1px solid #cab4ff25;
-  border-radius: 7px;
-  background: #ffffff06;
-  padding: 3px 7px;
-  font-size: 11px;
-}
-.top button:hover {
-  background: #cab4ff18;
-  border-color: #cab4ff55;
-}
-.top .close {
-  font-size: 18px;
-  line-height: 20px;
-  padding: 0 6px;
-}
-.top .pin {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 5px;
-  border-radius: 8px;
-  border-color: #78628b;
-  color: #f3dfb0;
-  background: #2b2140;
-}
-.top .pin[aria-pressed="true"] {
-  border-color: #dec17f;
-  color: #21182f;
-  background: #dec17f;
-}
 .body {
   min-height: 0;
   flex: 1;

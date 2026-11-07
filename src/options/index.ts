@@ -71,11 +71,55 @@ general.append(
   el(
     "p",
     "sub",
-    "Pin to keep the tooltip open across pages in this tab. Drag the header to move it, or any edge or corner to resize. Position and size save automatically. New pages show No Card Selected until you hover a card. Unpin to open beside cards again.",
+    "Pin to keep the tooltip open across pages in this tab. Drag the header to move it, or any edge or corner to resize. Position and size save automatically. New pages show No Card Selected until you hover a card or press its overlay button. Unpin to open beside cards again.",
   ),
 );
 const enabled = sectionToggle(general, "enabled", "Enable card hover tooltips");
 general.append(el("div", "rule"));
+const useOverlayButton = el("input");
+useOverlayButton.type = "checkbox";
+useOverlayButton.id = "use-overlay-button-instead-of-hover";
+const useOverlayButtonLabel = el(
+  "label",
+  "label settings-toggle",
+  "Use Overlay Button Instead of Hover",
+);
+useOverlayButtonLabel.prepend(useOverlayButton);
+const useOverlayButtonRow = el("div", "row");
+useOverlayButtonRow.append(
+  useOverlayButtonLabel,
+  el(
+    "span",
+    "hint",
+    "Press the round Kosmora button at the bottom-left corner of a card to open its tooltip. Hover is disabled on cards showing the button. Tapped tooltips stay open until dismissed. Useful on touch screens.",
+  ),
+);
+general.append(useOverlayButtonRow, el("div", "rule"));
+useOverlayButton.addEventListener("change", () => {
+  draft.useOverlayButtonInsteadOfHover = useOverlayButton.checked;
+});
+const outsideClickOnly = el("input");
+outsideClickOnly.type = "checkbox";
+outsideClickOnly.id = "outside-click-closes-tooltip-only";
+const outsideClickLabel = el(
+  "label",
+  "label settings-toggle",
+  "Outside Click Closes Tooltip Only",
+);
+outsideClickLabel.prepend(outsideClickOnly);
+const outsideClickRow = el("div", "row");
+outsideClickRow.append(
+  outsideClickLabel,
+  el(
+    "span",
+    "hint",
+    "When the tooltip is unpinned, an outside click or tap closes it without opening a card, changing selection, or activating the control underneath. The next click works normally. Pinned tooltips keep their normal behavior.",
+  ),
+);
+general.append(outsideClickRow, el("div", "rule"));
+outsideClickOnly.addEventListener("change", () => {
+  draft.outsideClickClosesTooltipOnly = outsideClickOnly.checked;
+});
 const closeAfterAlbumAdd = el("input");
 closeAfterAlbumAdd.type = "checkbox";
 closeAfterAlbumAdd.id = "close-tooltip-when-added-to-album";
@@ -390,7 +434,7 @@ const fusionFamilyOverlay = overlayToggle(
 );
 const tradeFamilyOverlay = overlayToggle(
   "trade-family-overlay",
-  "Show family impact when choosing your trade card",
+  "Show family impact on the Trade page",
   "Bottom left of your card choices · ✓ Safe: you keep every family tier · ⚠ Loses: trading your last copy drops a family tier. Uses the same family checks as Fusion.",
   (checked) => {
     draft.showTradeFamilyOverlay = checked;
@@ -528,6 +572,8 @@ groupControls({
   name: "tooltip settings",
   keys: [
     "enabled",
+    "useOverlayButtonInsteadOfHover",
+    "outsideClickClosesTooltipOnly",
     "closeTooltipWhenAddedToAlbum",
     "applyCloseBehaviorToPinnedTooltips",
     "hoverDelayMs",
@@ -734,6 +780,8 @@ function renderSettings() {
   statsEnabled.checked = draft.statBoxesEnabled;
   albumsEnabled.checked = draft.pinnedAlbumsEnabled;
   enabled.checked = draft.enabled;
+  useOverlayButton.checked = draft.useOverlayButtonInsteadOfHover;
+  outsideClickOnly.checked = draft.outsideClickClosesTooltipOnly;
   closeAfterAlbumAdd.checked = draft.closeTooltipWhenAddedToAlbum;
   applyCloseToPinned.checked = draft.applyCloseBehaviorToPinnedTooltips;
   applyCloseToPinned.disabled = !draft.closeTooltipWhenAddedToAlbum;

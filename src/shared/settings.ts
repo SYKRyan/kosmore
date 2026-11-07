@@ -7,6 +7,8 @@ export const SETTINGS_KEY = "kosmore.settings";
 export const defaults = (): Settings => ({
   schemaVersion: 1,
   enabled: true,
+  useOverlayButtonInsteadOfHover: false,
+  outsideClickClosesTooltipOnly: false,
   profileRemindersEnabled: true,
   profileRemindersPinned: false,
   tradeRemindersEnabled: true,
@@ -67,6 +69,8 @@ export function parseSettings(value: unknown): Settings {
   d.friendTooltipPosition = parsePopupPosition(v.friendTooltipPosition);
   if (typeof v.enabled === "boolean") d.enabled = v.enabled;
   for (const key of [
+    "useOverlayButtonInsteadOfHover",
+    "outsideClickClosesTooltipOnly",
     "profileRemindersEnabled",
     "profileRemindersPinned",
     "tradeRemindersEnabled",

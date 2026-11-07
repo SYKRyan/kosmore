@@ -6,6 +6,7 @@ import {
   type Page,
   type Route,
   type Worker,
+  type Locator,
 } from "@playwright/test";
 import { mkdtemp, rm, mkdir } from "node:fs/promises";
 import { resolve, dirname, basename } from "node:path";
@@ -261,6 +262,552 @@ test.afterAll(async () => {
     )
       throw new Error("Unexpected browser profile path.");
     await rm(target, { recursive: true, force: true });
+  }
+});
+
+async function enableTooltipButtons() {
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as Record<string, unknown>;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        useOverlayButtonInsteadOfHover: true,
+        cardOverlaysEnabled: false,
+      },
+    });
+  });
+}
+const tooltipButtonLayer = () => page.locator("[data-kosmore-tooltip-buttons]");
+const tooltipButton = (name = "Northern Lights") =>
+  tooltipButtonLayer().getByRole("button", {
+    name: `Open card tooltip for ${name}`,
+    exact: true,
+  });
+
+test("overlay button: setting defaults off, cancels drafts, saves independently, and follows the tooltip master", async () => {
+  await page.goto("https://kosmora.io/collection");
+  await expect(tooltipButtonLayer()).toHaveCount(0);
+  const options = await context.newPage();
+  try {
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#hover-tooltip`,
+    );
+    const group = options.locator("#hover-tooltip"),
+      toggle = group.getByLabel("Use Overlay Button Instead of Hover", {
+        exact: true,
+      });
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await group
+      .getByRole("button", {
+        name: "Cancel tooltip settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await group
+      .getByRole("button", { name: "Save tooltip settings", exact: true })
+      .click();
+    await expect(tooltipButton()).toBeVisible();
+    await options.reload();
+    await expect(toggle).toBeChecked();
+    await group
+      .getByRole("switch", { name: "Enable card hover tooltips", exact: true })
+      .uncheck();
+    await expect(tooltipButtonLayer()).toHaveCount(0);
+    await expect(toggle).toBeDisabled();
+    await group
+      .getByRole("switch", { name: "Enable card hover tooltips", exact: true })
+      .check();
+    await expect(tooltipButton()).toBeVisible();
+    await toggle.uncheck();
+    await group
+      .getByRole("button", { name: "Save tooltip settings", exact: true })
+      .click();
+    await expect(tooltipButtonLayer()).toHaveCount(0);
+    await page.locator(".kc-article").hover();
+    await expect(page.locator("#kosmore-root")).toBeVisible();
+  } finally {
+    await options.close();
+  }
+});
+
+test("overlay button: hover and focus wait for a press, recap copies stay exact, and native controls remain independent", async () => {
+  await enableTooltipButtons();
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await expect(tooltipButton()).toHaveCount(2);
+  await expect(tooltipButton().first()).toBeVisible();
+  await page.locator(".ko-grid-open").nth(1).hover();
+  await tooltipButton().nth(1).focus();
+  await page.waitForTimeout(200);
+  await expect(page.locator("#kosmore-root")).toHaveCount(0);
+  await tooltipButton().nth(1).press("Enter");
+  const popup = page.locator("#kosmore-root");
+  await expect(popup).toContainText("Northern Lights");
+  await expect(popup.locator("select")).toHaveValue(COPY_B);
+  await page.mouse.move(1400, 950);
+  await page.waitForTimeout(300);
+  await expect(popup).toBeVisible();
+  expect(await page.locator("body").getAttribute("data-opens")).toBe("0");
+  await popup
+    .getByRole("button", { name: "Close KosMore popup", exact: true })
+    .click();
+  await expect(tooltipButton().nth(1)).toBeFocused();
+  await page.locator(".ko-grid-open").first().click();
+  expect(await page.locator("body").getAttribute("data-opens")).toBe("1");
+});
+
+test("overlay button: touch opens a linked card without navigation, overlaps its corner, and dismisses on outside tap", async () => {
+  await enableTooltipButtons();
+  const phone = await context.newPage();
+  await phone.setViewportSize({ width: 390, height: 844 });
+  const touch = await context.newCDPSession(phone);
+  await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+  const tap = async (target: Locator) => {
+    const box = (await target.boundingBox())!;
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }],
+    });
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+  };
+  try {
+    await phone.goto("https://kosmora.io/collection");
+    // Keep the existing native card fully visible on this narrow fixture.
+    await phone.locator("a").evaluate((e) => (e.style.margin = "16px"));
+    const button = phone.locator("[data-kosmore-tooltip-buttons] button"),
+      card = phone.locator(".kc-article");
+    await expect(button).toBeVisible();
+    const bounds = (await button.boundingBox())!,
+      faceBounds = (await card.boundingBox())!;
+    expect(
+      Math.abs(bounds.x + bounds.width / 2 - (faceBounds.x + 8)),
+    ).toBeLessThan(1);
+    expect(
+      Math.abs(
+        bounds.y + bounds.height / 2 - (faceBounds.y + faceBounds.height - 8),
+      ),
+    ).toBeLessThan(1);
+    expect(bounds.x).toBeLessThan(faceBounds.x);
+    expect(bounds.y + bounds.height).toBeGreaterThan(
+      faceBounds.y + faceBounds.height,
+    );
+    const img = button.locator("img");
+    await expect(img).toHaveJSProperty("complete", true);
+    expect(
+      await img.evaluate((e) => (e as HTMLImageElement).naturalWidth),
+    ).toBeGreaterThan(0);
+    await mkdir("test-results/screenshots", { recursive: true });
+    await phone.screenshot({
+      path: "test-results/screenshots/tooltip-button-phone.png",
+    });
+    await tap(button);
+    await expect(phone.locator("#kosmore-root")).toContainText(
+      "Northern Lights",
+    );
+    expect(new URL(phone.url()).pathname).toBe("/collection");
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: 2, y: 2 }],
+    });
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+    await expect(phone.locator("#kosmore-root")).toHaveCount(0);
+  } finally {
+    await phone.close();
+  }
+});
+
+test("overlay button: native multi-select and dialog pickers are not selected by tooltip presses", async () => {
+  await enableTooltipButtons();
+  await page.route("https://kosmora.io/collection", (route) =>
+    route.fulfill({ contentType: "text/html", body: multiSelectFixture() }),
+  );
+  await page.goto("https://kosmora.io/collection");
+  await expect(tooltipButton()).toBeVisible();
+  await page.locator(".kc-link").first().dispatchEvent("pointerdown");
+  await expect(page.locator(".pick-hit")).toHaveCount(2);
+  await expect(tooltipButton()).toBeVisible();
+  await tooltipButton().click();
+  await expect(page.locator("#kosmore-root")).toContainText("Northern Lights");
+  await expect(page.locator(".pick-hit").first()).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.locator(".pick-hit").nth(1)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  await page.keyboard.press("Escape");
+  sellMany = true;
+  await page.goto("https://kosmora.io/market");
+  await expect(tooltipButton()).toBeVisible();
+  await tooltipButton().click();
+  await expect(page.locator("#kosmore-root")).toContainText("Northern Lights");
+  await expect(page.locator("dialog")).toBeVisible();
+  await expect(page.locator(".pick-hit[aria-pressed=true]")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog")).toBeVisible();
+  await expect(tooltipButton()).toBeFocused();
+  await page.unroute("https://kosmora.io/collection");
+});
+
+test("overlay button: follows replaced cards and scroll clipping without changing native layout", async () => {
+  await enableTooltipButtons();
+  await page.goto("https://kosmora.io/collection");
+  await expect(tooltipButton()).toBeVisible();
+  await page.locator("a").evaluate((e) => {
+    const clip = document.createElement("div");
+    clip.id = "clip";
+    clip.style.cssText = "height:160px;overflow:auto;width:350px";
+    e.before(clip);
+    clip.append(e);
+  });
+  await expect(tooltipButton()).toBeHidden();
+  await page.locator("#clip").evaluate((e) => (e.scrollTop = e.scrollHeight));
+  await expect(tooltipButton()).toBeVisible();
+  await page
+    .locator("a")
+    .evaluate(
+      (e, html) =>
+        (e.outerHTML = `<a href="/card/46" style="display:block;width:270px;margin:30px">${html}</a>`),
+      face("46", "Andromeda"),
+    );
+  await expect(tooltipButton()).toHaveCount(0);
+  await expect(tooltipButton("Andromeda")).toBeVisible();
+  await tooltipButton("Andromeda").click();
+  await expect(page.locator("#kosmore-root")).toContainText("Andromeda");
+  await page.locator("#clip > a").evaluate((e) => e.remove());
+  await expect(tooltipButton("Andromeda")).toHaveCount(0);
+  await expect(page.locator("#kosmore-root")).toHaveCount(0);
+});
+
+test("overlay button: pinned details change only on a press and reveal buttons never advance the pack", async () => {
+  await enableTooltipButtons();
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await tooltipButton().first().click();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await page.locator(".ko-grid-open").nth(3).hover();
+  await page.waitForTimeout(200);
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  await tooltipButton("Andromeda").click();
+  await expect(popup.locator("h2")).toHaveText("Andromeda");
+  await expect(popup).toHaveAttribute("data-pinned", "");
+  await page.keyboard.press("Escape");
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}`);
+  await tooltipButton().click();
+  await expect(popup).toContainText("Northern Lights");
+  await expect(page.locator("body")).toHaveAttribute("data-advances", "0");
+  await page.keyboard.press("Escape");
+  await page.locator(".ko-card").click();
+  await expect(page.locator("body")).toHaveAttribute("data-advances", "1");
+});
+
+test("overlay button: stays attached through synchronous nested scrolling without waiting for a frame", async () => {
+  await enableTooltipButtons();
+  await page.goto("https://kosmora.io/collection");
+  await expect(tooltipButton()).toBeVisible();
+  await page.locator("a").evaluate((link) => {
+    const scroller = document.createElement("div"),
+      content = document.createElement("div");
+    scroller.id = "glued-scroll";
+    scroller.style.cssText = "width:450px;height:450px;overflow:auto";
+    content.style.cssText =
+      "box-sizing:border-box;width:900px;height:1600px;padding:120px;position:relative";
+    link.before(scroller);
+    scroller.append(content);
+    content.append(link);
+    link.style.margin = "0";
+  });
+  await expect(tooltipButton()).toBeVisible();
+  await expect(
+    page.locator("#glued-scroll [data-kosmore-tooltip-buttons]"),
+  ).toHaveCount(1);
+  const offsets = await page.evaluate(() => {
+    const scroller = document.querySelector<HTMLElement>("#glued-scroll")!;
+    const card = document.querySelector(".kc-article")!;
+    const host = document.querySelector("[data-kosmore-tooltip-buttons]")!;
+    const button = host.shadowRoot!.querySelector("button")!;
+    const values = [];
+    for (const amount of [0, 37, 80, 15, 55, 0]) {
+      // All samples happen in one JS task, before any scroll/animation callback.
+      scroller.scrollTop = amount;
+      scroller.scrollLeft = amount / 2;
+      const face = card.getBoundingClientRect(),
+        rect = button.getBoundingClientRect();
+      values.push({
+        x: rect.left + rect.width / 2 - face.left,
+        y: rect.top + rect.height / 2 - face.bottom,
+      });
+    }
+    return values;
+  });
+  for (const offset of offsets) {
+    expect(Math.abs(offset.x - 8)).toBeLessThan(1);
+    expect(Math.abs(offset.y + 8)).toBeLessThan(1);
+  }
+});
+
+test("overlay button: many-sale cards use the listing-box corner and leave price and copy controls unchanged", async () => {
+  await enableTooltipButtons();
+  await page.goto("https://kosmora.io/market/sell/batch");
+  const rows = page.locator(".bsell-row"),
+    first = tooltipButton(),
+    second = tooltipButton("Andromeda");
+  await expect(tooltipButtonLayer()).toHaveCount(2);
+  await expect(first).toBeVisible();
+  await expect(second).toBeVisible();
+  await expect(
+    rows.locator(".kc-article [data-kosmore-tooltip-buttons]"),
+  ).toHaveCount(0);
+  const box = (await rows.first().boundingBox())!,
+    rect = (await first.boundingBox())!;
+  expect(Math.abs(rect.x + rect.width / 2 - (box.x + 8))).toBeLessThan(1);
+  expect(
+    Math.abs(rect.y + rect.height / 2 - (box.y + box.height - 8)),
+  ).toBeLessThan(1);
+  await rows.first().locator(".bsell-name").hover();
+  await page.waitForTimeout(200);
+  await expect(page.locator("#kosmore-root")).toHaveCount(0);
+  await first.click();
+  await expect(page.locator("#kosmore-root")).toContainText("Northern Lights");
+  await expect(page.locator("body")).toHaveAttribute("data-copy-clicks", "0");
+  await expect(
+    page.getByLabel("Starting price for Northern Lights", { exact: true }),
+  ).toHaveValue("12.00");
+  await page.keyboard.press("Escape");
+  await second.click();
+  await expect(page.locator("#kosmore-root")).toContainText("Andromeda");
+  await page.keyboard.press("Escape");
+  await mkdir("test-results/screenshots", { recursive: true });
+  await page.screenshot({
+    path: "test-results/screenshots/tooltip-buttons-many-sale.png",
+  });
+  await page
+    .getByRole("button", {
+      name: "Choose copy of Northern Lights",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator("body")).toHaveAttribute("data-copy-clicks", "1");
+  await page
+    .getByRole("button", { name: "Remove Northern Lights", exact: true })
+    .click();
+  await expect(first).toHaveCount(0);
+  await expect(second).toBeVisible();
+});
+
+test("outside dismissal: preference defaults off, cancels, saves and applies to an open game tab", async () => {
+  await enableTooltipButtons();
+  await page.goto("https://kosmora.io/collection");
+  await tooltipButton().click();
+  // The default preserves the existing click-through behavior.
+  await page.locator('a[href="/card/42"]').click();
+  await expect(page).toHaveURL("https://kosmora.io/card/42");
+  const options = await context.newPage();
+  try {
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#hover-tooltip`,
+    );
+    const group = options.locator("#hover-tooltip"),
+      toggle = group.getByLabel("Outside Click Closes Tooltip Only", {
+        exact: true,
+      });
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await group
+      .getByRole("button", {
+        name: "Cancel tooltip settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await group
+      .getByRole("button", { name: "Save tooltip settings", exact: true })
+      .click();
+    await expect(group.getByRole("status")).toContainText("Saved.");
+    await options.reload();
+    await expect(toggle).toBeChecked();
+    await mkdir("test-results/screenshots", { recursive: true });
+    await group.screenshot({
+      path: "test-results/screenshots/outside-click-settings.png",
+    });
+    await page.goto("https://kosmora.io/collection");
+    await tooltipButton().click();
+    await expect(page.locator("#kosmore-root")).toBeVisible();
+    await page.locator('a[href="/card/42"]').click();
+    await expect(page.locator("#kosmore-root")).toHaveCount(0);
+    await expect(page).toHaveURL("https://kosmora.io/collection");
+    await page.locator('a[href="/card/42"]').click();
+    await expect(page).toHaveURL("https://kosmora.io/card/42");
+  } finally {
+    await options.close();
+  }
+});
+
+test("outside dismissal: hover tooltips consume a dismissal click while pinned tooltips retain native navigation", async () => {
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as Record<string, unknown>;
+    await chrome.storage.local.set({
+      "kosmore.settings": { ...settings, outsideClickClosesTooltipOnly: true },
+    });
+  });
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  await expect(page.locator("#kosmore-root")).toBeVisible();
+  await page.locator('a[href="/card/42"]').click();
+  await expect(page.locator("#kosmore-root")).toHaveCount(0);
+  await expect(page).toHaveURL("https://kosmora.io/collection");
+  await page.mouse.move(10, 10);
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await page.locator('a[href="/card/42"]').click();
+  await expect(page).toHaveURL("https://kosmora.io/card/42");
+  await expect(popup).toHaveAttribute("data-pinned", "");
+});
+
+test("outside dismissal: moving to another card does not allow a quick dismissal click to activate it", async () => {
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as Record<string, unknown>;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        outsideClickClosesTooltipOnly: true,
+        hoverDelayMs: 500,
+      },
+    });
+  });
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await page.locator(".ko-grid-open").first().hover();
+  await expect(page.locator("#kosmore-root")).toBeVisible();
+  const other = page.locator(".ko-grid-open").nth(3);
+  await other.hover();
+  await page.locator("#kosmore-root").hover();
+  await page.waitForTimeout(550);
+  await expect(page.locator("#kosmore-root h2")).toHaveText("Northern Lights");
+  await other.click();
+  await expect(page.locator("#kosmore-root")).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-opens", "0");
+  await other.click();
+  await expect(page.locator("body")).toHaveAttribute("data-opens", "1");
+});
+
+test("outside dismissal: unpinned tooltips consume native multi-select presses and pinned ones permit them", async () => {
+  await enableTooltipButtons();
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as Record<string, unknown>;
+    await chrome.storage.local.set({
+      "kosmore.settings": { ...settings, outsideClickClosesTooltipOnly: true },
+    });
+  });
+  await page.route("https://kosmora.io/collection", (route) =>
+    route.fulfill({ contentType: "text/html", body: multiSelectFixture() }),
+  );
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await page.locator(".kc-link").first().dispatchEvent("pointerdown");
+    await expect(page.locator(".pick-hit")).toHaveCount(2);
+    await tooltipButton().click();
+    await expect(page.locator("#kosmore-root")).toBeVisible();
+    await page.evaluate(() => {
+      document.body.dataset.outsideDowns = "0";
+      document.addEventListener(
+        "pointerdown",
+        () => {
+          document.body.dataset.outsideDowns = String(
+            Number(document.body.dataset.outsideDowns) + 1,
+          );
+        },
+        true,
+      );
+    });
+    const pick = page.locator(".pick-hit").first();
+    await pick.click();
+    await expect(page.locator("#kosmore-root")).toHaveCount(0);
+    await expect(pick).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("body")).toHaveAttribute(
+      "data-outside-downs",
+      "0",
+    );
+    await pick.click();
+    await expect(pick).toHaveAttribute("aria-pressed", "false");
+    await tooltipButton().click();
+    const popup = page.locator("#kosmore-root");
+    await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+    await pick.click();
+    await expect(pick).toHaveAttribute("aria-pressed", "true");
+    await expect(popup).toHaveAttribute("data-pinned", "");
+  } finally {
+    await page.unroute("https://kosmora.io/collection");
+  }
+});
+
+test("outside dismissal: touch dismisses without following the underlying card link and the next tap works", async () => {
+  await enableTooltipButtons();
+  await worker.evaluate(async () => {
+    const settings = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as Record<string, unknown>;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...settings,
+        outsideClickClosesTooltipOnly: true,
+        popupHeight: 480,
+      },
+    });
+  });
+  const phone = await context.newPage();
+  try {
+    await phone.setViewportSize({ width: 390, height: 844 });
+    const touch = await context.newCDPSession(phone);
+    await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+    const tap = async (x: number, y: number) => {
+      await touch.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ x, y }],
+      });
+      await touch.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+      });
+    };
+    await phone.goto("https://kosmora.io/collection");
+    await phone.locator(".kc-img").evaluate((e) => (e.style.height = "550px"));
+    const button = phone.locator("[data-kosmore-tooltip-buttons] button");
+    await expect(button).toBeVisible();
+    const trigger = (await button.boundingBox())!;
+    await tap(trigger.x + trigger.width / 2, trigger.y + trigger.height / 2);
+    const popup = phone.locator("#kosmore-root");
+    await expect(popup).toBeVisible();
+    const card = (await phone.locator(".kc-article").boundingBox())!,
+      bounds = (await popup.boundingBox())!;
+    const x = card.x + card.width / 2,
+      y = card.y + card.height - 40;
+    expect(y).toBeGreaterThan(bounds.y + bounds.height);
+    await tap(x, y);
+    await expect(popup).toHaveCount(0);
+    await expect(phone).toHaveURL("https://kosmora.io/collection");
+    await tap(x, y);
+    await expect(phone).toHaveURL("https://kosmora.io/card/42");
+  } finally {
+    await phone.close();
   }
 });
 

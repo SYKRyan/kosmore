@@ -35,15 +35,6 @@
 :host([data-dragging]) .top {
   cursor: grabbing;
 }
-.pin-button {
-  display: grid;
-  place-items: center;
-}
-.pin-button[aria-pressed="true"] {
-  color: #ffe8af;
-  background: #48344e;
-  border-color: #d4b875;
-}
 :host([data-pinned]) {
   animation: none;
 }
@@ -327,11 +318,6 @@ button.link {
   border: 0;
   color: #dfbf79;
   padding: 0;
-}
-button.icon {
-  padding: 7px 10px;
-  color: #c3b9d6;
-  border-color: #443852;
 }
 select {
   width: 100%;
