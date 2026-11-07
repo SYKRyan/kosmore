@@ -10,6 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launchTestBrowser } from "./browser";
 import { tradeFixture } from "../fixtures/trade";
+import {
+  familyMilestones,
+  myFamilies,
+  fusionMembership,
+} from "../fixtures/fusion";
+import { card } from "../fixtures/data";
 
 let context: BrowserContext, page: Page, worker: Worker, profile: string;
 let account = "FixturePlayer",
@@ -22,7 +28,7 @@ const badges = () => page.locator('[data-kosmore-trade="families"]');
 const reminder = (families: string[]) => ({
   schemaVersion: 1,
   families,
-  notes: "Private note",
+  notes: families.length ? "Private note" : "",
 });
 const row = (id: string, rarity: string, quantity: number) => ({
   card: { subjectId: id, rarity },
@@ -47,6 +53,13 @@ test.beforeAll(async () => {
   await context.route("https://kosmora.io/**", async (route) => {
     const url = new URL(route.request().url());
     if (route.request().method() !== "GET") writes++;
+    if (url.pathname.startsWith("/media/cards/")) {
+      await route.fulfill({
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="250"><rect width="400" height="250" fill="#273951"/><circle cx="280" cy="90" r="55" fill="#9b7dc4"/><circle cx="85" cy="55" r="3" fill="#fff"/></svg>',
+      });
+      return;
+    }
     if (!url.pathname.startsWith("/api/")) {
       await route.fulfill({ contentType: "text/html", body: tradeFixture() });
       return;
@@ -76,6 +89,42 @@ test.beforeAll(async () => {
               ],
           nextCursor: !zero && films && !next ? "page2" : null,
         },
+      });
+      return;
+    }
+    if (url.pathname.startsWith("/api/collection/")) {
+      const id = url.pathname.split("/").at(-1)!;
+      const detail = card(id);
+      // 304 is a spare, 307 drops its secondary family; 305 is non-economic.
+      await route.fulfill({
+        json: {
+          ...detail,
+          copies:
+            id === "304"
+              ? [
+                  ...detail.copies,
+                  {
+                    ...detail.copies[0],
+                    id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                    state: "locked",
+                    veil: true,
+                  },
+                ]
+              : detail.copies.slice(0, 1),
+          families:
+            id === "305"
+              ? [{ id: "animals.parrots", name: "Parrots", economic: false }]
+              : (fusionMembership[id] ?? []),
+        },
+      });
+      return;
+    }
+    if (
+      url.pathname === "/api/families" ||
+      url.pathname === "/api/me/families"
+    ) {
+      await route.fulfill({
+        json: url.pathname === "/api/families" ? familyMilestones : myFamilies,
       });
       return;
     }
@@ -466,7 +515,8 @@ test("trade settings follow Profile, save independently, cancel drafts, and upda
     await group.getByLabel("Use rarity symbols", { exact: true }).uncheck();
     await save.click();
     await expect(group.getByRole("status")).toContainText("Saved.");
-    await expect(badges()).toBeHidden();
+    await expect(badges().locator(".family-badge")).toHaveCount(0);
+    await expect(badges().locator(".notes-badge")).toBeVisible();
     await expect(summary().locator("svg")).toHaveCount(0);
     await expect(summary().locator('[data-rarity="Common"]')).toHaveText(
       "Common× 50",
@@ -573,5 +623,276 @@ test("ignores late collection results after changing to a player with no saved f
     await expect(summary().locator(".rarity-count")).toHaveCount(0);
   } finally {
     release();
+  }
+});
+
+test("notes follow families, open on tap, preserve plain text, pin inline, and unpin across steps", async () => {
+  const notes = "Prefers shiny cards.\n<script>Private & read-only</script>";
+  await worker.evaluate(
+    (notes) =>
+      chrome.storage.local.set({
+        "kosmore.friend.fixtureplayer.batu": {
+          schemaVersion: 1,
+          families: ["Films"],
+          notes,
+        },
+      }),
+    notes,
+  );
+  await page.goto("https://kosmora.io/trades/new?friend=batu");
+  const trigger = badges().getByRole("button", {
+    name: "Notes for batu",
+    exact: true,
+  });
+  const popup = page.locator('[data-kosmore-trade="notes"]');
+  expect(
+    await trigger.evaluate((e) => e.previousElementSibling?.textContent),
+  ).toBe("Films");
+  await trigger.click();
+  await expect(popup.locator(".notes-text")).toHaveText(notes);
+  await expect(popup.locator("script,textarea,input")).toHaveCount(0);
+  await popup
+    .getByRole("button", { name: "Close trade notes", exact: true })
+    .click();
+  await expect(popup).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await popup
+    .getByRole("button", { name: "Pin trade notes", exact: true })
+    .click();
+  await expect(popup).toHaveCount(0);
+  await expect(badges().locator(".trade-notes-inline .notes-text")).toHaveText(
+    notes,
+  );
+  expect(
+    (await badges().boundingBox())!.y + (await badges().boundingBox())!.height,
+  ).toBeLessThanOrEqual((await summary().boundingBox())!.y);
+  await page
+    .getByRole("button", { name: "Choose Northern Lights", exact: true })
+    .click();
+  await expect(badges().locator(".trade-notes-inline")).toBeVisible();
+  await mkdir("test-results/screenshots", { recursive: true });
+  await page.screenshot({
+    path: "test-results/screenshots/trade-notes-pinned.png",
+  });
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(badges().locator(".trade-notes-inline .notes-text")).toHaveText(
+    notes,
+  );
+  await badges()
+    .getByRole("button", { name: "Unpin trade notes", exact: true })
+    .click();
+  await expect(badges().locator(".trade-notes-inline")).toBeHidden();
+  await badges()
+    .getByRole("button", { name: "Notes for batu", exact: true })
+    .click();
+  await expect(popup).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+});
+
+test("notes without families stay available, update from storage, and clear when the friend changes", async () => {
+  await worker.evaluate(() =>
+    chrome.storage.local.set({
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        families: [],
+        notes: "Notes only",
+      },
+    }),
+  );
+  await page.goto("https://kosmora.io/trades/new?friend=batu");
+  await expect(badges().locator(".family-badge")).toHaveCount(0);
+  await badges()
+    .getByRole("button", { name: "Notes for batu", exact: true })
+    .click();
+  await expect(
+    page.locator('[data-kosmore-trade="notes"] .notes-text'),
+  ).toHaveText("Notes only");
+  await worker.evaluate(() =>
+    chrome.storage.local.set({
+      "kosmore.friend.fixtureplayer.batu": {
+        schemaVersion: 1,
+        families: [],
+        notes: "Updated note",
+      },
+    }),
+  );
+  await expect(page.locator('[data-kosmore-trade="notes"]')).toHaveCount(0);
+  await badges()
+    .getByRole("button", { name: "Notes for batu", exact: true })
+    .click();
+  await expect(
+    page.locator('[data-kosmore-trade="notes"] .notes-text'),
+  ).toHaveText("Updated note");
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Trade with Other", exact: true })
+    .click();
+  await expect(page.locator('[data-kosmore-trade="notes"]')).toHaveCount(0);
+  await expect(badges()).toBeHidden();
+});
+
+test("notes tooltip fits a phone, obeys hover and dismissal delays, and keeps the badge readable", async () => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await worker.evaluate(() =>
+    chrome.storage.local.set({
+      "kosmore.settings": {
+        schemaVersion: 1,
+        tradeNotesHoverDelayMs: 1000,
+        tradeNotesDismissDelayMs: 100,
+        tradeNotesWidth: 800,
+        tradeNotesHeight: 1200,
+      },
+    }),
+  );
+  await open();
+  const trigger = badges().locator(".notes-badge"),
+    popup = page.locator('[data-kosmore-trade="notes"]');
+  await trigger.hover();
+  await expect(popup).toHaveCount(0);
+  await expect(popup).toBeVisible();
+  const bounds = (await popup.boundingBox())!;
+  expect(bounds.x).toBeGreaterThanOrEqual(12);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(378);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(788);
+  await mkdir("test-results/screenshots", { recursive: true });
+  await page.screenshot({
+    path: "test-results/screenshots/trade-notes-popup-390.png",
+  });
+  await page.mouse.move(1, 1);
+  await expect(popup).toHaveCount(0);
+});
+
+test("trade family impacts reuse all economic families and total copies while leaving native picks active", async () => {
+  await worker.evaluate(() =>
+    chrome.storage.local.set({
+      "kosmore.settings": {
+        schemaVersion: 1,
+        enabled: false,
+        tradeRemindersEnabled: false,
+        showFusionFamilyOverlay: false,
+      },
+    }),
+  );
+  await page.goto("https://kosmora.io/trades/new?friend=batu");
+  await expect(page.locator("[data-kosmore-fusion-family]")).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Choose Northern Lights", exact: true })
+    .click();
+  const verdict = (id: string) =>
+    page
+      .getByRole("button", { name: `Offer card ${id}`, exact: true })
+      .locator(".verdict");
+  await expect(verdict("304")).toHaveText("✓ Safe");
+  await expect(verdict("305")).toHaveText("✓ Safe");
+  await expect(verdict("307")).toHaveAttribute(
+    "aria-label",
+    "Not safe: trading this card drops MAMA Awards from tier I to no tier.",
+  );
+  await page
+    .getByRole("button", { name: "Offer card 307", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Offer card 307", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await mkdir("test-results/screenshots", { recursive: true });
+  await page.screenshot({
+    path: "test-results/screenshots/trade-family-impact.png",
+  });
+  for (const setting of [
+    { showTradeFamilyOverlay: false },
+    { cardOverlaysEnabled: false },
+  ]) {
+    await worker.evaluate(
+      (setting) =>
+        chrome.storage.local.set({
+          "kosmore.settings": { schemaVersion: 1, ...setting },
+        }),
+      setting,
+    );
+    await expect(page.locator("[data-kosmore-fusion-family]")).toHaveCount(0);
+  }
+  await worker.evaluate(() =>
+    chrome.storage.local.set({ "kosmore.settings": { schemaVersion: 1 } }),
+  );
+  await expect(verdict("307")).toBeVisible();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.locator("[data-kosmore-fusion-family]")).toHaveCount(0);
+});
+
+test("trade notes settings validate sizes, save only their group, pin, cancel, and disable independently", async () => {
+  await open();
+  const options = await context.newPage();
+  try {
+    await options.goto(
+      `chrome-extension://${new URL(worker.url()).host}/options.html#trade-reminders`,
+    );
+    const group = options.locator("#trade-reminders"),
+      save = group.getByRole("button", {
+        name: "Save trade reminder settings",
+        exact: true,
+      });
+    await group.getByLabel("Notes tooltip width", { exact: true }).fill("100");
+    await save.click();
+    await expect(group.getByRole("status")).toContainText(
+      "Choose a notes tooltip width",
+    );
+    await group.getByLabel("Notes tooltip width", { exact: true }).fill("460");
+    await group.getByLabel("Notes tooltip height", { exact: true }).fill("280");
+    await group
+      .getByLabel("Pin trade notes below family badges", { exact: true })
+      .check();
+    await save.click();
+    await expect(group.getByRole("status")).toContainText("Saved.");
+    await expect(badges().locator(".trade-notes-inline")).toBeVisible();
+    await group.getByLabel("Show saved notes badge", { exact: true }).uncheck();
+    await expect(
+      group.getByLabel("Notes tooltip width", { exact: true }),
+    ).toBeDisabled();
+    await save.click();
+    await expect(badges().locator(".notes-badge")).toHaveCount(0);
+    await expect(badges().locator(".family-badge")).toHaveCount(2);
+    await group.getByLabel("Show saved notes badge", { exact: true }).check();
+    await group
+      .getByRole("button", {
+        name: "Cancel trade reminder settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(
+      group.getByLabel("Show saved notes badge", { exact: true }),
+    ).not.toBeChecked();
+    await options
+      .getByLabel("Show family impact when choosing your trade card", {
+        exact: true,
+      })
+      .uncheck();
+    await options
+      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .click();
+    expect(
+      await worker.evaluate(
+        async () =>
+          (await chrome.storage.local.get("kosmore.settings"))[
+            "kosmore.settings"
+          ],
+      ),
+    ).toMatchObject({
+      tradeNotesWidth: 460,
+      tradeNotesHeight: 280,
+      tradeNotesPinned: true,
+      showTradeNotes: false,
+      showTradeFamilyOverlay: false,
+    });
+    await options.setViewportSize({ width: 390, height: 900 });
+    await options
+      .getByRole("link", { name: "Trade reminders", exact: true })
+      .click();
+    await group.screenshot({
+      path: "test-results/screenshots/trade-notes-settings-390.png",
+    });
+  } finally {
+    await options.close();
   }
 });

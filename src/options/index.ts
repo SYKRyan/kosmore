@@ -388,6 +388,14 @@ const fusionFamilyOverlay = overlayToggle(
     draft.showFusionFamilyOverlay = checked;
   },
 );
+const tradeFamilyOverlay = overlayToggle(
+  "trade-family-overlay",
+  "Show family impact when choosing your trade card",
+  "Bottom left of your card choices · ✓ Safe: you keep every family tier · ⚠ Loses: trading your last copy drops a family tier. Uses the same family checks as Fusion.",
+  (checked) => {
+    draft.showTradeFamilyOverlay = checked;
+  },
+);
 const salesSettings = new SalesSettings((update) =>
   Object.assign(draft, update),
 );
@@ -574,6 +582,7 @@ groupControls({
   name: "trade reminder settings",
   keys: [...TRADE_SETTINGS_KEYS],
   render: renderSettings,
+  validate: () => tradeSettings.validate(draft),
 });
 groupControls({
   host: overlays,
@@ -588,6 +597,7 @@ groupControls({
     "showFriendInterestOverlay",
     "showQuestOverlay",
     "showFusionFamilyOverlay",
+    "showTradeFamilyOverlay",
   ],
   render: renderSettings,
 });
@@ -740,6 +750,7 @@ function renderSettings() {
   friendOverlay.checked = draft.showFriendInterestOverlay;
   questOverlay.checked = draft.showQuestOverlay;
   fusionFamilyOverlay.checked = draft.showFusionFamilyOverlay;
+  tradeFamilyOverlay.checked = draft.showTradeFamilyOverlay;
   statSettings.render(draft.stats);
   hotkeySettings.render(draft.hotkeys);
   salesSettings.render(draft);
@@ -1071,6 +1082,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (draft[field] === saved[field]) {
       draft[field] = next[field];
       input.checked = next[field];
+    }
+    saved[field] = next[field];
+  }
+  for (const { field, input } of tradeSettings.numberInputs) {
+    if (draft[field] === saved[field]) {
+      draft[field] = next[field];
+      input.value = String(next[field]);
     }
     saved[field] = next[field];
   }

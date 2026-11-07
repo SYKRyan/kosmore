@@ -320,6 +320,12 @@ var x = "kosmore.settings", S = () => ({
 	showTradeFamilyBadges: !0,
 	showTradePossibleInterest: !0,
 	tradeRaritySymbols: !0,
+	showTradeNotes: !0,
+	tradeNotesPinned: !1,
+	tradeNotesHoverDelayMs: 300,
+	tradeNotesDismissDelayMs: 200,
+	tradeNotesWidth: 320,
+	tradeNotesHeight: 240,
 	friendTooltipEnabled: !0,
 	friendHoverDelayMs: 300,
 	friendDismissDelayMs: 200,
@@ -352,6 +358,7 @@ var x = "kosmore.settings", S = () => ({
 	showFriendInterestOverlay: !0,
 	showQuestOverlay: !0,
 	showFusionFamilyOverlay: !0,
+	showTradeFamilyOverlay: !0,
 	stats: m(),
 	hotkeys: {},
 	pinnedAlbums: {}
@@ -369,6 +376,9 @@ function C(e) {
 		"showTradeFamilyBadges",
 		"showTradePossibleInterest",
 		"tradeRaritySymbols",
+		"showTradeNotes",
+		"tradeNotesPinned",
+		"showTradeFamilyOverlay",
 		"friendTooltipEnabled",
 		"navigationHotkeysEnabled",
 		"cardOverlaysEnabled",
@@ -383,6 +393,26 @@ function C(e) {
 	for (let e of ["salesLastSaleAdjustment", "salesLowestListingAdjustment"]) b(r[e]) && (t[e] = r[e]);
 	typeof r.closeTooltipWhenAddedToAlbum == "boolean" && (t.closeTooltipWhenAddedToAlbum = r.closeTooltipWhenAddedToAlbum), typeof r.applyCloseBehaviorToPinnedTooltips == "boolean" && (t.applyCloseBehaviorToPinnedTooltips = r.applyCloseBehaviorToPinnedTooltips), typeof r.showSaleHistoryOverlay == "boolean" && (t.showSaleHistoryOverlay = r.showSaleHistoryOverlay), typeof r.showLastSalePriceOverlay == "boolean" && (t.showLastSalePriceOverlay = r.showLastSalePriceOverlay), typeof r.showActiveAuctionsOverlay == "boolean" && (t.showActiveAuctionsOverlay = r.showActiveAuctionsOverlay), typeof r.showLowestListingPriceOverlay == "boolean" && (t.showLowestListingPriceOverlay = r.showLowestListingPriceOverlay), typeof r.showOnSaleOverlay == "boolean" && (t.showOnSaleOverlay = r.showOnSaleOverlay), typeof r.showFriendInterestOverlay == "boolean" && (t.showFriendInterestOverlay = r.showFriendInterestOverlay), typeof r.showQuestOverlay == "boolean" && (t.showQuestOverlay = r.showQuestOverlay), typeof r.showFusionFamilyOverlay == "boolean" && (t.showFusionFamilyOverlay = r.showFusionFamilyOverlay), typeof r.hoverDelayMs == "number" && Number.isFinite(r.hoverDelayMs) && (t.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(r.hoverDelayMs))));
 	for (let [e, n, i] of [
+		[
+			"tradeNotesHoverDelayMs",
+			100,
+			2e3
+		],
+		[
+			"tradeNotesDismissDelayMs",
+			0,
+			3e4
+		],
+		[
+			"tradeNotesWidth",
+			240,
+			1200
+		],
+		[
+			"tradeNotesHeight",
+			120,
+			1600
+		],
 		[
 			"friendHoverDelayMs",
 			100,

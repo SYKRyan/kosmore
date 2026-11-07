@@ -22,7 +22,7 @@ import {
   RELAY_DATA,
 } from "../../src/shared/page-relay";
 import { defaults } from "../../src/shared/settings";
-import type { CardFamily } from "../../src/shared/types";
+import type { CardFamily, OwnedCopy } from "../../src/shared/types";
 
 // Shapes and values as Kosmora returned them on 2026-11-06.
 const MS = [2, 5, 10, 25, 50, 100, 250, 500, 1000];
@@ -527,4 +527,84 @@ it("sits on the card art, and draws nothing off the Fusion page or with the sett
   impact.setSettings(defaults());
   await settle();
   expect(document.querySelector(`[${FUSION_FAMILY_ATTR}]`)).toBeNull();
+});
+
+function tradePage() {
+  history.replaceState(null, "", "/trades/new?friend=batu");
+  document.body.innerHTML = `<main><div class="sx-new-trade"><div data-testid="trade-mine-filters"></div><ul class="sx-picks">${["4", "5", "7", "8"].map((id) => `<li class="sx-pick"><button class="sx-pick-hit">${face(id, true)}</button></li>`).join("")}</ul></div></main>`;
+}
+const ownedCopies = (quantity: number): OwnedCopy[] =>
+  Array.from({ length: quantity }, (_, i) => ({
+    id: String(i),
+    subjectId: "8",
+    state: "available",
+    variant: { veil: false, fullArt: false },
+  }));
+const tradeBadge = (id: string) =>
+  document
+    .querySelector(`img[src*="/cards/${id}/"]`)
+    ?.closest(".kc-article")
+    ?.querySelector(`[${FUSION_FAMILY_ATTR}]`)
+    ?.shadowRoot?.querySelector(".verdict");
+
+it("uses total owned copies and every economic family for trade choices and refreshes ownership on focus", async () => {
+  tradePage();
+  let quantity = 2;
+  const client = {
+    onAccountChange: () => {},
+    familyCounts: vi.fn(
+      async () =>
+        new Map([
+          [PARROTS.id, 2],
+          [MUSIC_AWARDS.id, 9],
+          [MAMA.id, 2],
+        ]),
+    ),
+    familyMilestones: async () => MS,
+    insights: vi.fn(async (id: string) => ({
+      families: MEMBERSHIP[id],
+      copies: ownedCopies(id === "8" ? quantity : 1),
+    })),
+  };
+  const impact = (running = new FusionFamilyImpact(client, window, 0));
+  impact.start();
+  impact.setSettings({
+    ...defaults(),
+    enabled: false,
+    showFusionFamilyOverlay: false,
+  });
+  await settle();
+  expect(tradeBadge("8")?.textContent).toBe("✓ Safe");
+  expect(tradeBadge("4")?.getAttribute("aria-label")).toContain(
+    "trading this card drops Parrots",
+  );
+  expect(tradeBadge("5")?.textContent).toBe("✓ Safe");
+  expect(tradeBadge("7")?.getAttribute("aria-label")).toContain(
+    "MAMA Awards from tier I to no tier",
+  );
+  quantity = 1;
+  window.dispatchEvent(new Event("focus"));
+  await settle();
+  expect(tradeBadge("8")?.getAttribute("aria-label")).toContain(
+    "trading this card drops Parrots",
+  );
+  expect(client.insights).toHaveBeenCalledWith("8", undefined, true);
+});
+
+it("withholds trade verdicts for unknown families, counts or ownership", async () => {
+  tradePage();
+  const client = {
+    onAccountChange: () => {},
+    familyCounts: async () => new Map([[MUSIC_AWARDS.id, 9]]),
+    familyMilestones: async () => MS,
+    insights: async (id: string) => ({
+      families: id === "5" ? null : MEMBERSHIP[id],
+      copies: ownedCopies(id === "8" ? 0 : 1),
+    }),
+  };
+  const impact = (running = new FusionFamilyImpact(client));
+  impact.start();
+  impact.setSettings(defaults());
+  await settle();
+  expect(document.querySelectorAll(`[${FUSION_FAMILY_ATTR}]`)).toHaveLength(0);
 });

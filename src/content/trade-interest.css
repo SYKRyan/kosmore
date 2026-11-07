@@ -4,7 +4,7 @@
   font:
     13px/1.5 system-ui,
     sans-serif;
-  margin: 12px 0 16px;
+  margin: 4px 0;
 }
 :host([hidden]) {
   display: none;
@@ -17,18 +17,85 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
 }
 .family-badge {
   border: 1px solid #796294;
   border-radius: 999px;
-  padding: 3px 10px;
+  padding: 2px 8px;
   background: #271b38;
   color: #e0cbfb;
   overflow-wrap: anywhere;
 }
+.notes-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #e0cbfb;
+  border-color: #e0cbfb;
+  color: #271b38cc;
+  font-weight: 700;
+}
+.trade-notes-inline {
+  flex: 1 0 100%;
+  min-width: 0;
+  border: 1px solid #796294;
+  border-radius: 8px;
+  background: #271b3880;
+  padding: 6px 10px;
+}
+[hidden] {
+  display: none !important;
+}
+.notes-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: #d9c8ed;
+}
+.notes-header strong {
+  margin-right: auto;
+}
+.notes-pin {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+}
+.notes-pin svg {
+  width: 16px;
+  height: 16px;
+}
+.notes-pin[aria-pressed="true"] {
+  background: #e0cbfb;
+  color: #271b38;
+}
+.notes-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.notes-error {
+  color: #ffd0d4;
+}
+:host([data-kosmore-trade="notes"]) {
+  box-sizing: border-box;
+  position: fixed;
+  margin: 0;
+  padding: 0;
+  inset: auto;
+  border: 1px solid #796294;
+  border-radius: 10px;
+  background: #1b1328;
+  box-shadow: 0 10px 35px #0009;
+  overflow: auto;
+}
+.notes-popup {
+  padding: 8px;
+}
 .interest {
-  gap: 8px 14px;
+  gap: 4px 12px;
 }
 .label {
   color: #d9c8ed;
@@ -49,7 +116,7 @@
   flex-wrap: wrap;
   align-content: start;
   align-items: center;
-  gap: 8px 14px;
+  gap: 4px 12px;
 }
 .breakdown-reservation {
   visibility: hidden;

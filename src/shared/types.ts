@@ -97,6 +97,12 @@ export interface Settings {
   showTradeFamilyBadges: boolean;
   showTradePossibleInterest: boolean;
   tradeRaritySymbols: boolean;
+  showTradeNotes: boolean;
+  tradeNotesPinned: boolean;
+  tradeNotesHoverDelayMs: number;
+  tradeNotesDismissDelayMs: number;
+  tradeNotesWidth: number;
+  tradeNotesHeight: number;
   friendTooltipEnabled: boolean;
   friendHoverDelayMs: number;
   friendDismissDelayMs: number;
@@ -129,6 +135,7 @@ export interface Settings {
   showFriendInterestOverlay: boolean;
   showQuestOverlay: boolean;
   showFusionFamilyOverlay: boolean;
+  showTradeFamilyOverlay: boolean;
   stats: import("./stat-catalog").StatPreference[];
   hotkeys: import("./hotkeys").Hotkeys;
   pinnedAlbums: Record<string, string[]>;

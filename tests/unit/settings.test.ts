@@ -19,6 +19,8 @@ it("enables new feature groups for older settings and keeps configuration when g
     "showTradeFamilyBadges",
     "showTradePossibleInterest",
     "tradeRaritySymbols",
+    "showTradeNotes",
+    "showTradeFamilyOverlay",
     "cardOverlaysEnabled",
     "statBoxesEnabled",
     "pinnedAlbumsEnabled",
@@ -40,6 +42,42 @@ it("enables new feature groups for older settings and keeps configuration when g
     expect(disabled.stats[0]).toEqual({ id: "minPrice", enabled: false });
     expect(disabled.hotkeys.home?.code).toBe("KeyH");
   }
+});
+it("bounds trade notes sizes and delays and preserves the pin preference", () => {
+  const old = parseSettings({ schemaVersion: 1 });
+  expect([
+    old.tradeNotesPinned,
+    old.tradeNotesWidth,
+    old.tradeNotesHeight,
+  ]).toEqual([false, 320, 240]);
+  const small = parseSettings({
+    schemaVersion: 1,
+    tradeNotesWidth: 1,
+    tradeNotesHeight: 1,
+    tradeNotesHoverDelayMs: 1,
+    tradeNotesDismissDelayMs: -1,
+    tradeNotesPinned: true,
+  });
+  expect([
+    small.tradeNotesWidth,
+    small.tradeNotesHeight,
+    small.tradeNotesHoverDelayMs,
+    small.tradeNotesDismissDelayMs,
+    small.tradeNotesPinned,
+  ]).toEqual([240, 120, 100, 0, true]);
+  const large = parseSettings({
+    schemaVersion: 1,
+    tradeNotesWidth: 99999,
+    tradeNotesHeight: 99999,
+    tradeNotesHoverDelayMs: 99999,
+    tradeNotesDismissDelayMs: 99999,
+  });
+  expect([
+    large.tradeNotesWidth,
+    large.tradeNotesHeight,
+    large.tradeNotesHoverDelayMs,
+    large.tradeNotesDismissDelayMs,
+  ]).toEqual([1200, 1600, 2000, 30000]);
 });
 it("handles unknown schemas and bounds the delay", () => {
   expect(parseSettings({ schemaVersion: 2 }).hoverDelayMs).toBe(300);

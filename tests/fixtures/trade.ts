@@ -8,5 +8,20 @@ export function tradeFixture() {
   for(const name of ['batu','other']){const b=document.getElementById(name);if(b)b.onclick=()=>{friend=name==='batu'?'batu':'Other';step=2;render()}};
   const pick=document.getElementById('pick');if(pick)pick.onclick=()=>{step=3;render()};const review=document.getElementById('review');if(review)review.onclick=()=>{step=4;render()};
   const input=document.querySelector('input');if(input)input.oninput=()=>{document.querySelector('#cards')?.setAttribute('data-filtered',input.value)};
-  }render();</script></body></html>`;
+  }
+  const nativeRender=render;
+  render=()=>{
+    nativeRender();
+    if(step!==3)return;
+    const grid=document.createElement('ul');grid.className='sx-picks';grid.dataset.testid='trade-options';
+    grid.style.cssText='display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:0;list-style:none';
+    for(const id of ['304','305','307']){
+      const tile=document.createElement('li');tile.className='sx-pick';
+      tile.innerHTML='<button type="button" class="sx-pick-hit" aria-label="Offer card '+id+'" aria-pressed="false" style="width:100%;text-align:left"><article class="kc-article"><div class="kc"><h3 class="kc-name">Card '+id+'</h3><div class="kc-window" style="position:relative;min-height:130px;background:linear-gradient(135deg,#354c6a,#231536);border-radius:6px;overflow:hidden"><img class="kc-img" src="/media/cards/'+id+'/x/card.webp" style="width:100%;height:130px;object-fit:cover"></div><footer>Common</footer></div></article></button>';
+      tile.querySelector('button').onclick=e=>{grid.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b===e.currentTarget)))};
+      grid.append(tile);
+    }
+    document.getElementById('review').before(grid);
+  };
+  render();</script></body></html>`;
 }
