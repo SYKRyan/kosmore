@@ -120,6 +120,33 @@ it("keeps Vortex exclusions opt-in, independent of Pulsar and each other, withou
   expect(saved).toMatchObject({ enabled: true, cardOverlaysEnabled: true });
 });
 
+it("defaults Social to its own unpinned launcher and preserves independent pin preferences", () => {
+  expect(parseSettings({ schemaVersion: 1 })).toMatchObject({
+    socialRemindersEnabled: true,
+    socialRemindersPinned: false,
+  });
+  expect(
+    parseSettings({
+      schemaVersion: 1,
+      socialRemindersPinned: true,
+      profileRemindersPinned: false,
+    }),
+  ).toMatchObject({
+    socialRemindersPinned: true,
+    profileRemindersPinned: false,
+  });
+  expect(
+    parseSettings({
+      schemaVersion: 1,
+      socialRemindersPinned: false,
+      profileRemindersPinned: true,
+    }),
+  ).toMatchObject({
+    socialRemindersPinned: false,
+    profileRemindersPinned: true,
+  });
+});
+
 it("keeps family blacklist opt-in, normalizes tokens and repairs invalid saved lists", () => {
   expect(parseSettings({ schemaVersion: 1 })).toMatchObject({
     useFamilyBlacklist: false,
@@ -165,6 +192,7 @@ it("enables new feature groups for older settings and keeps configuration when g
   const keys = [
     "navigationHotkeysEnabled",
     "tradeRemindersEnabled",
+    "socialRemindersEnabled",
     "showTradeFamilyBadges",
     "showTradePossibleInterest",
     "tradeRaritySymbols",

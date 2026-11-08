@@ -25,7 +25,6 @@ import {
   saveMarketFinishes,
 } from "../shared/market-preferences";
 import { Popup } from "./popup";
-import { SocialReminders } from "./social";
 import { CardOverlays } from "./card-overlays";
 import { NavigationHotkeys } from "./navigation";
 import { SalesOverlays } from "./sales-overlays";
@@ -51,7 +50,7 @@ const canceledListingReads = new Set<string>();
 const friendTooltip = new FriendTooltip(client, () => {
   if (popup && !popup.isPinned) laterHide();
 });
-new SocialReminders(client).start();
+new ProfileReminders(client, "social").start();
 new ProfileReminders(client).start();
 const tradeInterest = new TradeInterest(client);
 tradeInterest.start();

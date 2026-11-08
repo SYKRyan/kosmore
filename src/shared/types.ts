@@ -98,6 +98,8 @@ export interface Settings {
   fullScreenCenteredOnOpen: boolean;
   profileRemindersEnabled: boolean;
   profileRemindersPinned: boolean;
+  socialRemindersEnabled: boolean;
+  socialRemindersPinned: boolean;
   tradeRemindersEnabled: boolean;
   showTradeFamilyBadges: boolean;
   showTradePossibleInterest: boolean;

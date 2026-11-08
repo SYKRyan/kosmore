@@ -245,6 +245,7 @@ test.beforeEach(async () => {
         "kosmore.settings": {
           schemaVersion: 1,
           enabled: true,
+          socialRemindersPinned: true,
           hoverDelayMs: 100,
           showSaleHistoryOverlay: false,
           showActiveAuctionsOverlay: false,
@@ -1968,6 +1969,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Card Overlays",
       "Family Impact Overlay",
       "Friend Tooltip",
+      "Social Reminders",
       "Profile Reminders",
       "Trade Reminders",
       "Sales Overlay",
@@ -1985,6 +1987,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Card Overlays",
       "Family Impact Overlay",
       "Friend Tooltip",
+      "Social Reminders",
       "Profile Reminders",
       "Trade Reminders",
       "Sales Overlay",
@@ -2004,6 +2007,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Enable navigation hotkey",
       "Enable card overlays",
       "Enable family impact overlays",
+      "Enable social reminders",
       "Enable sales overlay",
       "Enable stat boxes",
       "Enable pinned albums",
@@ -2011,7 +2015,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       await expect(options.getByLabel(label, { exact: true })).toBeChecked();
     await expect(
       options.locator(".settings-group-heading").getByRole("switch"),
-    ).toHaveCount(10);
+    ).toHaveCount(11);
     for (const name of [
       "Show Last Sale price",
       "Show Lowest Listed price",
@@ -2060,6 +2064,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       ["Tooltip Stat Boxes", "stat-boxes"],
       ["Card Overlays", "card-overlays"],
       ["Friend Tooltip", "friend-tooltip"],
+      ["Social Reminders", "social-reminders"],
       ["Profile Reminders", "profile-reminders"],
       ["Trade Reminders", "trade-reminders"],
       ["Sales Overlay", "sales-overlay"],
@@ -2133,6 +2138,12 @@ test("feature switches save immediately and disabled settings groups are read-on
       "Enable friend tooltip",
       "friend tooltip settings",
       "Friend hover delay",
+    ],
+    [
+      "social-reminders",
+      "Enable social reminders",
+      "social reminder settings",
+      "Keep reminders pinned on Social",
     ],
     [
       "profile-reminders",
@@ -2949,11 +2960,14 @@ test("pending sell navigation does not override another page the user opens", as
   await expect(page).toHaveURL("https://kosmora.io/collection");
   expect(writeRequests).toBe(0);
 });
-test("friend notes and family tokens save locally below the native panel and survive reload", async () => {
+test("friend notes and family tokens save below Collection/Profile and above Between You and survive reload", async () => {
   await page.goto("https://kosmora.io/social?f=batu");
   const editor = page.locator("#kosmore-friend-reminders");
   await expect(editor.getByLabel("Notes", { exact: true })).toBeEnabled();
-  await expect(editor.locator("h2")).toHaveText("batu");
+  await expect(editor.locator(".content")).toHaveAttribute(
+    "aria-label",
+    "Private reminders for batu",
+  );
   expect(
     await editor
       .locator(".section")
@@ -2962,10 +2976,15 @@ test("friend notes and family tokens save locally below the native panel and sur
       ),
   ).toEqual(["Families they like", "Notes"]);
   expect(
-    await editor.evaluate((e) =>
-      e.previousElementSibling?.getAttribute("data-testid"),
-    ),
-  ).toBe("sb-friend-card");
+    await editor.evaluate((e) => ({
+      parent: e.parentElement?.getAttribute("data-testid"),
+      links:
+        e.previousElementSibling?.previousElementSibling?.classList.contains(
+          "sb-links",
+        ),
+      next: e.nextElementSibling?.textContent,
+    })),
+  ).toEqual({ parent: "sb-friend-card", links: true, next: "Between you" });
   await editor
     .getByLabel("Notes", { exact: true })
     .fill("Prefers ships. Ask before sending duplicates.");
@@ -3035,9 +3054,10 @@ test("reminders follow friend selection and remain separate between signed-in ac
     .click();
   await expect(editor.getByRole("status")).toHaveText("Saved locally");
   await page.locator('[data-friend="FriendB"]').click();
-  await expect(
-    editor.getByRole("heading", { name: "FriendB", exact: true }),
-  ).toBeVisible();
+  await expect(editor.locator(".content")).toHaveAttribute(
+    "aria-label",
+    "Private reminders for FriendB",
+  );
   await expect(notes).toBeEnabled();
   await expect(notes).toHaveValue("");
   await notes.fill("Other friend reminder");
@@ -3172,9 +3192,10 @@ test("a delayed account read never populates a different friend's editor", async
       "FriendB only",
     );
     release();
-    await expect(
-      editor.getByRole("heading", { name: "FriendB", exact: true }),
-    ).toBeVisible();
+    await expect(editor.locator(".content")).toHaveAttribute(
+      "aria-label",
+      "Private reminders for FriendB",
+    );
     await expect(editor.getByLabel("Notes", { exact: true })).toHaveValue(
       "FriendB only",
     );

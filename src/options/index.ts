@@ -27,6 +27,7 @@ const app = document.getElementById("app")!;
 type FeatureKey =
   | "enabled"
   | "profileRemindersEnabled"
+  | "socialRemindersEnabled"
   | "tradeRemindersEnabled"
   | "friendTooltipEnabled"
   | "navigationHotkeysEnabled"
@@ -339,13 +340,40 @@ const friendTooltipEnabled = sectionToggle(
   "friendTooltipEnabled",
   "Enable friend tooltip",
 );
+const socialSettings = el("section", "panel");
+socialSettings.append(
+  el("h2", "", "Social Reminders"),
+  el(
+    "p",
+    "sub",
+    "Open KosMore below Collection and Profile and above Between You on a friend's Social card. Pin the same private families and notes at that location. Social and Profile keep separate pin preferences.",
+  ),
+);
+const socialEnabled = sectionToggle(
+  socialSettings,
+  "socialRemindersEnabled",
+  "Enable social reminders",
+);
+const socialPinned = el("input");
+socialPinned.type = "checkbox";
+socialPinned.id = "social-reminders-pinned";
+const socialPinLabel = el(
+  "label",
+  "label settings-toggle",
+  "Keep reminders pinned on Social",
+);
+socialPinLabel.prepend(socialPinned);
+socialSettings.append(el("div", "rule"), socialPinLabel);
+socialPinned.addEventListener("change", () => {
+  draft.socialRemindersPinned = socialPinned.checked;
+});
 const profileSettings = el("section", "panel");
 profileSettings.append(
   el("h2", "", "Profile Reminders"),
   el(
     "p",
     "sub",
-    "Open KosMore above a player's profile header to edit the same private families and notes as Social. Pin the editor below the header and above Albums, with families on the left and notes on the right. These reminders stay in this browser.",
+    "Open KosMore below a player's profile header and above Albums to edit the same private families and notes as Social. Pin the editor at that location, with families on the left and notes on the right. These reminders stay in this browser.",
   ),
 );
 const profileEnabled = sectionToggle(
@@ -750,6 +778,12 @@ groupControls({
   validate: () => friendTooltipSettings.validate(draft),
 });
 groupControls({
+  host: socialSettings,
+  name: "social reminder settings",
+  keys: ["socialRemindersEnabled", "socialRemindersPinned"],
+  render: renderSettings,
+});
+groupControls({
   host: profileSettings,
   name: "profile reminder settings",
   keys: ["profileRemindersEnabled", "profileRemindersPinned"],
@@ -876,6 +910,12 @@ const settingsGroups = [
     path: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-4 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
   },
   {
+    id: "social-reminders",
+    label: "Social Reminders",
+    host: socialSettings,
+    path: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-4 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+  },
+  {
     id: "profile-reminders",
     label: "Profile Reminders",
     host: profileSettings,
@@ -926,6 +966,8 @@ app.append(
   ),
 );
 function renderSettings() {
+  socialEnabled.checked = draft.socialRemindersEnabled;
+  socialPinned.checked = draft.socialRemindersPinned;
   tradeEnabled.checked = draft.tradeRemindersEnabled;
   tradeSettings.render(draft);
   profileEnabled.checked = draft.profileRemindersEnabled;
@@ -974,6 +1016,7 @@ function renderSettings() {
     general,
     friendTooltipSettings.host,
     profileSettings,
+    socialSettings,
     tradeSettings.host,
     albumSettings,
     statSettings.host,
@@ -1295,6 +1338,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   for (const [field, input] of [
     ...tradeSettings.inputs.map(({ field, input }) => [field, input] as const),
     ["profileRemindersPinned", profilePinned],
+    ["socialRemindersPinned", socialPinned],
   ] as const) {
     if (draft[field] === saved[field]) {
       draft[field] = next[field];
@@ -1310,6 +1354,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     saved[field] = next[field];
   }
   renderGroupState(profileSettings);
+  renderGroupState(socialSettings);
   tradeSettings.render(draft);
   renderGroupState(tradeSettings.host);
   saved.friendTooltipPosition = next.friendTooltipPosition;

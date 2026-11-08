@@ -152,17 +152,23 @@ Hover, focus, or click the purple friend indicator in the card tooltip header to
 
 Settings control the hover delay, dismiss delay, width, and height independently of the main tooltip. Defaults are **300 ms**, **200 ms**, and **320 × 560 px**. Position and dimensions save automatically. To open this popup, enable card hover tooltips, Card overlays, the interested-friends indicator, and Friend tooltip.
 
-### Profile reminders
+### Social Reminders
 
-On a player's profile, open **✦ KosMore** above the header to edit their private family preferences and notes. This is the same reminder data used on Social, in friend matches, and during trades. The player does not have to be in your current friend list to have a profile reminder.
+On **Social**, select a friend and open **✦ KosMore** below the **Collection** and **Profile** links and above **Between You**. The launcher occupies the same location as the pinned editor. Pin the popup to keep the editor inline; unpin to return to a popup. Pinning and unpinning preserve unsaved edits.
+
+Social Reminders has its own enable switch and **Keep reminders pinned on Social** preference, independent of Profile Reminders. It is enabled and unpinned by default. Both pages edit the same private family preferences and notes for the selected player and signed-in account.
+
+### Profile Reminders
+
+On a player's profile, open **✦ KosMore** below the header and above Albums to edit their private family preferences and notes. The launcher occupies the pinned editor's location. This is the same reminder data used on Social, in friend matches, and during trades. The player does not have to be in your current friend list to have a profile reminder.
 
 - Search for and add preferred card families, remove family tokens, and write private notes.
 - Use **Save** to store edits or **Cancel** to restore the saved values.
 - Pin the editor below the profile header and above Albums. Families appear on the left and notes on the right, stacking on narrow screens.
-- While pinned, the standalone control above the header is hidden. Unpin from the widget to return to the popup. Moving between popup and widget preserves unsaved edits.
+- While pinned, the standalone control is hidden. Unpin from the widget to return to the popup. Moving between popup and widget preserves unsaved edits.
 - Use **Keep reminders pinned on profiles** in settings to control the persistent pinned display.
 
-On **Social**, select a friend to use the same family-and-notes editor. Social editing remains available independently of the Profile reminders switch. Preferences are private to your extension installation and account; saving them does not update the player's Kosmora profile or send them a message.
+Preferences are private to your extension installation and account; saving them does not update the player's Kosmora profile or send them a message.
 
 ### Trade reminders
 

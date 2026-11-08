@@ -124,7 +124,10 @@ export class SocialReminders {
     const active: ActiveFriend = { friend, view, abort };
     this.active = active;
     if (this.surface) this.unmount = this.surface.mount(friend, view);
-    else friend.panel.after(view.host);
+    else
+      (friend.panel.querySelector(".sb-links") ?? friend.panel).after(
+        view.host,
+      );
     void this.load(active);
   }
   private async load(active: ActiveFriend) {

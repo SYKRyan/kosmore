@@ -142,7 +142,7 @@ test.afterAll(async () => {
   }
 });
 
-test("profile badge sits above the header and opens the shared family and notes controls", async () => {
+test("profile badge sits below the header above Albums and opens the shared family and notes controls", async () => {
   await expect(trigger()).toBeVisible();
   await expect(page.locator(".pf-name")).toHaveText("batu");
   expect(
@@ -154,8 +154,10 @@ test("profile badge sits above the header and opens the shared family and notes 
   expect(
     await page
       .locator("#kosmore-profile-trigger")
-      .evaluate((node) =>
-        node.nextElementSibling?.classList.contains("pf-banner"),
+      .evaluate(
+        (node) =>
+          node.previousElementSibling?.classList.contains("pf-banner") &&
+          node.nextElementSibling?.classList.contains("pf-albums"),
       ),
   ).toBe(true);
   await expect(editor()).toHaveCount(0);
@@ -187,6 +189,7 @@ test("profile badge sits above the header and opens the shared family and notes 
     families: ["Ships and Boats", "Cinéma", "Fish"],
   });
   await page.goto("https://kosmora.io/social?f=batu");
+  await page.locator("#kosmore-social-trigger").getByRole("button").click();
   const social = page.locator("#kosmore-friend-reminders");
   await expect(social.getByLabel("Notes", { exact: true })).toHaveValue(
     "Updated from profile 🐟",
@@ -254,6 +257,181 @@ test("pin moves the same unsaved editor above Albums, uses two columns, and pers
     .getByRole("button", { name: "Close profile reminders" })
     .click();
   await expect(editor()).toBeHidden();
+});
+
+test("Social launches below Collection/Profile and pins above Between You independently of Profile", async () => {
+  await page.goto("https://kosmora.io/social?f=batu");
+  const socialTrigger = page.locator("#kosmore-social-trigger");
+  const socialEditor = page.locator("#kosmore-friend-reminders");
+  await expect(socialTrigger).toBeVisible();
+  expect(
+    await socialTrigger.evaluate((node) => ({
+      previous: node.previousElementSibling?.className,
+      next: node.nextElementSibling?.textContent,
+    })),
+  ).toEqual({ previous: "sb-list sb-links", next: "Between you" });
+  await expect(socialEditor).toHaveCount(0);
+  await socialTrigger.getByRole("button").click();
+  await expect(socialEditor).toHaveAttribute("role", "dialog");
+  await socialEditor
+    .getByLabel("Notes", { exact: true })
+    .fill("Unsaved Social pin draft");
+  await socialEditor
+    .getByRole("button", { name: "Pin reminders to Social", exact: true })
+    .click();
+  await expect(socialEditor).toHaveAttribute("data-mode", "widget");
+  await expect(socialTrigger).toBeHidden();
+  await expect(socialEditor.getByLabel("Notes", { exact: true })).toHaveValue(
+    "Unsaved Social pin draft",
+  );
+  expect(
+    await socialEditor.evaluate((node) => node.nextElementSibling?.textContent),
+  ).toBe("Between you");
+  expect(
+    await worker.evaluate(
+      async () =>
+        (await chrome.storage.local.get("kosmore.settings"))[
+          "kosmore.settings"
+        ],
+    ),
+  ).toMatchObject({
+    socialRemindersPinned: true,
+    profileRemindersPinned: false,
+  });
+  await page.goto("https://kosmora.io/u/batu");
+  await expect(trigger()).toBeVisible();
+  await open();
+  await editor()
+    .getByRole("button", { name: "Pin reminders to profile", exact: true })
+    .click();
+  await page.goto("https://kosmora.io/social?f=batu");
+  await expect(socialEditor).toHaveAttribute("data-mode", "widget");
+  await socialEditor
+    .getByRole("button", { name: "Unpin social reminders", exact: true })
+    .click();
+  await expect(socialEditor).toHaveAttribute("data-mode", "popup");
+  await expect(socialTrigger).toBeVisible();
+  expect(
+    await worker.evaluate(
+      async () =>
+        (await chrome.storage.local.get("kosmore.settings"))[
+          "kosmore.settings"
+        ],
+    ),
+  ).toMatchObject({
+    socialRemindersPinned: false,
+    profileRemindersPinned: true,
+  });
+  await socialEditor
+    .getByRole("button", { name: "Pin reminders to Social", exact: true })
+    .click();
+  await page.goto("https://kosmora.io/u/batu");
+  await expect(editor()).toHaveAttribute("data-mode", "widget");
+  await editor()
+    .getByRole("button", { name: "Unpin profile reminders", exact: true })
+    .click();
+  expect(
+    await worker.evaluate(
+      async () =>
+        (await chrome.storage.local.get("kosmore.settings"))[
+          "kosmore.settings"
+        ],
+    ),
+  ).toMatchObject({
+    socialRemindersPinned: true,
+    profileRemindersPinned: false,
+  });
+});
+
+test("Social popup, mobile widget, and its own settings preserve shared reminders", async () => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("https://kosmora.io/social?f=batu");
+  const socialTrigger = page
+    .locator("#kosmore-social-trigger")
+    .getByRole("button");
+  const socialEditor = page.locator("#kosmore-friend-reminders");
+  await socialTrigger.focus();
+  await socialTrigger.press("Enter");
+  await expect(socialEditor.getByLabel("Notes", { exact: true })).toBeEnabled();
+  await socialEditor
+    .getByRole("button", { name: "Close social reminders", exact: true })
+    .focus();
+  await page.keyboard.press("Escape");
+  await expect(socialEditor).toBeHidden();
+  await expect(socialTrigger).toBeFocused();
+  await socialTrigger.click();
+  await page.locator(".sb-card-name").click();
+  await expect(socialEditor).toBeHidden();
+  await socialTrigger.click();
+  await socialEditor
+    .getByLabel("Notes", { exact: true })
+    .fill("Mobile Social draft");
+  await socialEditor
+    .getByRole("button", { name: "Pin reminders to Social", exact: true })
+    .click();
+  await expect(socialEditor).toHaveAttribute("data-mode", "widget");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    390,
+  );
+  await mkdir("test-results/screenshots", { recursive: true });
+  await page.screenshot({
+    path: "test-results/screenshots/social-reminders-pinned-390.png",
+    fullPage: true,
+  });
+  const options = await context.newPage();
+  try {
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#social-reminders`,
+    );
+    const section = options.locator("#social-reminders");
+    const pin = section.getByLabel("Keep reminders pinned on Social", {
+      exact: true,
+    });
+    await expect(pin).toBeChecked();
+    await expect(
+      options
+        .locator("#profile-reminders")
+        .getByLabel("Keep reminders pinned on profiles", { exact: true }),
+    ).not.toBeChecked();
+    await pin.uncheck();
+    await section
+      .getByRole("button", {
+        name: "Cancel social reminder settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(pin).toBeChecked();
+    await pin.uncheck();
+    await section
+      .getByRole("button", {
+        name: "Save social reminder settings",
+        exact: true,
+      })
+      .click();
+    await expect(socialTrigger).toBeVisible();
+    await socialTrigger.click();
+    await expect(socialEditor.getByLabel("Notes", { exact: true })).toHaveValue(
+      "Mobile Social draft",
+    );
+    await section
+      .getByRole("switch", { name: "Enable social reminders", exact: true })
+      .uncheck();
+    await expect(page.locator("#kosmore-social-trigger")).toHaveCount(0);
+    await expect(socialEditor).toHaveCount(0);
+    await expect(pin).toBeDisabled();
+    await section
+      .getByRole("switch", { name: "Enable social reminders", exact: true })
+      .check();
+    await expect(socialTrigger).toBeVisible();
+    expect(
+      await worker.evaluate(
+        async (key) => (await chrome.storage.local.get(key))[key],
+        key,
+      ),
+    ).toMatchObject({ notes: "Bring a gift 🌌\nPrivate profile note" });
+  } finally {
+    await options.close();
+  }
 });
 
 test("keyboard, popup dismissal and narrow profile layout stay usable", async () => {
@@ -395,6 +573,7 @@ test("profile reminders stay in sync with Social and protect account boundaries"
   const social = await context.newPage();
   try {
     await social.goto("https://kosmora.io/social?f=batu");
+    await social.locator("#kosmore-social-trigger").getByRole("button").click();
     const controls = social.locator("#kosmore-friend-reminders");
     await controls
       .getByLabel("Notes", { exact: true })

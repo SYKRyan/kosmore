@@ -53,6 +53,7 @@ function values(): StoredValues {
       disableCardOverlaysInVortex: true,
       showVortexFamilyOverlay: false,
       useFamilyBlacklist: true,
+      socialRemindersPinned: true,
       familyBlacklist: ["Asteroids", "Ducks, Geese and Swans"],
       salesLastSaleAdjustment: -1.25,
       popupPosition: { left: 100, top: 50 },
@@ -130,6 +131,8 @@ it("imports older family settings and round-trips independent family impact choi
     delete old.settings.familyImpactOverlaysEnabled;
     delete old.settings.showSalesFamilyOverlay;
     delete old.settings.useFamilyBlacklist;
+    delete old.settings.socialRemindersEnabled;
+    delete old.settings.socialRemindersPinned;
     delete old.settings.familyBlacklist;
     delete old.settings.disableHoverTooltipInVortex;
     delete old.settings.disableCardOverlaysInVortex;
@@ -140,6 +143,8 @@ it("imports older family settings and round-trips independent family impact choi
       familyImpactOverlaysEnabled: true,
       showSalesFamilyOverlay: true,
       useFamilyBlacklist: false,
+      socialRemindersEnabled: true,
+      socialRemindersPinned: false,
       familyBlacklist: [],
       disableHoverTooltipInVortex: false,
       disableCardOverlaysInVortex: false,
