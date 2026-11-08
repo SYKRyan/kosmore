@@ -13,6 +13,10 @@ import {
   RELAY_LISTED,
 } from "../../src/shared/page-relay";
 import type { Finish, MarketHistory } from "../../src/shared/types";
+import {
+  RELAY_SALE_BATCH,
+  saleSelectionKeys,
+} from "../../src/shared/sale-family-selection";
 import { auction } from "../fixtures/auctions";
 
 const ORIGIN = "https://kosmora.io";
@@ -110,6 +114,99 @@ it("invalidates personal prices only after successful single or batch listings, 
   await failed.win.fetch("/api/auctions", { method: "POST" });
   await flush();
   expect(failed.win.postMessage).not.toHaveBeenCalled();
+});
+
+it("relays only selection identities for native batch reads and draft updates", async () => {
+  const item = {
+    subjectId: "42",
+    key: "42.v",
+    instanceId: "copy",
+    card: {},
+    rarity: "Common",
+    suggestion: { start: "secret-price" },
+  };
+  const response = { items: [item, { block: "unavailable", subjectId: "99" }] };
+  const { win, dispatch } = fakeWindow(
+    vi.fn(() => json(response)) as unknown as typeof fetch,
+  );
+  Object.assign(win.location, {
+    pathname: "/market/sell/batch",
+    href: `${ORIGIN}/market/sell/batch?s=42.v`,
+  });
+  installPageRelay(win);
+  const res = await win.fetch("/api/market/listings/batch?subjects=42.v");
+  expect(await res.json()).toEqual(response);
+  await flush();
+  dispatch({ type: RELAY_READY });
+  expect(win.postMessage.mock.calls[0][0]).toEqual({
+    type: RELAY_SALE_BATCH,
+    source: "batch",
+    page: win.location.href,
+    revision: 1,
+    keys: ["42.v"],
+  });
+  await win.fetch("/api/market/sell-draft", {
+    method: "PUT",
+    body: JSON.stringify({
+      items: [
+        {
+          subjectId: "42",
+          fullArt: true,
+          start: "secret-price",
+          copy: "private-copy",
+        },
+      ],
+    }),
+  });
+  await flush();
+  expect(win.postMessage.mock.calls[1][0]).toMatchObject({
+    source: "draft",
+    revision: 2,
+    keys: ["42.f"],
+  });
+  expect(JSON.stringify(win.postMessage.mock.calls)).not.toContain(
+    "secret-price",
+  );
+  expect(JSON.stringify(win.postMessage.mock.calls)).not.toContain(
+    "private-copy",
+  );
+  await win.fetch("https://evil.example/api/market/listings/batch");
+  Object.assign(win.location, { pathname: "/market" });
+  await win.fetch("/api/market/listings/batch");
+  await flush();
+  expect(win.postMessage).toHaveBeenCalledTimes(2);
+  expect(
+    saleSelectionKeys({ items: [item, { subjectId: "bad" }] }, "batch"),
+  ).toBeUndefined();
+});
+
+it("observes Request draft bodies without consuming the native request", async () => {
+  const original = vi.fn(async (input: RequestInfo | URL) => {
+    if (input instanceof Request)
+      expect(await input.json()).toMatchObject({
+        items: [{ subjectId: "42" }],
+      });
+    return new Response("{}");
+  });
+  const { win, dispatch } = fakeWindow(original as typeof fetch);
+  Object.assign(win.location, {
+    pathname: "/market/sell/batch",
+    href: `${ORIGIN}/market/sell/batch`,
+  });
+  installPageRelay(win);
+  dispatch({ type: RELAY_READY });
+  await win.fetch(
+    new Request(`${ORIGIN}/api/market/sell-draft`, {
+      method: "PUT",
+      body: JSON.stringify({ items: [{ subjectId: "42", start: "17" }] }),
+    }),
+  );
+  await flush();
+  expect(win.postMessage.mock.calls[0][0]).toMatchObject({
+    source: "draft",
+    keys: ["42"],
+  });
+  expect(original).toHaveBeenCalledTimes(1);
 });
 
 it("validates relay messages by type and allow-listed path", () => {

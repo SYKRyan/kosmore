@@ -321,7 +321,7 @@ test("backup preview and cancellation preserve unsaved settings, and invalid fil
 test("backup screen remains usable by keyboard on a narrow viewport", async () => {
   await options.setViewportSize({ width: 390, height: 900 });
   const nav = options.getByRole("navigation", { name: "Settings groups" });
-  const link = nav.getByRole("link", { name: "Backup & restore", exact: true });
+  const link = nav.getByRole("link", { name: "Backup & Restore", exact: true });
   await link.focus();
   await link.press("Enter");
   await choose(options);
@@ -386,9 +386,7 @@ test("backup imports update open game settings and notes while preserving a dirt
     await game.goto("https://kosmora.io/collection");
     await game.locator(".kc-article").hover();
     const popup = game.locator("#kosmore-root");
-    await popup
-      .getByRole("button", { name: "Pin popup", exact: true })
-      .click();
+    await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
     await popup.getByRole("tab", { name: "Notes", exact: true }).click();
     const input = popup.getByRole("textbox", {
       name: "Card notes",

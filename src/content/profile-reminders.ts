@@ -1,4 +1,5 @@
 import { profilePlayer, type ProfilePlayer } from "../kosmora/profile";
+import { selectedSocialFriend, FRIEND_REMINDERS_ID } from "../kosmora/social";
 import { readSettings, parseSettings, SETTINGS_KEY } from "../shared/settings";
 import type { KosmoraClient } from "../shared/types";
 import { observePage } from "./page-changes";
@@ -8,7 +9,7 @@ import { button, el } from "./ui";
 import { headerIcon } from "./icons";
 
 export class ProfileReminders {
-  private profile?: ProfilePlayer;
+  private profile?: ProfilePlayer & { anchor: HTMLElement };
   private trigger?: HTMLElement;
   private toggle?: HTMLButtonElement;
   private view?: FriendReminders;
@@ -26,16 +27,23 @@ export class ProfileReminders {
   private close = button("", () => this.hidePopup(), "profile-close");
   private editor: SocialReminders;
 
-  constructor(client: Pick<KosmoraClient, "account" | "families">) {
+  constructor(
+    client: Pick<KosmoraClient, "account" | "families">,
+    private kind: "profile" | "social" = "profile",
+  ) {
     // An SVG pushpin stays legible beside the small brand label.
     this.pin.innerHTML =
       '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-4 1-4 4v4l-2 2-3-5-5-3 2-2h4l4-4 1-4Z M8 16l-5 5"/></svg>';
-    this.close.setAttribute("aria-label", "Close profile reminders");
+    this.close.setAttribute("aria-label", `Close ${this.kind} reminders`);
     this.close.append(headerIcon("close"));
     this.editor = new SocialReminders(client, {
       select: () =>
         this.enabled && this.activated ? (this.profile ?? null) : null,
-      options: { profile: true, controls: [this.pin, this.close] },
+      options: {
+        profile: true,
+        controls: [this.pin, this.close],
+        id: this.editorId,
+      },
       mount: (_friend, view) => {
         this.view = view;
         view.host.addEventListener("keydown", (event) => this.escape(event));
@@ -49,6 +57,16 @@ export class ProfileReminders {
         };
       },
     });
+  }
+  private get editorId() {
+    return this.kind === "social"
+      ? FRIEND_REMINDERS_ID
+      : "kosmore-profile-reminders";
+  }
+  private get pinSetting() {
+    return this.kind === "social"
+      ? "socialRemindersPinned"
+      : "profileRemindersPinned";
   }
   start() {
     observePage(() => this.scan());
@@ -98,13 +116,31 @@ export class ProfileReminders {
   }
   private settings(raw: unknown) {
     const settings = parseSettings(raw);
-    this.enabled = settings.profileRemindersEnabled;
-    this.pinned = settings.profileRemindersPinned;
+    this.enabled =
+      this.kind === "social"
+        ? settings.socialRemindersEnabled
+        : settings.profileRemindersEnabled;
+    this.pinned = settings[this.pinSetting];
     this.scan();
     this.layout();
   }
   private scan() {
-    const next = this.enabled ? profilePlayer() : null;
+    const player =
+      this.enabled && this.kind === "profile" ? profilePlayer() : null;
+    const friend =
+      this.enabled && this.kind === "social" ? selectedSocialFriend() : null;
+    const links = friend?.panel.querySelector<HTMLElement>(".sb-links");
+    const next = player
+      ? { ...player, anchor: player.panel }
+      : friend && links
+        ? {
+            ...friend,
+            heading:
+              friend.panel.querySelector<HTMLElement>(".sb-card-name") ??
+              friend.panel,
+            anchor: links,
+          }
+        : null;
     const same =
       next &&
       this.profile &&
@@ -120,20 +156,21 @@ export class ProfileReminders {
       this.activated = this.pinned && !!next;
       this.opened = false;
     }
+    this.profile = next ?? undefined;
     if (next && (!same || !this.trigger?.isConnected)) this.addTrigger(next);
     if (this.pinned && next) this.activated = true;
     this.editor.refresh();
     this.layout();
   }
-  private addTrigger(profile: ProfilePlayer) {
+  private addTrigger(profile: ProfilePlayer & { anchor: HTMLElement }) {
     this.trigger?.remove();
     const host = el("span");
-    host.id = "kosmore-profile-trigger";
+    host.id = `kosmore-${this.kind}-trigger`;
     host.dataset.kosmoreProfile = "trigger";
     const shadow = host.attachShadow({ mode: "open" }),
       style = el("style");
     style.textContent =
-      ":host{display:block;margin:0 0 -28px;grid-column:1 / -1}:host([hidden]){display:none}button{display:inline-flex;align-items:center;gap:5px;border:0;padding:3px 0;background:none;color:#dec17f;font:600 10px/1.5 system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;cursor:pointer}button:hover{color:#fff0b5}button:focus-visible{outline:2px solid #f1ce81;outline-offset:4px;border-radius:3px}span{font-size:14px;line-height:1}";
+      ":host{display:block;margin:0;grid-column:1 / -1}:host([hidden]){display:none}button{display:inline-flex;align-items:center;gap:5px;border:0;padding:3px 0;background:none;color:#dec17f;font:600 10px/1.5 system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;cursor:pointer}button:hover{color:#fff0b5}button:focus-visible{outline:2px solid #f1ce81;outline-offset:4px;border-radius:3px}span{font-size:14px;line-height:1}";
     const toggle = button("", () => {
       if (this.pinned) {
         this.view?.host.scrollIntoView({
@@ -159,15 +196,21 @@ export class ProfileReminders {
       `KosMore private reminders for ${profile.handle}`,
     );
     toggle.setAttribute("aria-haspopup", "dialog");
-    toggle.setAttribute("aria-controls", "kosmore-profile-reminders");
+    toggle.setAttribute("aria-controls", this.editorId);
     toggle.setAttribute("aria-expanded", String(this.opened || this.pinned));
     shadow.append(style, toggle);
     host.addEventListener("click", (event) => event.stopPropagation());
-    profile.panel.before(host);
+    profile.anchor.after(host);
     this.trigger = host;
     this.toggle = toggle;
   }
   private layout() {
+    if (
+      this.trigger &&
+      this.profile?.anchor.isConnected &&
+      this.profile.anchor.nextElementSibling !== this.trigger
+    )
+      this.profile.anchor.after(this.trigger);
     if (this.trigger) this.trigger.hidden = this.pinned;
     this.toggle?.setAttribute(
       "aria-expanded",
@@ -181,11 +224,11 @@ export class ProfileReminders {
     host.dataset.mode = this.pinned ? "widget" : "popup";
     this.pin.setAttribute(
       "aria-label",
-      this.pinned ? "Unpin profile reminders" : "Pin reminders to profile",
+      this.pinned
+        ? `Unpin ${this.kind} reminders`
+        : `Pin reminders to ${this.kind === "social" ? "Social" : "profile"}`,
     );
-    this.pin.title = this.pinned
-      ? "Unpin profile reminders"
-      : "Pin on profile pages";
+    this.pin.title = this.pin.getAttribute("aria-label")!;
     this.pin.setAttribute("aria-pressed", String(this.pinned));
     this.pin.disabled = this.savingPin;
     this.close.hidden = this.pinned;
@@ -196,7 +239,8 @@ export class ProfileReminders {
       host.style.removeProperty("left");
       host.style.removeProperty("top");
       host.hidden = false;
-      if (profile.panel.nextElementSibling !== host) profile.panel.after(host);
+      const anchor = this.trigger ?? profile.anchor;
+      if (anchor.nextElementSibling !== host) anchor.after(host);
     } else {
       host.popover = "manual";
       host.setAttribute("role", "dialog");
@@ -236,7 +280,7 @@ export class ProfileReminders {
     try {
       const settings = await readSettings();
       await chrome.storage.local.set({
-        [SETTINGS_KEY]: { ...settings, profileRemindersPinned: pinned },
+        [SETTINGS_KEY]: { ...settings, [this.pinSetting]: pinned },
       });
       this.pinned = pinned;
       this.opened = !pinned;

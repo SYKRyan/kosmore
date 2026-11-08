@@ -12,4 +12,38 @@ it("rejects arbitrary operations, invalid routing arguments, and uncorrelated me
     isTabRequest({ op: "listAlbums", requestId: "a", accountKey: "alice" }),
   ).toBe(true);
   expect(isTabRequest({ op: "add", requestId: "a" })).toBe(false);
+  expect(
+    isRequest({
+      op: "families",
+      requestId: "a",
+      tabId: 1,
+      accountKey: "alice",
+    }),
+  ).toBe(true);
+  expect(
+    isRequest({
+      op: "families",
+      requestId: "a",
+      tabId: -1,
+      accountKey: "alice",
+    }),
+  ).toBe(false);
+  expect(
+    isRequest({
+      op: "families",
+      requestId: "a",
+      tabId: 1,
+      accountKey: "BAD ACCOUNT",
+    }),
+  ).toBe(false);
+  expect(
+    isTabRequest({ op: "listFamilies", requestId: "a", accountKey: "alice" }),
+  ).toBe(true);
+  expect(
+    isTabRequest({
+      op: "listFamilies",
+      requestId: "a",
+      accountKey: "BAD ACCOUNT",
+    }),
+  ).toBe(false);
 });

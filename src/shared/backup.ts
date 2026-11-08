@@ -1,6 +1,10 @@
 import { defaults, parseSettings, SETTINGS_KEY } from "./settings";
 import { MARKET_FINISHES_KEY, parseMarketFinishes } from "./market-preferences";
-import { parseFriendReminder, type FriendReminder } from "./friend-reminders";
+import {
+  normalizeFamilyTokens,
+  parseFriendReminder,
+  type FriendReminder,
+} from "./friend-reminders";
 import { parseCardNote, type CardNote } from "./card-notes";
 import { NAVIGATION, hotkeyConflict, type Hotkeys } from "./hotkeys";
 import { STAT_CATALOG } from "./stat-catalog";
@@ -77,6 +81,12 @@ function backupSettings(value: unknown): Settings {
       "Unsupported settings version. Update KosMore before importing this backup.",
     );
   const standard = defaults();
+  if (Object.hasOwn(raw, "familyBlacklist")) {
+    const names = array(raw.familyBlacklist, "Family blacklist");
+    if (!names.every((name): name is string => typeof name === "string"))
+      throw new Error("Family blacklist entries must be family names.");
+    normalizeFamilyTokens(names, "in the family blacklist");
+  }
   for (const [key, field] of Object.entries(raw)) {
     if (!Object.hasOwn(standard, key))
       throw new Error(

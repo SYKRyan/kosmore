@@ -71,6 +71,112 @@ it("keeps Pulsar exclusions opt-in and applies each one only to games other than
     ),
   ).toMatchObject({ enabled: false, cardOverlaysEnabled: false });
 });
+it("keeps Vortex exclusions opt-in, independent of Pulsar and each other, without changing saved masters", () => {
+  for (const key of [
+    "disableHoverTooltipInVortex",
+    "disableCardOverlaysInVortex",
+  ] as const) {
+    expect(parseSettings({ schemaVersion: 1 })[key]).toBe(false);
+    expect(parseSettings({ schemaVersion: 1, [key]: "true" })[key]).toBe(false);
+    expect(parseSettings({ schemaVersion: 1, [key]: true })[key]).toBe(true);
+  }
+  const saved = {
+    ...defaults(),
+    disableHoverTooltipInVortex: true,
+    disableCardOverlaysInVortex: true,
+  };
+  for (const path of [
+    "/vortex",
+    "/vortex/",
+    "/vortex/inventory",
+    "/vortex/game/123",
+  ]) {
+    expect(settingsForPage(saved, path)).toMatchObject({
+      enabled: false,
+      cardOverlaysEnabled: false,
+    });
+    expect(
+      settingsForPage({ ...saved, disableHoverTooltipInVortex: false }, path),
+    ).toMatchObject({ enabled: true, cardOverlaysEnabled: false });
+    expect(
+      settingsForPage({ ...saved, disableCardOverlaysInVortex: false }, path),
+    ).toMatchObject({ enabled: false, cardOverlaysEnabled: true });
+    expect(
+      settingsForPage(
+        { ...defaults(), enabled: false, cardOverlaysEnabled: false },
+        path,
+      ),
+    ).toMatchObject({ enabled: false, cardOverlaysEnabled: false });
+  }
+  for (const path of [
+    "/collection",
+    "/fusion",
+    "/games",
+    "/constellation",
+    "/vortex-extra",
+    "/market/sell",
+  ])
+    expect(settingsForPage(saved, path)).toBe(saved);
+  expect(saved).toMatchObject({ enabled: true, cardOverlaysEnabled: true });
+});
+
+it("defaults Social to its own unpinned launcher and preserves independent pin preferences", () => {
+  expect(parseSettings({ schemaVersion: 1 })).toMatchObject({
+    socialRemindersEnabled: true,
+    socialRemindersPinned: false,
+  });
+  expect(
+    parseSettings({
+      schemaVersion: 1,
+      socialRemindersPinned: true,
+      profileRemindersPinned: false,
+    }),
+  ).toMatchObject({
+    socialRemindersPinned: true,
+    profileRemindersPinned: false,
+  });
+  expect(
+    parseSettings({
+      schemaVersion: 1,
+      socialRemindersPinned: false,
+      profileRemindersPinned: true,
+    }),
+  ).toMatchObject({
+    socialRemindersPinned: false,
+    profileRemindersPinned: true,
+  });
+});
+
+it("keeps family blacklist opt-in, normalizes tokens and repairs invalid saved lists", () => {
+  expect(parseSettings({ schemaVersion: 1 })).toMatchObject({
+    useFamilyBlacklist: false,
+    familyBlacklist: [],
+  });
+  expect(
+    parseSettings({ schemaVersion: 1, useFamilyBlacklist: "true" }),
+  ).toMatchObject({ useFamilyBlacklist: false });
+  expect(
+    parseSettings({
+      schemaVersion: 1,
+      useFamilyBlacklist: true,
+      familyBlacklist: [" Asteroids ", "asteroids", "Ducks, Geese and Swans"],
+    }),
+  ).toMatchObject({
+    useFamilyBlacklist: true,
+    familyBlacklist: ["Asteroids", "Ducks, Geese and Swans"],
+  });
+  for (const list of [
+    "Asteroids",
+    [7],
+    ["x".repeat(257)],
+    Array.from({ length: 51 }, (_, i) => `Family ${i}`),
+  ])
+    expect(
+      parseSettings({ schemaVersion: 1, familyBlacklist: list })
+        .familyBlacklist,
+    ).toEqual([]);
+});
+
 it("keeps account pins isolated and ordered while discarding corrupt identifiers", () => {
   const s = parseSettings({
     schemaVersion: 1,
@@ -86,12 +192,16 @@ it("enables new feature groups for older settings and keeps configuration when g
   const keys = [
     "navigationHotkeysEnabled",
     "tradeRemindersEnabled",
+    "socialRemindersEnabled",
     "showTradeFamilyBadges",
     "showTradePossibleInterest",
     "tradeRaritySymbols",
     "showTradeNotes",
     "showTradeFamilyOverlay",
     "showVortexFamilyOverlay",
+    "showFusionFamilyOverlay",
+    "familyImpactOverlaysEnabled",
+    "showSalesFamilyOverlay",
     "cardOverlaysEnabled",
     "statBoxesEnabled",
     "pinnedAlbumsEnabled",

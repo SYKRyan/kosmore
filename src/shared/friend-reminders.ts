@@ -18,7 +18,10 @@ export function friendReminderKey(account: string, friend: string): string {
 export function addFamilyTokens(families: string[], input: string): string[] {
   return normalizeFamilyTokens([...families, ...input.split(/[,\r\n]+/)]);
 }
-export function normalizeFamilyTokens(families: string[]): string[] {
+export function normalizeFamilyTokens(
+  families: string[],
+  context = "per friend",
+): string[] {
   const result: string[] = [];
   for (const part of families) {
     const family = part.trim().replace(/\s+/g, " ");
@@ -31,7 +34,7 @@ export function normalizeFamilyTokens(families: string[]): string[] {
       result.push(family);
     if (result.length > MAX_FAMILIES)
       throw new Error(
-        `You can save up to ${MAX_FAMILIES} families per friend.`,
+        `You can save up to ${MAX_FAMILIES} families ${context}.`,
       );
   }
   return result;

@@ -580,7 +580,7 @@ test("trade settings follow Profile, save independently, cancel drafts, and upda
     expect(requests).toBe(before);
     await options.setViewportSize({ width: 390, height: 900 });
     await options
-      .getByRole("link", { name: "Trade reminders", exact: true })
+      .getByRole("link", { name: "Trade Reminders", exact: true })
       .click();
     expect(
       await options.evaluate(
@@ -802,7 +802,7 @@ test("trade family impacts reuse all economic families and total copies while le
   });
   for (const setting of [
     { showTradeFamilyOverlay: false },
-    { cardOverlaysEnabled: false },
+    { familyImpactOverlaysEnabled: false },
   ]) {
     await worker.evaluate(
       (setting) =>
@@ -869,7 +869,7 @@ test("trade notes settings validate sizes, save only their group, pin, cancel, a
       })
       .uncheck();
     await options
-      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .getByRole("button", { name: "Save family impact settings", exact: true })
       .click();
     expect(
       await worker.evaluate(
@@ -887,7 +887,7 @@ test("trade notes settings validate sizes, save only their group, pin, cancel, a
     });
     await options.setViewportSize({ width: 390, height: 900 });
     await options
-      .getByRole("link", { name: "Trade reminders", exact: true })
+      .getByRole("link", { name: "Trade Reminders", exact: true })
       .click();
     await group.screenshot({
       path: "test-results/screenshots/trade-notes-settings-390.png",

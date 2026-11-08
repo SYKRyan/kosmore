@@ -3,16 +3,20 @@ import { defaultStats, parseStats } from "./stat-catalog";
 import { parseHotkeys } from "./hotkeys";
 import { parsePopupPosition } from "./popup-layout";
 import { validSaleAdjustment } from "./sales-prices";
+import { normalizeFamilyTokens } from "./friend-reminders";
 export const SETTINGS_KEY = "kosmore.settings";
 export const defaults = (): Settings => ({
   schemaVersion: 1,
   enabled: true,
   disableHoverTooltipInPulsar: false,
+  disableHoverTooltipInVortex: false,
   useOverlayButtonInsteadOfHover: false,
   outsideClickClosesTooltipOnly: false,
   fullScreenCenteredOnOpen: false,
   profileRemindersEnabled: true,
   profileRemindersPinned: false,
+  socialRemindersEnabled: true,
+  socialRemindersPinned: false,
   tradeRemindersEnabled: true,
   showTradeFamilyBadges: true,
   showTradePossibleInterest: true,
@@ -32,6 +36,7 @@ export const defaults = (): Settings => ({
   navigationHotkeysEnabled: true,
   cardOverlaysEnabled: true,
   disableCardOverlaysInPulsar: false,
+  disableCardOverlaysInVortex: false,
   salesOverlaysEnabled: true,
   showSalesLastSale: true,
   salesLastSaleSetsPrice: true,
@@ -58,6 +63,10 @@ export const defaults = (): Settings => ({
   showOnSaleOverlay: true,
   showFriendInterestOverlay: true,
   showQuestOverlay: true,
+  familyImpactOverlaysEnabled: true,
+  useFamilyBlacklist: false,
+  familyBlacklist: [],
+  showSalesFamilyOverlay: true,
   showFusionFamilyOverlay: true,
   showTradeFamilyOverlay: true,
   showVortexFamilyOverlay: true,
@@ -74,15 +83,32 @@ export function parseSettings(value: unknown): Settings {
   d.hotkeys = parseHotkeys(v.hotkeys);
   d.popupPosition = parsePopupPosition(v.popupPosition);
   d.friendTooltipPosition = parsePopupPosition(v.friendTooltipPosition);
+  if (
+    Array.isArray(v.familyBlacklist) &&
+    v.familyBlacklist.every((name) => typeof name === "string")
+  ) {
+    try {
+      d.familyBlacklist = normalizeFamilyTokens(
+        v.familyBlacklist,
+        "in the family blacklist",
+      );
+    } catch {
+      /* Invalid saved lists fall back to empty. */
+    }
+  }
   if (typeof v.enabled === "boolean") d.enabled = v.enabled;
   for (const key of [
     "disableHoverTooltipInPulsar",
     "disableCardOverlaysInPulsar",
+    "disableHoverTooltipInVortex",
+    "disableCardOverlaysInVortex",
     "useOverlayButtonInsteadOfHover",
     "outsideClickClosesTooltipOnly",
     "fullScreenCenteredOnOpen",
     "profileRemindersEnabled",
     "profileRemindersPinned",
+    "socialRemindersEnabled",
+    "socialRemindersPinned",
     "tradeRemindersEnabled",
     "showTradeFamilyBadges",
     "showTradePossibleInterest",
@@ -91,6 +117,9 @@ export function parseSettings(value: unknown): Settings {
     "tradeNotesPinned",
     "showTradeFamilyOverlay",
     "showVortexFamilyOverlay",
+    "familyImpactOverlaysEnabled",
+    "useFamilyBlacklist",
+    "showSalesFamilyOverlay",
     "friendTooltipEnabled",
     "navigationHotkeysEnabled",
     "cardOverlaysEnabled",

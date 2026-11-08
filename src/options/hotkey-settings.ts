@@ -13,7 +13,7 @@ export class HotkeySettings {
   constructor(private change: (hotkeys: Hotkeys) => void) {
     this.hint.setAttribute("aria-live", "polite");
     this.host.append(
-      el("h2", "", "Navigation hotkeys"),
+      el("h2", "", "Navigation Hotkeys"),
       el(
         "p",
         "sub",

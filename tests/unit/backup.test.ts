@@ -49,7 +49,12 @@ function values(): StoredValues {
       popupWidth: 560,
       disableHoverTooltipInPulsar: true,
       disableCardOverlaysInPulsar: true,
+      disableHoverTooltipInVortex: true,
+      disableCardOverlaysInVortex: true,
       showVortexFamilyOverlay: false,
+      useFamilyBlacklist: true,
+      socialRemindersPinned: true,
+      familyBlacklist: ["Asteroids", "Ducks, Geese and Swans"],
       salesLastSaleAdjustment: -1.25,
       popupPosition: { left: 100, top: 50 },
       pinnedAlbums: { player: [ALBUM_B, ALBUM_A], other: [] },
@@ -120,6 +125,60 @@ it("exports usable defaults from a new installation and names files by local tim
     "KosMore-backup-2026-11-05-090807.json",
   );
 });
+it("imports older family settings and round-trips independent family impact choices", async () => {
+  for (const mode of ["merge", "replace"] as const) {
+    const old = JSON.parse(serializeBackup(backup()));
+    delete old.settings.familyImpactOverlaysEnabled;
+    delete old.settings.showSalesFamilyOverlay;
+    delete old.settings.useFamilyBlacklist;
+    delete old.settings.socialRemindersEnabled;
+    delete old.settings.socialRemindersPinned;
+    delete old.settings.familyBlacklist;
+    delete old.settings.disableHoverTooltipInVortex;
+    delete old.settings.disableCardOverlaysInVortex;
+    old.settings.showFusionFamilyOverlay = false;
+    const destination = memory();
+    await applyImport(prepareImport(old, mode, {}), destination.storage);
+    expect(destination.data()[SETTINGS_KEY]).toMatchObject({
+      familyImpactOverlaysEnabled: true,
+      showSalesFamilyOverlay: true,
+      useFamilyBlacklist: false,
+      socialRemindersEnabled: true,
+      socialRemindersPinned: false,
+      familyBlacklist: [],
+      disableHoverTooltipInVortex: false,
+      disableCardOverlaysInVortex: false,
+      showFusionFamilyOverlay: false,
+      showVortexFamilyOverlay: false,
+    });
+  }
+  const current = backup();
+  current.settings.familyImpactOverlaysEnabled = false;
+  current.settings.showSalesFamilyOverlay = false;
+  expect(parseBackup(serializeBackup(current)).settings).toMatchObject({
+    familyImpactOverlaysEnabled: false,
+    showSalesFamilyOverlay: false,
+  });
+  const invalid = JSON.parse(serializeBackup(current));
+  invalid.settings.showSalesFamilyOverlay = "false";
+  expect(() => validateBackup(invalid)).toThrow("must be on or off");
+});
+it("validates blacklist tokens in backups rather than silently discarding invalid values", () => {
+  for (const list of [
+    "Asteroids",
+    [7],
+    ["x".repeat(257)],
+    Array.from({ length: 51 }, (_, i) => `Family ${i}`),
+  ]) {
+    const raw = JSON.parse(serializeBackup(backup()));
+    raw.settings.familyBlacklist = list;
+    expect(() => validateBackup(raw)).toThrow();
+  }
+  const raw = JSON.parse(serializeBackup(backup()));
+  raw.settings.useFamilyBlacklist = "false";
+  expect(() => validateBackup(raw)).toThrow("must be on or off");
+});
+
 it("merges imported preferences and whole records while retaining destination-only data and pin lists", async () => {
   const current = {
     ...values(),

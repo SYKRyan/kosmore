@@ -154,7 +154,7 @@ function E(e) {
 	].includes(t.op) || t.op === "popupLayout" && w(t.change) || t.op === "friendPopupLayout" && w(t.change, {
 		minWidth: 240,
 		minHeight: 160
-	}) || t.op === "albums" && Number.isInteger(t.tabId) && t.tabId >= 0 && /^[a-z0-9_]{1,24}$/.test(t.accountKey));
+	}) || (t.op === "albums" || t.op === "families") && Number.isInteger(t.tabId) && t.tabId >= 0 && /^[a-z0-9_]{1,24}$/.test(t.accountKey));
 }
 // src/shared/stat-catalog.ts
 var D = [
@@ -395,16 +395,30 @@ function P(e) {
 function F(e) {
 	return P(e) !== void 0;
 }
+function I(e, t = "per friend") {
+	let n = [];
+	for (let r of e) {
+		let e = r.trim().replace(/\s+/g, " ");
+		if (e) {
+			if (e.length > 256) throw Error("Family names can have up to 256 characters.");
+			if (n.some((t) => t.toLowerCase() === e.toLowerCase()) || n.push(e), n.length > 50) throw Error(`You can save up to 50 families ${t}.`);
+		}
+	}
+	return n;
+}
 // src/shared/settings.ts
-var I = "kosmore.settings", L = () => ({
+var L = "kosmore.settings", R = () => ({
 	schemaVersion: 1,
 	enabled: !0,
 	disableHoverTooltipInPulsar: !1,
+	disableHoverTooltipInVortex: !1,
 	useOverlayButtonInsteadOfHover: !1,
 	outsideClickClosesTooltipOnly: !1,
 	fullScreenCenteredOnOpen: !1,
 	profileRemindersEnabled: !0,
 	profileRemindersPinned: !1,
+	socialRemindersEnabled: !0,
+	socialRemindersPinned: !1,
 	tradeRemindersEnabled: !0,
 	showTradeFamilyBadges: !0,
 	showTradePossibleInterest: !0,
@@ -424,6 +438,7 @@ var I = "kosmore.settings", L = () => ({
 	navigationHotkeysEnabled: !0,
 	cardOverlaysEnabled: !0,
 	disableCardOverlaysInPulsar: !1,
+	disableCardOverlaysInVortex: !1,
 	salesOverlaysEnabled: !0,
 	showSalesLastSale: !0,
 	salesLastSaleSetsPrice: !0,
@@ -450,6 +465,10 @@ var I = "kosmore.settings", L = () => ({
 	showOnSaleOverlay: !0,
 	showFriendInterestOverlay: !0,
 	showQuestOverlay: !0,
+	familyImpactOverlaysEnabled: !0,
+	useFamilyBlacklist: !1,
+	familyBlacklist: [],
+	showSalesFamilyOverlay: !0,
 	showFusionFamilyOverlay: !0,
 	showTradeFamilyOverlay: !0,
 	showVortexFamilyOverlay: !0,
@@ -457,13 +476,16 @@ var I = "kosmore.settings", L = () => ({
 	hotkeys: {},
 	pinnedAlbums: {}
 });
-function R(e) {
-	let t = L();
+function z(e) {
+	let t = R();
 	if (!e || typeof e != "object") return t;
 	let n = e;
 	if (n.schemaVersion !== 1) return t;
-	t.stats = A(n.stats), t.hotkeys = N(n.hotkeys), t.popupPosition = S(n.popupPosition), t.friendTooltipPosition = S(n.friendTooltipPosition), typeof n.enabled == "boolean" && (t.enabled = n.enabled);
-	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.useOverlayButtonInsteadOfHover.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.profileRemindersEnabled.profileRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.friendTooltipEnabled.navigationHotkeysEnabled.cardOverlaysEnabled.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
+	if (t.stats = A(n.stats), t.hotkeys = N(n.hotkeys), t.popupPosition = S(n.popupPosition), t.friendTooltipPosition = S(n.friendTooltipPosition), Array.isArray(n.familyBlacklist) && n.familyBlacklist.every((e) => typeof e == "string")) try {
+		t.familyBlacklist = I(n.familyBlacklist, "in the family blacklist");
+	} catch {}
+	typeof n.enabled == "boolean" && (t.enabled = n.enabled);
+	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.navigationHotkeysEnabled.cardOverlaysEnabled.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
 	for (let e of [
 		"salesLastSaleAdjustment",
 		"salesLowestListingAdjustment",
@@ -538,14 +560,14 @@ function R(e) {
 	});
 	return t;
 }
-async function z() {
-	return R((await chrome.storage.local.get(I))[I]);
+async function B() {
+	return z((await chrome.storage.local.get(L))[L]);
 }
-async function B(e) {
-	await chrome.storage.local.set({ [I]: R(e) });
+async function V(e) {
+	await chrome.storage.local.set({ [L]: z(e) });
 }
 // src/shared/listing-cache.ts
-var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e > 0 && Date.now() - e < 3e5, W = (e, t) => d.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), G = () => new DOMException("Listing lookup canceled.", "AbortError"), K = class {
+var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e > 0 && Date.now() - e < 3e5, G = (e, t) => d.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), K = () => new DOMException("Listing lookup canceled.", "AbortError"), q = class {
 	local;
 	session;
 	writes = Promise.resolve();
@@ -559,7 +581,7 @@ var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e >
 		return this.writes = t.catch(() => {}), t;
 	}
 	async index() {
-		let e = (await this.local.get(V))[V], t = {
+		let e = (await this.local.get(H))[H], t = {
 			v: 1,
 			entries: {}
 		};
@@ -569,8 +591,8 @@ var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e >
 	async cached(e, t, n = !0) {
 		return this.write(async () => {
 			let r = await this.index(), i = `${e}:${t}`, a = r.entries[i];
-			a && n && (a.usedAt = Date.now(), await this.local.set({ [V]: r }));
-			let o = (await this.session.get(H + e))[H + e];
+			a && n && (a.usedAt = Date.now(), await this.local.set({ [H]: r }));
+			let o = (await this.session.get(U + e))[U + e];
 			return {
 				...m(o) ? { batch: o } : {},
 				...a ? { latest: {
@@ -583,7 +605,7 @@ var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e >
 	async saveBatch(e, t, n) {
 		await this.write(async () => {
 			if (this.epochs.get(e) !== n) return;
-			let r = await this.session.get(null), i = H + e, a = Object.keys(r).filter((e) => e.startsWith(H)), o = JSON.stringify(t).length * 2;
+			let r = await this.session.get(null), i = U + e, a = Object.keys(r).filter((e) => e.startsWith(U)), o = JSON.stringify(t).length * 2;
 			if (o > 6e6) return;
 			let s = a.filter((e) => e !== i).sort((e, t) => Number(r[e]?.fetchedAt ?? 0) - Number(r[t]?.fetchedAt ?? 0));
 			o += s.reduce((e, t) => e + JSON.stringify(r[t]).length * 2, 0);
@@ -597,7 +619,7 @@ var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e >
 	}
 	async batch(e) {
 		await this.writes;
-		let t = H + e, n = (await this.session.get(t))[t];
+		let t = U + e, n = (await this.session.get(t))[t];
 		return m(n) ? n : void 0;
 	}
 	async savePrice(e, t, n, r) {
@@ -610,15 +632,15 @@ var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e >
 			};
 			let a = Object.keys(i.entries).sort((e, t) => i.entries[e].usedAt - i.entries[t].usedAt);
 			for (let e of a.slice(0, Math.max(0, a.length - 1e4))) delete i.entries[e];
-			await this.local.set({ [V]: i });
+			await this.local.set({ [H]: i });
 		});
 	}
 	async invalidate(e) {
 		this.epochs.set(e, (this.epochs.get(e) ?? 0) + 1), this.pending.get(e)?.controller.abort(), this.pending.delete(e), await this.write(async () => {
 			let t = await this.index();
 			for (let [n, r] of Object.entries(t.entries)) n.startsWith(`${e}:`) && (r.checkedAt = 0);
-			await this.local.set({ [V]: t });
-			let n = H + e, r = await this.session.get(n);
+			await this.local.set({ [H]: t });
+			let n = U + e, r = await this.session.get(n);
 			m(r[n]) && await this.session.set({ [n]: {
 				...r[n],
 				fetchedAt: 0
@@ -629,25 +651,25 @@ var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e >
 		let o = await this.cached(e, t);
 		i.throwIfAborted();
 		let s = o.batch;
-		if (n === "initial" && s && U(s.fetchedAt) || n === "more" && s && g(s) && U(s.fetchedAt)) return s;
+		if (n === "initial" && s && W(s.fetchedAt) || n === "more" && s && g(s) && W(s.fetchedAt)) return s;
 		let c = n === "more" && a ? a : n === "more" && s ? v(s) : f();
-		return this.ensure(e, c, r, i, n === "refresh" || !!s && !U(s.fetchedAt));
+		return this.ensure(e, c, r, i, n === "refresh" || !!s && !W(s.fetchedAt));
 	}
 	async latest(e, t, n, r) {
 		let i = await this.cached(e, t);
-		if (r.throwIfAborted(), i.latest && U(i.latest.checkedAt) && (!i.batch || i.batch.fetchedAt <= i.latest.checkedAt)) return i.latest;
+		if (r.throwIfAborted(), i.latest && W(i.latest.checkedAt) && (!i.batch || i.batch.fetchedAt <= i.latest.checkedAt)) return i.latest;
 		let a = this.epochs.get(e) ?? 0;
 		this.epochs.set(e, a);
 		let o = i.batch;
-		for (o && U(o.fetchedAt) || (o = await this.ensure(e, f(), n, r, !!o));;) {
-			if (r.throwIfAborted(), this.epochs.get(e) !== a) throw G();
+		for (o && W(o.fetchedAt) || (o = await this.ensure(e, f(), n, r, !!o));;) {
+			if (r.throwIfAborted(), this.epochs.get(e) !== a) throw K();
 			let i = _(o, t);
 			if (!i.length) {
 				let n = {
 					listing: o.listings.find((e) => e.subjectId === t) ?? null,
 					checkedAt: o.fetchedAt
 				};
-				if (await this.savePrice(e, t, n, a), r.aborted || this.epochs.get(e) !== a) throw G();
+				if (await this.savePrice(e, t, n, a), r.aborted || this.epochs.get(e) !== a) throw K();
 				return n;
 			}
 			o = await this.ensure(e, v(o, i), n, r);
@@ -658,7 +680,7 @@ var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e >
 			let a = this.epochs.get(e);
 			if (!i) {
 				let n = await this.batch(e);
-				if (r.throwIfAborted(), n && U(n.fetchedAt) && W(n, t)) return n;
+				if (r.throwIfAborted(), n && W(n.fetchedAt) && G(n, t)) return n;
 			}
 			let o = this.pending.get(e);
 			if (!o || o.controller.signal.aborted) {
@@ -686,12 +708,12 @@ var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e >
 						}
 					}
 					if (!r || !m(r)) throw Error("Your listing history is unavailable.");
-					if (this.epochs.get(e) !== a || n.controller.signal.aborted) throw G();
+					if (this.epochs.get(e) !== a || n.controller.signal.aborted) throw K();
 					let i = await this.batch(e);
 					if (i && r.fetchedAt <= i.fetchedAt && (r = {
 						...r,
 						fetchedAt: i.fetchedAt + 1
-					}), i && U(i.fetchedAt)) {
+					}), i && W(i.fetchedAt)) {
 						for (let e of d) if (n.limits[e] > i.limits[e] && r.counts[e] <= i.counts[e] && r.counts[e] < r.totals[e]) throw Error("Your listing history stopped before all auctions were returned.");
 					}
 					return await this.saveBatch(e, r, a), r;
@@ -702,8 +724,8 @@ var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e >
 				n.promise.then(r, r);
 			} else if (!o.started) for (let e of d) o.limits[e] = Math.max(o.limits[e], t[e]);
 			let s = await this.consume(o, n, r);
-			if (r.throwIfAborted(), this.epochs.get(e) !== a) throw G();
-			if (W(s, t)) return s;
+			if (r.throwIfAborted(), this.epochs.get(e) !== a) throw K();
+			if (G(s, t)) return s;
 			i = !1;
 		}
 	}
@@ -715,7 +737,7 @@ var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e >
 				let r = e.readers.get(t) - 1;
 				return r ? e.readers.set(t, r) : e.readers.delete(t), e.users || e.controller.abort(), !0;
 			}, s = () => {
-				o() && i(G());
+				o() && i(K());
 			};
 			n.addEventListener("abort", s, { once: !0 }), n.aborted ? s() : e.promise.then((e) => {
 				o() && r(e);
@@ -726,8 +748,8 @@ var V = "kosmore.myListingPrices", H = "kosmore.listingHistory.", U = (e) => e >
 	}
 };
 // src/listing-background.ts
-function q() {
-	let e = new K(chrome.storage.local, chrome.storage.session), t = /* @__PURE__ */ new Map(), n = /* @__PURE__ */ new Set();
+function J() {
+	let e = new q(chrome.storage.local, chrome.storage.session), t = /* @__PURE__ */ new Map(), n = /* @__PURE__ */ new Set();
 	chrome.tabs.onRemoved.addListener((e) => {
 		for (let [n, r] of t) n.startsWith(`${e}:`) && (r.abort(), t.delete(n));
 	}), chrome.runtime.onMessage.addListener((r, i, a) => {
@@ -799,27 +821,27 @@ function q() {
 	});
 }
 // src/background.ts
-q();
-var J = Promise.resolve();
+J();
+var Y = Promise.resolve();
 chrome.tabs.onRemoved.addListener((e) => {
 	chrome.storage.session.remove([`${b}${e}`, `${x}${e}`]);
 }), chrome.action.onClicked.addListener(() => {
 	chrome.runtime.openOptionsPage();
 }), chrome.runtime.onMessage.addListener((e, t, n) => {
 	if (t.id !== chrome.runtime.id || !E(e)) return !1;
-	let r = t.url === chrome.runtime.getURL("options.html"), i = !!t.tab && t.url?.startsWith("https://kosmora.io/");
+	let r = t.url?.split(/[?#]/, 1)[0] === chrome.runtime.getURL("options.html"), i = !!t.tab && t.url?.startsWith("https://kosmora.io/");
 	if ((e.op === "popupState" || e.op === "popupLayout" || e.op === "friendPopupState" || e.op === "friendPopupLayout") && i && t.tab?.id !== void 0 && t.frameId === 0) {
-		let r = e.op === "friendPopupState" || e.op === "friendPopupLayout", i = `${r ? x : b}${t.tab.id}`, a = J.then(async () => {
+		let r = e.op === "friendPopupState" || e.op === "friendPopupLayout", i = `${r ? x : b}${t.tab.id}`, a = Y.then(async () => {
 			let t = C((await chrome.storage.session.get(i))[i]);
 			if (e.op === "popupState" || e.op === "friendPopupState") return t;
 			let n = e.change;
 			if (n.tab !== void 0 && (t.tab = n.tab), n.pinned !== void 0 && (t.pinned = n.pinned), n.position && (t.position = S(n.position)), await chrome.storage.session.set({ [i]: t }), n.position || n.width !== void 0 || n.height !== void 0) {
-				let e = await z();
-				n.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = S(n.position)), n.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(n.width)), n.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(n.height)), await B(e);
+				let e = await B();
+				n.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = S(n.position)), n.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(n.width)), n.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(n.height)), await V(e);
 			}
 			return t;
 		});
-		return J = a.then(() => {}, () => {}), a.then((t) => n({
+		return Y = a.then(() => {}, () => {}), a.then((t) => n({
 			requestId: e.requestId,
 			ok: !0,
 			data: t
@@ -848,11 +870,11 @@ chrome.tabs.onRemoved.addListener((e) => {
 				};
 			}))).flatMap((e) => e.status === "fulfilled" ? [e.value] : []);
 		}
-		if (e.op === "albums") {
+		if (e.op === "albums" || e.op === "families") {
 			if (!(await chrome.tabs.get(e.tabId)).url?.startsWith("https://kosmora.io/")) throw Error("Choose a Kosmora tab.");
 			let t = await chrome.tabs.sendMessage(e.tabId, {
 				requestId: e.requestId,
-				op: "listAlbums",
+				op: e.op === "families" ? "listFamilies" : "listAlbums",
 				accountKey: e.accountKey
 			});
 			if (!t?.ok || t.requestId !== e.requestId) throw Error(t && !t.ok ? t.error : "The game tab is unavailable.");

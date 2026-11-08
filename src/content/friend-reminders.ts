@@ -45,7 +45,7 @@ export class FriendReminders {
     handle: string,
     private persist: (value: FriendReminder) => Promise<void>,
     retryFamilies: () => void,
-    options?: { profile: boolean; controls: HTMLElement[] },
+    options?: { profile: boolean; controls: HTMLElement[]; id?: string },
   ) {
     this.retryButton = button(
       "Retry families",
@@ -53,9 +53,9 @@ export class FriendReminders {
       "retry-families",
     );
     this.retryButton.hidden = true;
-    this.host.id = options?.profile
-      ? "kosmore-profile-reminders"
-      : FRIEND_REMINDERS_ID;
+    this.host.id =
+      options?.id ??
+      (options?.profile ? "kosmore-profile-reminders" : FRIEND_REMINDERS_ID);
     if (options?.profile) this.host.dataset.kosmoreProfile = "editor";
     const shadow = this.host.attachShadow({ mode: "open" });
     const style = el("style");

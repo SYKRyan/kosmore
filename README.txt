@@ -16,8 +16,9 @@ to Kosmora.
   auction, sales, and local sale-rate boxes.
 - Card overlays: spot active auctions, recent sales, your listed cards, quest
   cards, and matches for friends' saved family preferences.
-- Family impact: see whether fusing, trading, or losing a card in Vortex would
-  lower a family tier, accounting for other copies and the Fusion tray.
+- Family impact: see whether fusing, trading, selling, or losing cards in
+  Vortex would lower a family tier, accounting for other copies and the
+  current batch or selection.
 - Friend tooltip: expand matching friends' saved families and notes in a
   separate popup with Social and Profile links.
 - Social and profile reminders: keep private family preferences and notes for
@@ -97,6 +98,12 @@ displayed inside the card tooltip need that tooltip enabled.
 Disable in Pulsar, available separately under Hover tooltip and Card overlays,
 applies to Constellation, Aion, Photon, Horizon, and Umbra. Vortex and the
 Pulsar hub keep their normal settings.
+
+Disable in Vortex sits directly below each Pulsar control in Hover Tooltip
+and Card Overlays. Each option independently hides its feature throughout
+Vortex, including subpages, while preserving the main enabled switch. Both
+default to off. The hover option also hides tooltip open buttons; the overlay
+option also hides tooltip header indicators.
 
 Hover tooltip
 -------------
@@ -235,33 +242,48 @@ configured independently:
   preferences you saved for current friends.
 - Quest: a gold Quest badge when the card belongs to any quest, whether you
   follow it or not.
-- Family impact on the Fusion page: a badge at the bottom left of each card's
-  art showing ✓ Safe when no family loses a tier, or ⚠ Loses Asteroids I when
-  fusing it drops that family from tier I. A +1 indicates another affected
-  family. Counts include cards already in the tray and all families the card
-  counts toward. Keeping another copy preserves that card's family
-  contribution.
-- Family impact on the Trade page: show Safe or the affected family tiers
-  while choosing your card to trade. It uses the same family checks as Fusion;
-  trading a copy preserves the family contribution when you still own another
-  copy. This has its own Show family impact on the Trade page setting.
-- Family impact on the Vortex page: show Safe or the affected family tiers on
-  your stake cards and in the card picker, based on losing one copy. All owned
-  copies and economic families count. Checks refresh after spins, and badges
-  stay hidden when ownership or family data is unknown. Use Show family impact
-  on the Vortex page to turn them on or off independently of Fusion and Trade.
-
-Fusion impact follows complete batches in the order you choose cards. A chosen
-card still waiting for its batch has a dashed outline. Badges do not block
-card selection. Use Show family impact on the Fusion page to turn them on or
-off.
-
 The price switches are subsettings of their respective indicators. Friend
 indicators on cards are passive; use the indicator inside the card tooltip to
 open the companion friend popup.
 
 Compact Market Activity and journal thumbnails omit price/signal overlays.
 They still support the tooltip overlay button when enabled.
+
+Family Impact Overlay
+---------------------
+
+This group has its own master switch and independent Fusion, Trade, Vortex,
+and Show on sale screens options. All default to on; existing saved choices
+remain intact. Card overlays and Sales Overlay work independently.
+
+The Blacklist subsection has Use Family Blacklist, off by default, and the
+same searchable family tokens used for friend interests. Enable it, add
+families, then save the group. Otherwise Safe cards matching a listed family
+show a red Blacklist tag; tier-loss warnings retain their normal labels.
+Matching runs only while rendering with the feature enabled, using loaded
+card families without extra reads. Disabling it preserves the tokens, and
+backups include the option and list.
+
+- Fusion: badges on card art show Safe or the affected family tier. Checks
+  account for every economic family, other copies, and the current tray.
+  Complete batches follow selection order; waiting cards have dashed badges.
+- Trade: check your card choices against losing one copy. Keeping another
+  copy preserves that card's family contribution.
+- Vortex: check stake cards and the picker against losing one copy. Counts
+  and ownership refresh after spins.
+- Sale screens: Sell Many recalculates while selecting or deselecting cards,
+  before Continue. Selected cards and prospective additions account for the
+  whole selection, including cards hidden by filters or pagination. Single
+  and batch sale drafts show impact beneath each listing's price controls,
+  outside card art. Checks assume submitted copies sell. Removing a listing
+  recalculates the remaining batch, including shared families and copies
+  across finishes.
+
+Badges do not block native actions. Sale checks reserve a gray Calculating…
+badge while loading, then show Safe or family impact without changing the
+row height. Batch sale badges sit at the bottom right of each listing.
+Unavailable sale impact stays gray; other family checks stay hidden while
+required data is unknown.
 
 Friend tooltip
 --------------
@@ -285,11 +307,23 @@ px. Position and dimensions save automatically. To open this popup, enable
 card hover tooltips, Card overlays, the interested-friends indicator, and
 Friend tooltip.
 
-Profile reminders
+Social Reminders
+----------------
+
+On Social, select a friend and open ✦ KosMore below the Collection and
+Profile links and above Between You. The launcher occupies the pinned
+editor's location. Pin the popup to keep the editor inline; unpin to return
+to a popup. Pinning and unpinning preserve unsaved edits.
+
+Social Reminders has its own enable switch and Keep reminders pinned on
+Social preference, independent of Profile Reminders. It is enabled and
+unpinned by default. Both pages edit the same private families and notes.
+
+Profile Reminders
 -----------------
 
-On a player's profile, open ✦ KosMore above the header to edit their private
-family preferences and notes. This is the same reminder data used on Social,
+On a player's profile, open ✦ KosMore below the header and above Albums to
+edit private family preferences and notes. This is the same reminder data used on Social,
 in friend matches, and during trades. The player does not have to be in your
 current friend list to have a profile reminder.
 
@@ -298,14 +332,12 @@ current friend list to have a profile reminder.
 - Use Save to store edits or Cancel to restore the saved values.
 - Pin the editor below the profile header and above Albums. Families appear on
   the left and notes on the right, stacking on narrow screens.
-- While pinned, the standalone control above the header is hidden. Unpin from
+- While pinned, the standalone control is hidden. Unpin from
   the widget to return to the popup. Moving between popup and widget preserves
   unsaved edits.
 - Use Keep reminders pinned on profiles in settings to control the persistent
   pinned display.
 
-On Social, select a friend to use the same family-and-notes editor. Social
-editing remains available independently of the Profile reminders switch.
 Preferences are private to your extension installation and account; saving
 them does not update the player's Kosmora profile or send them a message.
 

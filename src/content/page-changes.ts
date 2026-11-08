@@ -76,6 +76,7 @@ export function observePage(listener: (changes: PageChanges) => void) {
         "hidden",
         "aria-hidden",
         "aria-label",
+        "aria-pressed",
         "inert",
         "style",
         "open",

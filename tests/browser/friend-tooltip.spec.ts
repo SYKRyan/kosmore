@@ -475,7 +475,7 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
         exact: true,
       });
     await options
-      .getByRole("link", { name: "Friend tooltip", exact: true })
+      .getByRole("link", { name: "Friend Tooltip", exact: true })
       .click();
     await group.getByLabel("Friend hover delay", { exact: true }).fill("250");
     await group.getByLabel("Friend dismiss delay", { exact: true }).fill("800");
@@ -511,7 +511,7 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
     ).toBeChecked();
     await options.setViewportSize({ width: 390, height: 900 });
     await options
-      .getByRole("link", { name: "Friend tooltip", exact: true })
+      .getByRole("link", { name: "Friend Tooltip", exact: true })
       .click();
     expect(
       await options.evaluate(
