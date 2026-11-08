@@ -5,7 +5,11 @@ import {
   parseRecipes,
   type FusionCard,
 } from "../kosmora/fusion";
-import { isRelayMessage, RELAY_FUSION } from "../shared/page-relay";
+import {
+  isRelayMessage,
+  RELAY_FUSION,
+  RELAY_VORTEX,
+} from "../shared/page-relay";
 import {
   fusionVerdict,
   tierName,
@@ -17,7 +21,7 @@ import { observePage } from "./page-changes";
 import { el } from "./ui";
 
 export const FUSION_FAMILY_ATTR = "data-kosmore-fusion-family";
-/** Counts can change after a fusion; re-read them at most this often. */
+/** Counts can change after a fusion or Vortex spin; re-read them at most this often. */
 const COUNTS_GAP = 15_000;
 /** Card family reads in flight at once (shared with the card overlays' cache). */
 const CONCURRENCY = 2;
@@ -52,7 +56,7 @@ const STYLE = `
 `;
 
 /**
- * Family impact on the game's Fusion page: each card you could pick is marked
+ * Family impact on Fusion, Trade, and Vortex: each card you could pick is marked
  * "✓ Safe" or, when fusing it drops one of its families a tier,
  * "⚠ Loses <Family> <tier>", counting the cards already in the tray.
  * Reads the game's own grid and milestone responses (via the page relay), your
@@ -67,6 +71,7 @@ export class FusionFamilyImpact {
   /** Total ownership across finishes and availability, not only tradable copies. */
   private owned = new Map<string, number>();
   private freshOwned = new Set<string>();
+  private ownershipRevision = 0;
   private generation = 0;
   private wanted = new Set<string>();
   private reading = new Set<string>();
@@ -103,7 +108,8 @@ export class FusionFamilyImpact {
         event.source !== this.win ||
         event.origin !== this.win.location.origin ||
         !isRelayMessage(event.data) ||
-        !RELAY_FUSION.test(event.data.path)
+        (!RELAY_FUSION.test(event.data.path) &&
+          !RELAY_VORTEX.test(event.data.path))
       )
         return;
       this.receive(event.data.path, event.data.data);
@@ -125,9 +131,7 @@ export class FusionFamilyImpact {
     // counts when the player comes back to this one.
     const back = () => {
       if (this.win.document.hidden) return;
-      this.countsStale = true;
-      for (const id of this.owned.keys()) this.freshOwned.add(id);
-      this.owned.clear();
+      this.invalidateOwnership();
       this.schedule();
     };
     this.win.addEventListener("focus", back);
@@ -170,7 +174,9 @@ export class FusionFamilyImpact {
   /** A relayed copy of the game's own `/api/fusion`, `/api/fusion/cards` or `/api/families`. */
   receive(path: string, data: unknown) {
     try {
-      if (path === "/api/families") this.milestones = parseMilestones(data);
+      if (RELAY_VORTEX.test(path)) this.invalidateOwnership();
+      else if (path === "/api/families")
+        this.milestones = parseMilestones(data);
       else if (path === "/api/fusion") this.recipes = parseRecipes(data);
       else {
         let reload = false;
@@ -193,7 +199,8 @@ export class FusionFamilyImpact {
       !!this.settings?.cardOverlaysEnabled &&
       ((this.settings.showFusionFamilyOverlay &&
         this.win.location.pathname === "/fusion") ||
-        (this.settings.showTradeFamilyOverlay && this.trading()))
+        (this.settings.showTradeFamilyOverlay && this.trading()) ||
+        (this.settings.showVortexFamilyOverlay && this.vortex()))
     );
   }
 
@@ -204,6 +211,18 @@ export class FusionFamilyImpact {
         'main .sx-new-trade [data-testid="trade-mine-filters"]',
       )
     );
+  }
+
+  private vortex() {
+    return this.win.location.pathname === "/vortex";
+  }
+
+  private invalidateOwnership() {
+    this.ownershipRevision++;
+    this.countsStale = true;
+    for (const id of [...this.owned.keys(), ...this.reading])
+      this.freshOwned.add(id);
+    this.owned.clear();
   }
 
   private schedule() {
@@ -233,13 +252,19 @@ export class FusionFamilyImpact {
     }
     this.loading = true;
     const generation = this.generation;
+    const ownershipRevision = this.ownershipRevision;
+    const freshCounts = !!this.counts || this.countsStale;
     // Cleared now, not on arrival: a fusion during the read marks it stale again.
     if (counts) this.countsStale = false;
     void Promise.all([
       counts
-        ? this.client.familyCounts(undefined, !!this.counts).then(
+        ? this.client.familyCounts(undefined, freshCounts).then(
             (next) => {
-              if (generation !== this.generation) return;
+              if (
+                generation !== this.generation ||
+                ownershipRevision !== this.ownershipRevision
+              )
+                return;
               this.counts = next;
               this.countsAt = this.now();
             },
@@ -290,20 +315,28 @@ export class FusionFamilyImpact {
       if (this.reading.size >= CONCURRENCY) return;
       if (
         this.reading.has(id) ||
-        (this.families.has(id) && (!this.trading() || this.owned.has(id)))
+        (this.families.has(id) &&
+          (!(this.trading() || this.vortex()) || this.owned.has(id)))
       )
         continue;
       if (this.now() - (this.failed.get(id) ?? 0) < this.gap) continue;
       this.reading.add(id);
       const generation = this.generation;
+      const ownershipRevision = this.ownershipRevision;
       const read = this.client.insights(id, undefined, this.freshOwned.has(id));
       // The card overlays queue several reads per card; a badge needs only this
       // one, so it goes first (shared with the overlays, never an extra request).
       this.client.expediteCard?.(id);
       void read
         .then((card) => {
-          if (generation !== this.generation) return;
+          if (
+            generation !== this.generation ||
+            ownershipRevision !== this.ownershipRevision
+          )
+            return;
           if (card.copies) this.owned.set(id, card.copies.length);
+          else if (this.trading() || this.vortex())
+            this.failed.set(id, this.now());
           this.freshOwned.delete(id);
           // Only memberships that count toward tiers (as Kosmora's own tiers).
           if (card.families)
@@ -343,7 +376,7 @@ export class FusionFamilyImpact {
     if (!this.enabled()) return this.clear();
     if (!this.accountReady()) return this.clear();
     this.load();
-    if (this.trading()) return this.renderTrade();
+    if (this.trading() || this.vortex()) return this.renderSingleCopy();
     const chosen = this.chosen();
     // A fusion empties the tray: counts may have changed.
     if (this.trayHadCards && !chosen.length) this.countsStale = true;
@@ -444,11 +477,14 @@ export class FusionFamilyImpact {
       }
   }
 
-  /** A trade gives one copy; family membership only leaves with the last owned copy. */
-  private renderTrade() {
+  /** Trades and Vortex stakes risk one copy, including any copies kept elsewhere. */
+  private renderSingleCopy() {
+    const vortex = this.vortex();
     const tiles: [HTMLElement, string][] = [];
     for (const article of this.win.document.querySelectorAll<HTMLElement>(
-      "main .sx-new-trade .sx-picks .sx-pick .kc-article",
+      vortex
+        ? '[data-testid="vx-stake-card"] .kc-article, [data-testid="vx-picker-grid"] .kc-article'
+        : "main .sx-new-trade .sx-picks .sx-pick .kc-article",
     )) {
       const context = resolveCard(article, this.win.document);
       if (context) tiles.push([article, context.subjectId]);
@@ -472,7 +508,11 @@ export class FusionFamilyImpact {
     );
     this.readFamilies();
     const seen = new Set<HTMLElement>();
-    if (this.counts && this.milestones)
+    if (
+      this.counts &&
+      this.milestones &&
+      (!vortex || (!this.countsStale && !this.loading))
+    )
       for (const [article, id] of tiles) {
         const families = this.families.get(id),
           quantity = this.owned.get(id);
@@ -487,7 +527,10 @@ export class FusionFamilyImpact {
         );
         if (!verdict) continue;
         seen.add(article);
-        this.draw(article, verdict, { picked: true, action: "trade" });
+        this.draw(article, verdict, {
+          picked: true,
+          action: vortex ? "vortex" : "trade",
+        });
       }
     for (const [article, host] of this.hosts)
       if (!seen.has(article)) {
@@ -499,7 +542,7 @@ export class FusionFamilyImpact {
   private draw(
     article: HTMLElement,
     verdict: Verdict,
-    state: { picked: boolean; waiting?: number; action?: "trade" },
+    state: { picked: boolean; waiting?: number; action?: "trade" | "vortex" },
   ) {
     const { parts, label } = describe(verdict, state);
     const sig = `${verdict.safe}|${label}`;
@@ -554,7 +597,7 @@ const kept = (e: FamilyEffect) =>
 /** Badge pieces ([class, text]: only "name" may be shortened) and the full label. */
 export function describe(
   verdict: Verdict,
-  state: { picked: boolean; waiting?: number; action?: "trade" },
+  state: { picked: boolean; waiting?: number; action?: "trade" | "vortex" },
 ): { parts: [string, string][]; label: string } {
   const { picked } = state;
   // Chosen, but outside the complete batches the game will fuse.
@@ -572,7 +615,7 @@ export function describe(
           `${tierName(first.tierBefore)}${rest.length ? ` +${rest.length}` : ""}`,
         ],
       ],
-      label: `${wait}Not safe: ${state.action === "trade" ? "trading" : picked ? "fusing" : "picking"} this card drops ${verdict.drops.map(lost).join(", and ")}.`,
+      label: `${wait}Not safe: ${state.action === "vortex" ? "losing" : state.action === "trade" ? "trading" : picked ? "fusing" : "picking"} this card${state.action === "vortex" ? " in the Vortex" : ""} drops ${verdict.drops.map(lost).join(", and ")}.`,
     };
   }
   const why =
@@ -583,6 +626,6 @@ export function describe(
         : `${verdict.families.map(kept).join("; ")}.`;
   return {
     parts: [["fixed", "✓ Safe"]],
-    label: `${wait}Safe to ${state.action === "trade" ? "trade" : "fuse"}: ${why}`,
+    label: `${wait}${state.action === "vortex" ? "Family tiers safe if this copy is lost in the Vortex" : `Safe to ${state.action === "trade" ? "trade" : "fuse"}`}: ${why}`,
   };
 }

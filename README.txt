@@ -16,8 +16,8 @@ to Kosmora.
   auction, sales, and local sale-rate boxes.
 - Card overlays: spot active auctions, recent sales, your listed cards, quest
   cards, and matches for friends' saved family preferences.
-- Family impact: see whether fusing or trading a card would lower a family
-  tier, accounting for other copies and cards already in the Fusion tray.
+- Family impact: see whether fusing, trading, or losing a card in Vortex would
+  lower a family tier, accounting for other copies and the Fusion tray.
 - Friend tooltip: expand matching friends' saved families and notes in a
   separate popup with Social and Profile links.
 - Social and profile reminders: keep private family preferences and notes for
@@ -93,6 +93,10 @@ edits remain available when you turn it back on in the same settings page.
 Card overlays, Sales Overlay, profile reminders, trade reminders, and
 navigation hotkeys can work with card hover tooltips turned off. Features
 displayed inside the card tooltip need that tooltip enabled.
+
+Disable in Pulsar, available separately under Hover tooltip and Card overlays,
+applies to Constellation, Aion, Photon, Horizon, and Umbra. Vortex and the
+Pulsar hub keep their normal settings.
 
 Hover tooltip
 -------------
@@ -241,6 +245,11 @@ configured independently:
   while choosing your card to trade. It uses the same family checks as Fusion;
   trading a copy preserves the family contribution when you still own another
   copy. This has its own Show family impact on the Trade page setting.
+- Family impact on the Vortex page: show Safe or the affected family tiers on
+  your stake cards and in the card picker, based on losing one copy. All owned
+  copies and economic families count. Checks refresh after spins, and badges
+  stay hidden when ownership or family data is unknown. Use Show family impact
+  on the Vortex page to turn them on or off independently of Fusion and Trade.
 
 Fusion impact follows complete batches in the order you choose cards. A chosen
 card still waiting for its batch has a dashed outline. Badges do not block

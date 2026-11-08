@@ -8,6 +8,7 @@ import {
   MARKET_ACTIVITY_ROW,
 } from "../kosmora/dom";
 import type { CardContext, Settings } from "../shared/types";
+import { settingsForPage } from "../shared/page-settings";
 import { affected, observePage, type PageChanges } from "./page-changes";
 import { el } from "./ui";
 import logo from "./kosmora-logo.svg?raw";
@@ -86,7 +87,9 @@ export class TooltipButtons {
   }
   private enabled() {
     return (
-      this.settings?.enabled && this.settings.useOverlayButtonInsteadOfHover
+      this.settings &&
+      settingsForPage(this.settings, location.pathname).enabled &&
+      this.settings.useOverlayButtonInsteadOfHover
     );
   }
   private contextOf(root: HTMLElement) {

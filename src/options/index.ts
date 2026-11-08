@@ -54,10 +54,7 @@ let saved: Settings = defaults(),
   settingsReady = false;
 const header = el("header", "header"),
   head = el("div");
-head.append(
-  el("p", "brand", "✦ KosMore"),
-  el("h1", "", "More Kosmora"),
-);
+head.append(el("p", "brand", "✦ KosMore"), el("h1", "", "More Kosmora"));
 header.append(head, el("span", "badge", "LOCAL BROWSER SETTINGS"));
 app.append(header);
 const general = el("section", "panel");
@@ -70,6 +67,30 @@ general.append(
   ),
 );
 const enabled = sectionToggle(general, "enabled", "Enable card hover tooltips");
+const disableHoverInPulsar = pulsarToggle(
+  general,
+  "disableHoverTooltipInPulsar",
+  "Hide card tooltips and their open buttons in Pulsar games, except Vortex.",
+);
+
+function pulsarToggle(
+  host: HTMLElement,
+  key: "disableHoverTooltipInPulsar" | "disableCardOverlaysInPulsar",
+  hint: string,
+) {
+  const row = el("div", "row"),
+    input = el("input"),
+    label = el("label", "label settings-toggle", "Disable in Pulsar");
+  input.type = "checkbox";
+  input.id = key;
+  label.prepend(input);
+  row.append(label, el("span", "hint", hint));
+  host.append(el("div", "rule"), row);
+  input.addEventListener("change", () => {
+    draft[key] = input.checked;
+  });
+  return input;
+}
 general.append(el("div", "rule"));
 const mobileFriendly = el("fieldset", "settings-subgroup");
 mobileFriendly.append(el("legend", "", "Mobile Friendly"));
@@ -353,6 +374,11 @@ const overlaysEnabled = sectionToggle(
   "cardOverlaysEnabled",
   "Enable card overlays",
 );
+const disableOverlaysInPulsar = pulsarToggle(
+  overlays,
+  "disableCardOverlaysInPulsar",
+  "Hide card indicators and tooltip header indicators in Pulsar games, except Vortex.",
+);
 function overlayToggle(
   id: string,
   label: string,
@@ -464,6 +490,14 @@ const tradeFamilyOverlay = overlayToggle(
   "Bottom left of your card choices · ✓ Safe: you keep every family tier · ⚠ Loses: trading your last copy drops a family tier. Uses the same family checks as Fusion.",
   (checked) => {
     draft.showTradeFamilyOverlay = checked;
+  },
+);
+const vortexFamilyOverlay = overlayToggle(
+  "vortex-family-overlay",
+  "Show family impact on the Vortex page",
+  "Bottom left of your stake cards and card picker · ✓ Safe: losing one copy keeps every family tier · ⚠ Loses: losing your last copy drops a family tier.",
+  (checked) => {
+    draft.showVortexFamilyOverlay = checked;
   },
 );
 const salesSettings = new SalesSettings((update) =>
@@ -597,6 +631,7 @@ groupControls({
   host: general,
   name: "tooltip settings",
   keys: [
+    "disableHoverTooltipInPulsar",
     "enabled",
     "useOverlayButtonInsteadOfHover",
     "outsideClickClosesTooltipOnly",
@@ -666,6 +701,7 @@ groupControls({
   host: overlays,
   name: "overlay settings",
   keys: [
+    "disableCardOverlaysInPulsar",
     "cardOverlaysEnabled",
     "showSaleHistoryOverlay",
     "showLastSalePriceOverlay",
@@ -676,6 +712,7 @@ groupControls({
     "showQuestOverlay",
     "showFusionFamilyOverlay",
     "showTradeFamilyOverlay",
+    "showVortexFamilyOverlay",
   ],
   render: renderSettings,
 });
@@ -812,6 +849,8 @@ function renderSettings() {
   statsEnabled.checked = draft.statBoxesEnabled;
   albumsEnabled.checked = draft.pinnedAlbumsEnabled;
   enabled.checked = draft.enabled;
+  disableHoverInPulsar.checked = draft.disableHoverTooltipInPulsar;
+  disableOverlaysInPulsar.checked = draft.disableCardOverlaysInPulsar;
   useOverlayButton.checked = draft.useOverlayButtonInsteadOfHover;
   outsideClickOnly.checked = draft.outsideClickClosesTooltipOnly;
   fullScreenCentered.checked = draft.fullScreenCenteredOnOpen;
@@ -833,6 +872,7 @@ function renderSettings() {
   questOverlay.checked = draft.showQuestOverlay;
   fusionFamilyOverlay.checked = draft.showFusionFamilyOverlay;
   tradeFamilyOverlay.checked = draft.showTradeFamilyOverlay;
+  vortexFamilyOverlay.checked = draft.showVortexFamilyOverlay;
   statSettings.render(draft.stats);
   hotkeySettings.render(draft.hotkeys);
   salesSettings.render(draft);

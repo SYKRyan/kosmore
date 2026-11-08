@@ -7,6 +7,7 @@ export const SETTINGS_KEY = "kosmore.settings";
 export const defaults = (): Settings => ({
   schemaVersion: 1,
   enabled: true,
+  disableHoverTooltipInPulsar: false,
   useOverlayButtonInsteadOfHover: false,
   outsideClickClosesTooltipOnly: false,
   fullScreenCenteredOnOpen: false,
@@ -30,6 +31,7 @@ export const defaults = (): Settings => ({
   friendTooltipPosition: null,
   navigationHotkeysEnabled: true,
   cardOverlaysEnabled: true,
+  disableCardOverlaysInPulsar: false,
   salesOverlaysEnabled: true,
   showSalesLastSale: true,
   salesLastSaleSetsPrice: true,
@@ -58,6 +60,7 @@ export const defaults = (): Settings => ({
   showQuestOverlay: true,
   showFusionFamilyOverlay: true,
   showTradeFamilyOverlay: true,
+  showVortexFamilyOverlay: true,
   stats: defaultStats(),
   hotkeys: {},
   pinnedAlbums: {},
@@ -73,6 +76,8 @@ export function parseSettings(value: unknown): Settings {
   d.friendTooltipPosition = parsePopupPosition(v.friendTooltipPosition);
   if (typeof v.enabled === "boolean") d.enabled = v.enabled;
   for (const key of [
+    "disableHoverTooltipInPulsar",
+    "disableCardOverlaysInPulsar",
     "useOverlayButtonInsteadOfHover",
     "outsideClickClosesTooltipOnly",
     "fullScreenCenteredOnOpen",
@@ -85,6 +90,7 @@ export function parseSettings(value: unknown): Settings {
     "showTradeNotes",
     "tradeNotesPinned",
     "showTradeFamilyOverlay",
+    "showVortexFamilyOverlay",
     "friendTooltipEnabled",
     "navigationHotkeysEnabled",
     "cardOverlaysEnabled",

@@ -47,6 +47,9 @@ function values(): StoredValues {
     [SETTINGS_KEY]: {
       ...defaults(),
       popupWidth: 560,
+      disableHoverTooltipInPulsar: true,
+      disableCardOverlaysInPulsar: true,
+      showVortexFamilyOverlay: false,
       salesLastSaleAdjustment: -1.25,
       popupPosition: { left: 100, top: 50 },
       pinnedAlbums: { player: [ALBUM_B, ALBUM_A], other: [] },

@@ -1,6 +1,6 @@
 /**
  * Contract between the page-world relay (src/page-hook.ts) and the content script.
- * The relay forwards copies of market and fusion responses the game itself loads;
+ * The relay forwards copies of market, fusion, and Vortex responses the game itself loads;
  * it never sends requests or changes what the page receives.
  */
 export const RELAY_DATA = "kosmore.pageData";
@@ -16,9 +16,11 @@ export const RELAY_AUCTIONS =
   /^\/api\/auctions(?:\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/i;
 /** The Fusion page's recipes and card grid, and the family tier milestones (family impact). */
 export const RELAY_FUSION = /^\/api\/(?:fusion|fusion\/cards|families)$/;
+/** Native Vortex lobby refreshes follow spins and card choices. */
+export const RELAY_VORTEX = /^\/api\/vortex\/lobby$/;
 /** Everything the relay forwards; nothing else is relayed. */
 export const RELAY_PATH = new RegExp(
-  `${RELAY_AUCTIONS.source}|${RELAY_FUSION.source}`,
+  `${RELAY_AUCTIONS.source}|${RELAY_FUSION.source}|${RELAY_VORTEX.source}`,
   "i",
 );
 export const RELAY_BUFFER = 40;

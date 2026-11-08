@@ -91,6 +91,7 @@ export interface OpeningCard {
 export interface Settings {
   schemaVersion: 1;
   enabled: boolean;
+  disableHoverTooltipInPulsar: boolean;
   useOverlayButtonInsteadOfHover: boolean;
   outsideClickClosesTooltipOnly: boolean;
   fullScreenCenteredOnOpen: boolean;
@@ -114,6 +115,7 @@ export interface Settings {
   friendTooltipPosition: import("./popup-layout").PopupPosition | null;
   navigationHotkeysEnabled: boolean;
   cardOverlaysEnabled: boolean;
+  disableCardOverlaysInPulsar: boolean;
   salesOverlaysEnabled: boolean;
   showSalesLastSale: boolean;
   salesLastSaleSetsPrice: boolean;
@@ -142,6 +144,7 @@ export interface Settings {
   showQuestOverlay: boolean;
   showFusionFamilyOverlay: boolean;
   showTradeFamilyOverlay: boolean;
+  showVortexFamilyOverlay: boolean;
   stats: import("./stat-catalog").StatPreference[];
   hotkeys: import("./hotkeys").Hotkeys;
   pinnedAlbums: Record<string, string[]>;

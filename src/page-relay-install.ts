@@ -5,7 +5,8 @@
  * Rate stat needs to see the listings the game shows you. Fusion family impact
  * needs the recipes and cards the Fusion page loads. This script passes copies of
  * the game's own successful `GET /api/auctions`, `GET /api/auctions/{id}`,
- * `GET /api/fusion`, `GET /api/fusion/cards` and `GET /api/families` responses to
+ * `GET /api/fusion`, `GET /api/fusion/cards`, `GET /api/families`, and
+ * `GET /api/vortex/lobby` responses to
  * the content script. Successful native single/batch listing submissions also
  * emit an invalidation-only notification, without their request body or prices.
  * The observer sends no requests and returns the page's response untouched.

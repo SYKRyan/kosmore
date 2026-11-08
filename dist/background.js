@@ -399,6 +399,7 @@ function F(e) {
 var I = "kosmore.settings", L = () => ({
 	schemaVersion: 1,
 	enabled: !0,
+	disableHoverTooltipInPulsar: !1,
 	useOverlayButtonInsteadOfHover: !1,
 	outsideClickClosesTooltipOnly: !1,
 	fullScreenCenteredOnOpen: !1,
@@ -422,6 +423,7 @@ var I = "kosmore.settings", L = () => ({
 	friendTooltipPosition: null,
 	navigationHotkeysEnabled: !0,
 	cardOverlaysEnabled: !0,
+	disableCardOverlaysInPulsar: !1,
 	salesOverlaysEnabled: !0,
 	showSalesLastSale: !0,
 	salesLastSaleSetsPrice: !0,
@@ -450,6 +452,7 @@ var I = "kosmore.settings", L = () => ({
 	showQuestOverlay: !0,
 	showFusionFamilyOverlay: !0,
 	showTradeFamilyOverlay: !0,
+	showVortexFamilyOverlay: !0,
 	stats: k(),
 	hotkeys: {},
 	pinnedAlbums: {}
@@ -460,32 +463,7 @@ function R(e) {
 	let n = e;
 	if (n.schemaVersion !== 1) return t;
 	t.stats = A(n.stats), t.hotkeys = N(n.hotkeys), t.popupPosition = S(n.popupPosition), t.friendTooltipPosition = S(n.friendTooltipPosition), typeof n.enabled == "boolean" && (t.enabled = n.enabled);
-	for (let e of [
-		"useOverlayButtonInsteadOfHover",
-		"outsideClickClosesTooltipOnly",
-		"fullScreenCenteredOnOpen",
-		"profileRemindersEnabled",
-		"profileRemindersPinned",
-		"tradeRemindersEnabled",
-		"showTradeFamilyBadges",
-		"showTradePossibleInterest",
-		"tradeRaritySymbols",
-		"showTradeNotes",
-		"tradeNotesPinned",
-		"showTradeFamilyOverlay",
-		"friendTooltipEnabled",
-		"navigationHotkeysEnabled",
-		"cardOverlaysEnabled",
-		"salesOverlaysEnabled",
-		"showSalesLastSale",
-		"salesLastSaleSetsPrice",
-		"showSalesLowestListing",
-		"salesLowestListingSetsPrice",
-		"showSalesMyLastListing",
-		"salesMyLastListingSetsPrice",
-		"statBoxesEnabled",
-		"pinnedAlbumsEnabled"
-	]) typeof n[e] == "boolean" && (t[e] = n[e]);
+	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.useOverlayButtonInsteadOfHover.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.profileRemindersEnabled.profileRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.friendTooltipEnabled.navigationHotkeysEnabled.cardOverlaysEnabled.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
 	for (let e of [
 		"salesLastSaleAdjustment",
 		"salesLowestListingAdjustment",

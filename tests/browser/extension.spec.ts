@@ -15,6 +15,7 @@ import { launchTestBrowser } from "./browser";
 import { socialFixture } from "../fixtures/social";
 import { familyCatalog } from "../fixtures/families";
 import { NAVIGATION } from "../../src/shared/hotkeys";
+import { vortexFixture } from "../fixtures/vortex";
 import {
   batchSellRow,
   sellManyFixture,
@@ -290,6 +291,205 @@ const tooltipButton = (name = "Northern Lights") =>
     name: `Open card tooltip for ${name}`,
     exact: true,
   });
+
+async function pulsarSettings(update: Record<string, unknown>) {
+  await worker.evaluate(async (update) => {
+    const saved = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": { ...saved, ...update },
+    });
+  }, update);
+}
+
+async function navigatePulsar(path: string) {
+  await page.evaluate((path) => {
+    history.pushState({}, "", path);
+    document.querySelector("h1")!.textContent = path;
+  }, path);
+}
+
+test("Pulsar: independent options save, cancel and hide their feature in open tabs", async () => {
+  await pulsarSettings({ showQuestOverlay: true });
+  await page.goto("https://kosmora.io/collection");
+  const popup = page.locator("#kosmore-root");
+  const overlay = page.locator("[data-kosmore-card-overlays] .quest");
+  await navigatePulsar("/constellation");
+  await expect(overlay).toBeVisible();
+  await page.locator(".kc-article").hover();
+  await expect(popup).toBeVisible();
+  await expect(popup.locator(".quest")).toBeVisible();
+  const options = await context.newPage();
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    const hoverGroup = options.locator("#hover-tooltip");
+    const overlayGroup = options.locator("#card-overlays");
+    const hoverToggle = hoverGroup.getByLabel("Disable in Pulsar", {
+      exact: true,
+    });
+    const overlayToggle = overlayGroup.getByLabel("Disable in Pulsar", {
+      exact: true,
+    });
+    await expect(hoverToggle).not.toBeChecked();
+    await expect(overlayToggle).not.toBeChecked();
+    await overlayToggle.check();
+    await overlayGroup
+      .getByRole("button", {
+        name: "Cancel overlay settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(overlayToggle).not.toBeChecked();
+    await overlayToggle.check();
+    await overlayGroup
+      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .click();
+    await expect(overlay).toHaveCount(0);
+    await expect(popup).toBeVisible();
+    await expect(popup.locator(".quest")).toHaveCount(0);
+    await hoverToggle.check();
+    await hoverGroup
+      .getByRole("button", { name: "Save tooltip settings", exact: true })
+      .click();
+    await expect(popup).toHaveCount(0);
+    await page.mouse.move(0, 0);
+    await page.locator(".kc-article").hover();
+    await page.waitForTimeout(250);
+    await expect(popup).toHaveCount(0);
+    await options.reload();
+    await expect(hoverToggle).toBeChecked();
+    await expect(overlayToggle).toBeChecked();
+    await mkdir("test-results/screenshots", { recursive: true });
+    for (const width of [1440, 390]) {
+      await options.setViewportSize({ width, height: 1000 });
+      for (const [group, name] of [
+        [hoverGroup, "hover"],
+        [overlayGroup, "overlays"],
+      ] as const) {
+        await group.screenshot({
+          path: `test-results/screenshots/pulsar-${name}-${width}.png`,
+        });
+      }
+      expect(
+        await options.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+    }
+    await navigatePulsar("/collection");
+    await expect(overlay).toBeVisible();
+    await page.mouse.move(0, 0);
+    await page.locator(".kc-article").hover();
+    await expect(popup).toBeVisible();
+    await expect(popup.locator(".quest")).toBeVisible();
+  } finally {
+    await options.close();
+  }
+});
+
+test("Pulsar: pinned tooltips stay hidden on entry and reload and return on exit", async () => {
+  await pulsarSettings({
+    disableHoverTooltipInPulsar: true,
+    disableCardOverlaysInPulsar: true,
+    showQuestOverlay: true,
+  });
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await navigatePulsar("/aion");
+  await expect(popup).toHaveCount(0);
+  await expect(page.locator("[data-kosmore-card-overlays]")).toHaveCount(0);
+  await page.reload();
+  await page.waitForTimeout(250);
+  await expect(popup).toHaveCount(0);
+  await navigatePulsar("/collection");
+  await expect(popup).toHaveAttribute("data-pinned", "");
+  await expect(
+    page.locator("[data-kosmore-card-overlays] .quest"),
+  ).toBeVisible();
+});
+
+test("Pulsar: tooltip buttons follow only the hover exclusion and return on exit", async () => {
+  await enableTooltipButtons();
+  await pulsarSettings({
+    cardOverlaysEnabled: true,
+    disableHoverTooltipInPulsar: true,
+    showQuestOverlay: true,
+  });
+  await page.goto("https://kosmora.io/collection");
+  await expect(tooltipButton()).toBeVisible();
+  await navigatePulsar("/umbra");
+  await expect(tooltipButtonLayer()).toHaveCount(0);
+  await expect(
+    page.locator("[data-kosmore-card-overlays] .quest"),
+  ).toBeVisible();
+  await pulsarSettings({
+    disableHoverTooltipInPulsar: false,
+    disableCardOverlaysInPulsar: true,
+  });
+  await expect(tooltipButton()).toBeVisible();
+  await expect(page.locator("[data-kosmore-card-overlays]")).toHaveCount(0);
+  await tooltipButton().click();
+  const popup = page.locator("#kosmore-root");
+  await expect(popup).toBeVisible();
+  await expect(popup.locator(".quest")).toHaveCount(0);
+  await navigatePulsar("/collection");
+  await expect(tooltipButton()).toBeVisible();
+  await expect(
+    page.locator("[data-kosmore-card-overlays] .quest"),
+  ).toBeVisible();
+});
+
+test("Pulsar: exclusions leave Vortex and the hub enabled while disabling the other game routes", async () => {
+  await pulsarSettings({
+    disableHoverTooltipInPulsar: true,
+    disableCardOverlaysInPulsar: true,
+    showQuestOverlay: true,
+  });
+  await page.goto("https://kosmora.io/collection");
+  const popup = page.locator("#kosmore-root");
+  const overlay = page.locator("[data-kosmore-card-overlays] .quest");
+  for (const path of ["/games", "/vortex"]) {
+    await navigatePulsar(path);
+    await expect(overlay).toBeVisible();
+    await page.mouse.move(0, 0);
+    await page.locator(".kc-article").hover();
+    await expect(popup).toBeVisible();
+    await expect(popup.locator(".quest")).toBeVisible();
+  }
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await navigatePulsar("/aion");
+  await expect(popup).toHaveCount(0);
+  await expect(overlay).toHaveCount(0);
+  await navigatePulsar("/vortex");
+  await expect(popup).toHaveAttribute("data-pinned", "");
+  await popup
+    .getByRole("button", { name: "Close KosMore popup", exact: true })
+    .click();
+  await pulsarSettings({ useOverlayButtonInsteadOfHover: true });
+  await expect(tooltipButton()).toBeVisible();
+  await tooltipButton().click();
+  await expect(popup).toBeVisible();
+  for (const path of [
+    "/constellation",
+    "/aion/challenge/test",
+    "/photon",
+    "/horizon",
+    "/umbra",
+  ]) {
+    await navigatePulsar(path);
+    await expect(popup).toHaveCount(0);
+    await expect(tooltipButtonLayer()).toHaveCount(0);
+    await expect(overlay).toHaveCount(0);
+  }
+  await navigatePulsar("/vortex");
+  await expect(tooltipButton()).toBeVisible();
+  await expect(overlay).toBeVisible();
+  await tooltipButton().click();
+  await expect(popup).toBeVisible();
+});
 
 test("tooltip icon tabs remember the last selection across cards, dismissal, refresh and navigation", async () => {
   await enableTooltipButtons();
@@ -6606,6 +6806,161 @@ test("sale rate: relays the page's own auction reads and settles them per finish
       .toEqual([`kosmore.marketOutcomes.${ended.slice(0, 10)}`]);
   } finally {
     await page.unroute("https://kosmora.io/api/auctions*");
+  }
+});
+
+test("Vortex family impact: marks stakes and picker cards, preserves native picks and saves its independent setting", async () => {
+  let copies = 2;
+  await pulsarSettings({
+    enabled: false,
+    showFusionFamilyOverlay: false,
+    showTradeFamilyOverlay: false,
+    disableHoverTooltipInPulsar: true,
+    disableCardOverlaysInPulsar: true,
+  });
+  await page.route("https://kosmora.io/vortex", (route) =>
+    route.fulfill({
+      contentType: "text/html; charset=utf-8",
+      body: vortexFixture(),
+    }),
+  );
+  await page.route("https://kosmora.io/api/families", (route) =>
+    route.fulfill({ json: familyMilestones }),
+  );
+  await page.route("https://kosmora.io/api/me/families*", (route) =>
+    route.fulfill({ json: myFamilies }),
+  );
+  await page.route("https://kosmora.io/api/collection/30*", (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    const detail = card(id);
+    return route.fulfill({
+      json: {
+        ...detail,
+        copies:
+          id === "304" && copies === 2
+            ? [...detail.copies, { ...detail.copies[0], id: COPY_B }]
+            : detail.copies,
+        families: fusionMembership[id],
+      },
+    });
+  });
+  const tile = (id: string) =>
+    page.locator(`[data-testid="vx-stake-card"][data-subject="${id}"]`);
+  const badge = (id: string) => tile(id).locator(".verdict");
+  const options = await context.newPage();
+  try {
+    await page.goto("https://kosmora.io/vortex");
+    await expect(badge("304")).toHaveText("✓ Safe");
+    await expect(badge("304")).toHaveAttribute(
+      "aria-label",
+      /you keep another copy/,
+    );
+    await expect(badge("307")).toHaveText("⚠ LosesMAMA AwardsI");
+    await expect(badge("307")).toHaveAttribute(
+      "aria-label",
+      "Not safe: losing this card in the Vortex drops MAMA Awards from tier I to no tier.",
+    );
+    await expect(badge("305")).toHaveText("✓ Safe");
+    await expect(
+      page.locator('[data-testid="vx-choices"] [data-kosmore-fusion-family]'),
+    ).toHaveCount(0);
+    const box = (await badge("307").boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(tile("307")).toHaveAttribute("aria-checked", "true");
+    await mkdir("test-results/screenshots", { recursive: true });
+    await page.screenshot({
+      path: "test-results/screenshots/vortex-family-impact.png",
+    });
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.getByTestId("vx-more").click();
+    const picker = page.getByTestId("vx-picker-grid");
+    const pickerBadge = picker.locator('[data-subject="307"] .verdict');
+    await pickerBadge.scrollIntoViewIfNeeded();
+    await expect(pickerBadge).toHaveText("⚠ LosesMAMA AwardsI");
+    const art = (await picker
+      .locator('[data-subject="307"] .kc-window')
+      .boundingBox())!;
+    const bounds = (await pickerBadge.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(art.x);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(art.x + art.width);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(art.y + art.height);
+    await page.screenshot({
+      path: "test-results/screenshots/vortex-family-picker-390.png",
+    });
+    await page.mouse.click(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+    );
+    await expect(page.locator("body")).toHaveAttribute("data-picked", "307");
+
+    // The native lobby refresh after a spin invalidates cached ownership and counts.
+    await page.route("https://kosmora.io/api/vortex/lobby", (route) =>
+      route.fulfill({ json: {} }),
+    );
+    copies = 1;
+    await page.evaluate(async () => {
+      await fetch("/api/vortex/lobby");
+    });
+    await expect(page.locator("[data-kosmore-fusion-family]")).toHaveCount(0);
+    await tile("304").scrollIntoViewIfNeeded();
+    await expect(badge("304")).toHaveText("⚠ LosesParrotsI", {
+      timeout: 20_000,
+    });
+
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#card-overlays`,
+    );
+    const group = options.locator("#card-overlays");
+    const toggle = group.getByLabel("Show family impact on the Vortex page", {
+      exact: true,
+    });
+    await expect(toggle).toBeChecked();
+    await toggle.uncheck();
+    await group
+      .getByRole("button", {
+        name: "Cancel overlay settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(toggle).toBeChecked();
+    await toggle.uncheck();
+    await group
+      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .click();
+    await expect(page.locator("[data-kosmore-fusion-family]")).toHaveCount(0);
+    await options.reload();
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await group
+      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .click();
+    await tile("307").scrollIntoViewIfNeeded();
+    await expect(badge("307")).toBeVisible();
+    await options.setViewportSize({ width: 390, height: 900 });
+    await group.screenshot({
+      path: "test-results/screenshots/vortex-family-settings-390.png",
+    });
+    expect(
+      await options.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    await group
+      .getByRole("switch", { name: "Enable card overlays", exact: true })
+      .uncheck();
+    await expect(page.locator("[data-kosmore-fusion-family]")).toHaveCount(0);
+    expect(writeRequests).toBe(0);
+  } finally {
+    await options.close();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    for (const url of [
+      "https://kosmora.io/vortex",
+      "https://kosmora.io/api/families",
+      "https://kosmora.io/api/me/families*",
+      "https://kosmora.io/api/collection/30*",
+      "https://kosmora.io/api/vortex/lobby",
+    ])
+      await page.unroute(url);
   }
 });
 

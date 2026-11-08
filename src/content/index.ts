@@ -39,6 +39,11 @@ import { saleObservations } from "./sale-observation-store";
 import { FusionFamilyImpact } from "./fusion-family";
 import { TooltipButtons } from "./tooltip-buttons";
 import { RELAY_LISTED, LISTING_WRITES } from "../shared/page-relay";
+import { settingsForPage } from "../shared/page-settings";
+
+function pageSettings() {
+  return settingsForPage(settings, location.pathname);
+}
 
 const client = new GameClient();
 const listingReads = new Map<string, AbortController>();
@@ -110,7 +115,7 @@ const preferencesReady = Promise.all([
 ]).then(([finishes, state, savedSettings]) => {
   marketFinishes = finishes;
   settings = savedSettings;
-  friendTooltip.setSettings(settings);
+  friendTooltip.setSettings(pageSettings());
   void friendTooltip.restore();
   navigationHotkeys.start();
   pinnedState = state;
@@ -118,7 +123,7 @@ const preferencesReady = Promise.all([
   salesOverlays.setSettings(settings);
   fusionFamily.setSettings(settings);
   tooltipButtons.setSettings(settings);
-  if (!settings.enabled) hide();
+  if (!pageSettings().enabled) hide();
   else if (pinnedState.pinned && !popup && !current) createView(null);
 });
 let current: CardContext | null = null,
@@ -157,11 +162,16 @@ function dismiss() {
 function navigationAway() {
   hovered = false;
   hide();
-  if (settings.enabled && pinnedState.pinned) createView(null);
+  if (pageSettings().enabled && pinnedState.pinned) createView(null);
 }
 function checkUrl() {
   if (lastUrl === location.href) return;
+  const previous = settingsForPage(settings, new URL(lastUrl).pathname);
   lastUrl = location.href;
+  friendTooltip.setSettings(pageSettings());
+  tooltipButtons.setSettings(settings);
+  if (previous.cardOverlaysEnabled !== pageSettings().cardOverlaysEnabled)
+    overlays.invalidate();
   navigationAway();
 }
 function laterHide() {
@@ -186,7 +196,7 @@ function options() {
 async function show(context: CardContext, fresh = false) {
   await preferencesReady;
   if (
-    !settings.enabled ||
+    !pageSettings().enabled ||
     current !== context ||
     (!buttonOpened && tooltipButtons.showing(context))
   )
@@ -276,7 +286,7 @@ function createView(
         pendingFilterWrites--;
       }
     },
-    settings,
+    pageSettings(),
     placement,
     () => {
       cancelClose();
@@ -338,6 +348,7 @@ function loadHeaderSignals(
     .catch(() => {});
 }
 function enter(target: Element) {
+  if (!pageSettings().enabled) return;
   if (tooltipButtons.contains(target)) {
     clearTimeout(openTimer);
     cancelClose();
@@ -689,15 +700,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
     settings = parseSettings(changes[SETTINGS_KEY].newValue);
     if (previousOverlayMode !== settings.useOverlayButtonInsteadOfHover)
       navigationAway();
-    friendTooltip.setSettings(settings);
+    friendTooltip.setSettings(pageSettings());
     navigationHotkeys.settingsChanged();
     overlays.setSettings(settings);
     salesOverlays.setSettings(settings);
     fusionFamily.setSettings(settings);
     tooltipButtons.setSettings(settings);
-    if (!settings.enabled) hide();
+    if (!pageSettings().enabled) hide();
     else if (popup) {
-      popup.setSettings(settings);
+      popup.setSettings(pageSettings());
       if (current && activeRequest)
         loadHeaderSignals(popup, current, activeRequest.signal);
     } else if (pinnedState.pinned) {

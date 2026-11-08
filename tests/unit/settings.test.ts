@@ -1,6 +1,76 @@
 import { it, expect } from "vitest";
-import { parseSettings } from "../../src/shared/settings";
+import { defaults, parseSettings } from "../../src/shared/settings";
+import { settingsForPage } from "../../src/shared/page-settings";
 import { ALBUM_A, ALBUM_B } from "../fixtures/data";
+it("keeps Pulsar exclusions opt-in and applies each one only to games other than Vortex", () => {
+  for (const key of [
+    "disableHoverTooltipInPulsar",
+    "disableCardOverlaysInPulsar",
+  ] as const) {
+    expect(parseSettings({ schemaVersion: 1 })[key]).toBe(false);
+    expect(parseSettings({ schemaVersion: 1, [key]: "true" })[key]).toBe(false);
+    expect(parseSettings({ schemaVersion: 1, [key]: true })[key]).toBe(true);
+  }
+  const settings = {
+    ...defaults(),
+    disableHoverTooltipInPulsar: true,
+    disableCardOverlaysInPulsar: true,
+  };
+  for (const path of [
+    "/constellation",
+    "/aion",
+    "/photon",
+    "/horizon",
+    "/umbra",
+    "/constellation/challenge/123",
+    "/aion/challenge/123",
+    "/photon/",
+    "/horizon/123",
+    "/umbra/123",
+  ]) {
+    expect(settingsForPage(settings, path)).toMatchObject({
+      enabled: false,
+      cardOverlaysEnabled: false,
+    });
+    expect(
+      settingsForPage(
+        { ...settings, disableHoverTooltipInPulsar: false },
+        path,
+      ),
+    ).toMatchObject({ enabled: true, cardOverlaysEnabled: false });
+    expect(
+      settingsForPage(
+        { ...settings, disableCardOverlaysInPulsar: false },
+        path,
+      ),
+    ).toMatchObject({ enabled: false, cardOverlaysEnabled: true });
+    expect(settingsForPage(defaults(), path)).toMatchObject({
+      enabled: true,
+      cardOverlaysEnabled: true,
+    });
+  }
+  for (const path of [
+    "/collection",
+    "/fusion",
+    "/games",
+    "/games/",
+    "/vortex",
+    "/vortex/",
+    "/vortex/inventory",
+    "/constellation-extra",
+    "/games-extra",
+    "/card/42",
+  ]) {
+    expect(settingsForPage(settings, path)).toBe(settings);
+  }
+  expect(settings).toMatchObject({ enabled: true, cardOverlaysEnabled: true });
+  expect(
+    settingsForPage(
+      { ...defaults(), enabled: false, cardOverlaysEnabled: false },
+      "/aion",
+    ),
+  ).toMatchObject({ enabled: false, cardOverlaysEnabled: false });
+});
 it("keeps account pins isolated and ordered while discarding corrupt identifiers", () => {
   const s = parseSettings({
     schemaVersion: 1,
@@ -21,6 +91,7 @@ it("enables new feature groups for older settings and keeps configuration when g
     "tradeRaritySymbols",
     "showTradeNotes",
     "showTradeFamilyOverlay",
+    "showVortexFamilyOverlay",
     "cardOverlaysEnabled",
     "statBoxesEnabled",
     "pinnedAlbumsEnabled",

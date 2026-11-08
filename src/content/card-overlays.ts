@@ -7,6 +7,7 @@ import {
 } from "../kosmora/dom";
 import { ApiError } from "../kosmora/client";
 import type { CardContext, KosmoraClient, Settings } from "../shared/types";
+import { settingsForPage } from "../shared/page-settings";
 import { CardSignalProvider, type CardSignals } from "./card-signals";
 import { SIGNAL_BADGE_CSS, signalBadges } from "./signal-badges";
 import { el } from "./ui";
@@ -77,6 +78,8 @@ export class CardOverlays {
   setSettings(settings: Settings) {
     const changed =
       this.settings?.cardOverlaysEnabled !== settings.cardOverlaysEnabled ||
+      this.settings?.disableCardOverlaysInPulsar !==
+        settings.disableCardOverlaysInPulsar ||
       this.settings?.showOnSaleOverlay !== settings.showOnSaleOverlay ||
       this.settings?.showActiveAuctionsOverlay !==
         settings.showActiveAuctionsOverlay ||
@@ -116,7 +119,7 @@ export class CardOverlays {
   ) {
     return this.provider.get(
       context.subjectId,
-      settings,
+      settingsForPage(settings, location.pathname),
       context.variant.fullArt
         ? "fullart"
         : context.variant.veil
@@ -128,7 +131,8 @@ export class CardOverlays {
   }
   private enabled() {
     return (
-      this.settings?.cardOverlaysEnabled &&
+      this.settings &&
+      settingsForPage(this.settings, location.pathname).cardOverlaysEnabled &&
       (this.settings?.showSaleHistoryOverlay ||
         this.settings?.showOnSaleOverlay ||
         this.settings?.showActiveAuctionsOverlay ||
@@ -145,7 +149,12 @@ export class CardOverlays {
     });
   }
   private scan(changes?: PageChanges) {
-    if (!this.enabled()) return;
+    if (!this.enabled()) {
+      for (const entry of this.entries.values()) this.remove(entry);
+      this.entries.clear();
+      this.queue.clear();
+      return;
+    }
     const targets = new Map<HTMLElement, CardContext>();
     for (const scope of !changes || changes.full ? [document] : changes.roots)
       for (const [root, context] of cardOverlayTargets(document, scope))
@@ -205,6 +214,7 @@ export class CardOverlays {
     const context = resolveCard(entry.root);
     return (
       generation === this.generation &&
+      this.enabled() &&
       this.entries.get(entry.root) === entry &&
       entry.root.isConnected &&
       cardOverlaysAllowed(entry.root) &&

@@ -92,10 +92,15 @@ it("matches the game's tiers (checked against marginalParts.tierWithout)", () =>
   ]);
 });
 
-it("relays the fusion reads only, and the sale-rate feed still takes auctions only", () => {
+it("relays family impact reads while the sale-rate feed still takes auctions only", () => {
   const relayed = (path: string) =>
     isRelayMessage({ type: RELAY_DATA, path, data: {} });
-  for (const path of ["/api/fusion", "/api/fusion/cards", "/api/families"]) {
+  for (const path of [
+    "/api/fusion",
+    "/api/fusion/cards",
+    "/api/families",
+    "/api/vortex/lobby",
+  ]) {
     expect(relayed(path)).toBe(true);
     expect(RELAY_AUCTIONS.test(path)).toBe(false);
   }
@@ -103,6 +108,8 @@ it("relays the fusion reads only, and the sale-rate feed still takes auctions on
     "/api/fusion/quote",
     "/api/me/families",
     "/api/fusion/cards/x",
+    "/api/vortex/spin",
+    "/api/vortex/inventory",
   ])
     expect(relayed(path)).toBe(false);
 });
@@ -607,4 +614,158 @@ it("withholds trade verdicts for unknown families, counts or ownership", async (
   impact.setSettings(defaults());
   await settle();
   expect(document.querySelectorAll(`[${FUSION_FAMILY_ATTR}]`)).toHaveLength(0);
+});
+
+function vortexPage() {
+  history.replaceState(null, "", "/vortex");
+  document.body.innerHTML = `<main><div data-testid="vx-row">${["4", "5", "7", "8"].map((id) => `<button data-testid="vx-stake-card">${face(id, true)}</button>`).join("")}</div><div data-testid="vx-picker-grid"><div class="pick">${face("4", true)}</div></div><div data-testid="vx-choices">${face("4", true)}</div></main>`;
+}
+
+function setupVortex(gap = 0) {
+  const client = {
+    onAccountChange: () => {},
+    familyCounts: vi.fn(
+      async () =>
+        new Map([
+          [PARROTS.id, 2],
+          [MUSIC_AWARDS.id, 9],
+          [MAMA.id, 2],
+        ]),
+    ),
+    familyMilestones: async () => MS,
+    insights: vi.fn(
+      async (
+        id: string,
+      ): Promise<{ families: CardFamily[] | null; copies?: OwnedCopy[] }> => ({
+        families: MEMBERSHIP[id],
+        copies: ownedCopies(id === "8" ? 2 : 1),
+      }),
+    ),
+  };
+  const impact = (running = new FusionFamilyImpact(client, window, gap));
+  impact.start();
+  return { client, impact };
+}
+
+it("marks Vortex stakes and picker cards across all economic families, independently of the other overlays", async () => {
+  vortexPage();
+  const { impact, client } = setupVortex();
+  impact.setSettings({
+    ...defaults(),
+    enabled: false,
+    showFusionFamilyOverlay: false,
+    showTradeFamilyOverlay: false,
+    showVortexFamilyOverlay: false,
+  });
+  await settle();
+  expect(client.insights).not.toHaveBeenCalled();
+  expect(client.familyCounts).not.toHaveBeenCalled();
+  impact.setSettings({
+    ...defaults(),
+    enabled: false,
+    showFusionFamilyOverlay: false,
+    showTradeFamilyOverlay: false,
+  });
+  await settle();
+  expect(tradeBadge("4")?.getAttribute("aria-label")).toBe(
+    "Not safe: losing this card in the Vortex drops Parrots from tier I to no tier.",
+  );
+  expect(tradeBadge("7")?.textContent).toBe("⚠ LosesMAMA AwardsI");
+  expect(tradeBadge("8")?.getAttribute("aria-label")).toContain(
+    "Family tiers safe if this copy is lost in the Vortex: you keep another copy",
+  );
+  expect(tradeBadge("5")?.textContent).toBe("✓ Safe");
+  expect(
+    document.querySelector(
+      '[data-testid="vx-picker-grid"] [data-kosmore-fusion-family]',
+    ),
+  ).not.toBeNull();
+  expect(
+    document.querySelector(
+      '[data-testid="vx-choices"] [data-kosmore-fusion-family]',
+    ),
+  ).toBeNull();
+  expect(client.insights).toHaveBeenCalledTimes(4); // same card in both surfaces shares one read
+  impact.setSettings({ ...defaults(), cardOverlaysEnabled: false });
+  await settle();
+  expect(document.querySelectorAll(`[${FUSION_FAMILY_ATTR}]`)).toHaveLength(0);
+  impact.setSettings(defaults());
+  await settle();
+  expect(tradeBadge("8")?.textContent).toBe("✓ Safe");
+  history.replaceState(null, "", "/vortex/inventory");
+  impact.setSettings(defaults());
+  await settle();
+  expect(document.querySelectorAll(`[${FUSION_FAMILY_ATTR}]`)).toHaveLength(0);
+});
+
+it("refreshes Vortex ownership and counts after the native lobby refresh and withholds unknown verdicts", async () => {
+  vortexPage();
+  const { impact, client } = setupVortex();
+  impact.setSettings(defaults());
+  await settle();
+  expect(tradeBadge("8")?.textContent).toBe("✓ Safe");
+  client.insights.mockImplementation(async (id) => ({
+    families: id === "5" ? null : MEMBERSHIP[id],
+    copies: ownedCopies(id === "4" ? 0 : 1),
+  }));
+  client.familyCounts.mockResolvedValue(
+    new Map([
+      [PARROTS.id, 2],
+      [MUSIC_AWARDS.id, 9],
+    ]),
+  );
+  impact.receive("/api/vortex/lobby", {});
+  await settle();
+  expect(tradeBadge("8")?.getAttribute("aria-label")).toContain(
+    "drops Parrots",
+  );
+  for (const id of ["4", "5", "7"]) expect(tradeBadge(id)).toBeUndefined();
+  expect(client.insights).toHaveBeenCalledWith("8", undefined, true);
+  expect(client.familyCounts).toHaveBeenLastCalledWith(undefined, true);
+});
+
+it("withholds Vortex badges when ownership is missing without starving other visible cards", async () => {
+  vortexPage();
+  const { impact, client } = setupVortex(15_000);
+  client.insights.mockImplementation(async (id) => ({
+    families: MEMBERSHIP[id],
+    copies: id === "4" || id === "7" ? undefined : ownedCopies(2),
+  }));
+  impact.setSettings(defaults());
+  await settle();
+  expect(tradeBadge("4")).toBeUndefined();
+  expect(tradeBadge("7")).toBeUndefined();
+  expect(tradeBadge("8")?.textContent).toBe("✓ Safe");
+  expect(client.insights).toHaveBeenCalledTimes(4);
+});
+
+it("discards ownership and count reads started before a Vortex refresh", async () => {
+  vortexPage();
+  const { impact, client } = setupVortex();
+  let release!: () => void;
+  client.insights.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () =>
+          resolve({ families: [PARROTS], copies: ownedCopies(2) });
+      }),
+  );
+  let releaseCounts!: () => void;
+  client.familyCounts.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        releaseCounts = () => resolve(new Map([[PARROTS.id, 3]]));
+      }),
+  );
+  impact.setSettings(defaults());
+  await settle();
+  impact.receive("/api/vortex/lobby", {});
+  release();
+  releaseCounts();
+  await settle();
+  expect(tradeBadge("4")?.getAttribute("aria-label")).toContain(
+    "drops Parrots",
+  );
+  expect(client.insights).toHaveBeenCalledWith("4", undefined, true);
+  expect(client.familyCounts).toHaveBeenCalledTimes(2);
 });
