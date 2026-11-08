@@ -310,6 +310,134 @@ async function navigatePulsar(path: string) {
   }, path);
 }
 
+test("Vortex exclusions: settings follow Pulsar controls and independently save, cancel and update open tabs", async () => {
+  await pulsarSettings({ showQuestOverlay: true });
+  await page.goto("https://kosmora.io/collection");
+  await navigatePulsar("/vortex");
+  const popup = page.locator("#kosmore-root"),
+    overlay = page.locator("[data-kosmore-card-overlays] .quest");
+  await page.locator(".kc-article").hover();
+  await expect(popup).toBeVisible();
+  await expect(overlay).toBeVisible();
+  const options = await context.newPage();
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    const hoverGroup = options.locator("#hover-tooltip"),
+      overlayGroup = options.locator("#card-overlays");
+    const hoverToggle = hoverGroup.getByLabel("Disable in Vortex", {
+      exact: true,
+    });
+    const overlayToggle = overlayGroup.getByLabel("Disable in Vortex", {
+      exact: true,
+    });
+    for (const toggle of [hoverToggle, overlayToggle]) {
+      await expect(toggle).not.toBeChecked();
+      expect(
+        await toggle.evaluate(
+          (input) =>
+            input
+              .closest(".row")
+              ?.previousElementSibling?.previousElementSibling?.querySelector(
+                "label",
+              )?.textContent,
+        ),
+      ).toBe("Disable in Pulsar");
+    }
+    await overlayToggle.check();
+    await overlayGroup
+      .getByRole("button", {
+        name: "Cancel overlay settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(overlayToggle).not.toBeChecked();
+    await overlayToggle.check();
+    await overlayGroup
+      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .click();
+    await expect(overlay).toHaveCount(0);
+    await expect(popup).toBeVisible();
+    await expect(popup.locator(".quest")).toHaveCount(0);
+    await hoverToggle.check();
+    await hoverGroup
+      .getByRole("button", {
+        name: "Cancel tooltip settings changes",
+        exact: true,
+      })
+      .click();
+    await expect(hoverToggle).not.toBeChecked();
+    await hoverToggle.check();
+    await hoverGroup
+      .getByRole("button", { name: "Save tooltip settings", exact: true })
+      .click();
+    await expect(popup).toHaveCount(0);
+    await options.reload();
+    await expect(hoverToggle).toBeChecked();
+    await expect(overlayToggle).toBeChecked();
+    await expect(
+      hoverGroup.getByRole("switch", {
+        name: "Enable card hover tooltips",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await expect(
+      overlayGroup.getByRole("switch", {
+        name: "Enable card overlays",
+        exact: true,
+      }),
+    ).toBeChecked();
+    await navigatePulsar("/vortex/inventory");
+    await expect(overlay).toHaveCount(0);
+    await navigatePulsar("/collection");
+    await expect(overlay).toBeVisible();
+    await page.mouse.move(0, 0);
+    await page.locator(".kc-article").hover();
+    await expect(popup).toBeVisible();
+    await expect(popup.locator(".quest")).toBeVisible();
+  } finally {
+    await options.close();
+  }
+});
+
+test("Vortex exclusions: pinned tooltips stay hidden on entry and reload, and tooltip buttons follow only the hover control", async () => {
+  await pulsarSettings({
+    disableHoverTooltipInVortex: true,
+    disableCardOverlaysInVortex: true,
+    showQuestOverlay: true,
+  });
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root"),
+    overlay = page.locator("[data-kosmore-card-overlays] .quest");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await navigatePulsar("/vortex");
+  await expect(popup).toHaveCount(0);
+  await expect(overlay).toHaveCount(0);
+  await page.reload();
+  await expect(popup).toHaveCount(0);
+  await expect(overlay).toHaveCount(0);
+  await navigatePulsar("/collection");
+  await expect(popup).toHaveAttribute("data-pinned", "");
+  await expect(overlay).toBeVisible();
+  await popup
+    .getByRole("button", { name: "Close KosMore popup", exact: true })
+    .click();
+  await pulsarSettings({ useOverlayButtonInsteadOfHover: true });
+  await expect(tooltipButton()).toBeVisible();
+  await navigatePulsar("/vortex");
+  await expect(tooltipButtonLayer()).toHaveCount(0);
+  await expect(overlay).toHaveCount(0);
+  await pulsarSettings({ disableHoverTooltipInVortex: false });
+  await expect(tooltipButton()).toBeVisible();
+  await expect(overlay).toHaveCount(0);
+  await tooltipButton().click();
+  await expect(popup).toBeVisible();
+  await expect(popup.locator(".quest")).toHaveCount(0);
+  await navigatePulsar("/aion");
+  await expect(tooltipButton()).toBeVisible();
+  await expect(overlay).toBeVisible();
+});
+
 test("Pulsar: independent options save, cancel and hide their feature in open tabs", async () => {
   await pulsarSettings({ showQuestOverlay: true });
   await page.goto("https://kosmora.io/collection");
@@ -1834,33 +1962,35 @@ test("settings groups are ordered with separate account controls and a fixed anc
           sections.map((section) => section.querySelector("h2")?.textContent),
         ),
     ).toEqual([
-      "Hover tooltip",
-      "Pinned albums",
-      "Tooltip stat boxes",
-      "Card overlays",
-      "Friend tooltip",
-      "Profile reminders",
-      "Trade reminders",
+      "Hover Tooltip",
+      "Pinned Albums",
+      "Tooltip Stat Boxes",
+      "Card Overlays",
+      "Family Impact Overlay",
+      "Friend Tooltip",
+      "Profile Reminders",
+      "Trade Reminders",
       "Sales Overlay",
-      "Navigation hotkeys",
-      "Backup & restore",
-      "Connected account",
+      "Navigation Hotkeys",
+      "Backup & Restore",
+      "Connected Account",
     ]);
     const connection = options.locator("#connected-account"),
       albums = options.locator("#pinned-albums"),
       nav = options.getByRole("navigation", { name: "Settings groups" });
     await expect(nav.getByRole("link")).toHaveText([
-      "Hover tooltip",
-      "Pinned albums",
-      "Tooltip stat boxes",
-      "Card overlays",
-      "Friend tooltip",
-      "Profile reminders",
-      "Trade reminders",
+      "Hover Tooltip",
+      "Pinned Albums",
+      "Tooltip Stat Boxes",
+      "Card Overlays",
+      "Family Impact Overlay",
+      "Friend Tooltip",
+      "Profile Reminders",
+      "Trade Reminders",
       "Sales Overlay",
-      "Navigation hotkeys",
-      "Backup & restore",
-      "Connected account",
+      "Navigation Hotkeys",
+      "Backup & Restore",
+      "Connected Account",
     ]);
     await expect(connection.getByLabel("Kosmora account")).toBeVisible();
     await expect(
@@ -1873,6 +2003,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
     for (const label of [
       "Enable navigation hotkey",
       "Enable card overlays",
+      "Enable family impact overlays",
       "Enable sales overlay",
       "Enable stat boxes",
       "Enable pinned albums",
@@ -1880,7 +2011,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       await expect(options.getByLabel(label, { exact: true })).toBeChecked();
     await expect(
       options.locator(".settings-group-heading").getByRole("switch"),
-    ).toHaveCount(9);
+    ).toHaveCount(10);
     for (const name of [
       "Show Last Sale price",
       "Show Lowest Listed price",
@@ -1924,17 +2055,17 @@ test("settings groups are ordered with separate account controls and a fixed anc
     await checkSwitchLayout();
     const initial = (await nav.boundingBox())!;
     for (const [label, id] of [
-      ["Hover tooltip", "hover-tooltip"],
-      ["Pinned albums", "pinned-albums"],
-      ["Tooltip stat boxes", "stat-boxes"],
-      ["Card overlays", "card-overlays"],
-      ["Friend tooltip", "friend-tooltip"],
-      ["Profile reminders", "profile-reminders"],
-      ["Trade reminders", "trade-reminders"],
+      ["Hover Tooltip", "hover-tooltip"],
+      ["Pinned Albums", "pinned-albums"],
+      ["Tooltip Stat Boxes", "stat-boxes"],
+      ["Card Overlays", "card-overlays"],
+      ["Friend Tooltip", "friend-tooltip"],
+      ["Profile Reminders", "profile-reminders"],
+      ["Trade Reminders", "trade-reminders"],
       ["Sales Overlay", "sales-overlay"],
-      ["Navigation hotkeys", "navigation-hotkeys"],
-      ["Backup & restore", "backup-restore"],
-      ["Connected account", "connected-account"],
+      ["Navigation Hotkeys", "navigation-hotkeys"],
+      ["Backup & Restore", "backup-restore"],
+      ["Connected Account", "connected-account"],
     ]) {
       await nav.getByRole("link", { name: label, exact: true }).click();
       await expect(options).toHaveURL(new RegExp(`#${id}$`));
@@ -1945,14 +2076,14 @@ test("settings groups are ordered with separate account controls and a fixed anc
     await options.screenshot({
       path: "test-results/screenshots/settings-account-bottom.png",
     });
-    await nav.getByRole("link", { name: "Hover tooltip", exact: true }).click();
+    await nav.getByRole("link", { name: "Hover Tooltip", exact: true }).click();
     await options.screenshot({
       path: "test-results/screenshots/settings-navigation-desktop.png",
     });
     for (const width of [640, 390]) {
       await options.setViewportSize({ width, height: 900 });
       await nav
-        .getByRole("link", { name: "Navigation hotkeys", exact: true })
+        .getByRole("link", { name: "Navigation Hotkeys", exact: true })
         .click();
       await expect(options.locator("#navigation-hotkeys h2")).toBeInViewport();
       await checkSwitchLayout();
@@ -1963,13 +2094,13 @@ test("settings groups are ordered with separate account controls and a fixed anc
       ).toBe(true);
       const before = (await nav.boundingBox())!;
       await nav
-        .getByRole("link", { name: "Connected account", exact: true })
+        .getByRole("link", { name: "Connected Account", exact: true })
         .click();
       await expect(options.locator("#connected-account > h2")).toBeInViewport();
       const after = (await nav.boundingBox())!;
       expect({ x: after.x, y: after.y }).toEqual({ x: before.x, y: before.y });
       await nav
-        .getByRole("link", { name: "Hover tooltip", exact: true })
+        .getByRole("link", { name: "Hover Tooltip", exact: true })
         .click();
       await options.screenshot({
         path: `test-results/screenshots/settings-navigation-${width}.png`,
@@ -2091,7 +2222,7 @@ test("feature switches save immediately and disabled settings groups are read-on
     await expect(options.getByLabel("Kosmora account")).toBeEnabled();
     await mkdir("test-results/screenshots", { recursive: true });
     await options
-      .getByRole("link", { name: "Hover tooltip", exact: true })
+      .getByRole("link", { name: "Hover Tooltip", exact: true })
       .click();
     await options.screenshot({
       path: "test-results/screenshots/settings-disabled-desktop.png",
@@ -3996,14 +4127,14 @@ test("market overlays show sale and listing prices at top right and quest before
         exact: true,
       });
     await options
-      .getByRole("link", { name: "Card overlays", exact: true })
+      .getByRole("link", { name: "Card Overlays", exact: true })
       .click();
     await options.screenshot({
       path: "test-results/screenshots/overlay-price-settings.png",
     });
     await options.setViewportSize({ width: 390, height: 900 });
     await options
-      .getByRole("link", { name: "Card overlays", exact: true })
+      .getByRole("link", { name: "Card Overlays", exact: true })
       .click();
     await options.screenshot({
       path: "test-results/screenshots/overlay-price-settings-390.png",
@@ -6908,9 +7039,9 @@ test("Vortex family impact: marks stakes and picker cards, preserves native pick
     });
 
     await options.goto(
-      `chrome-extension://${extensionId}/options.html#card-overlays`,
+      `chrome-extension://${extensionId}/options.html#family-impact-overlay`,
     );
-    const group = options.locator("#card-overlays");
+    const group = options.locator("#family-impact-overlay");
     const toggle = group.getByLabel("Show family impact on the Vortex page", {
       exact: true,
     });
@@ -6918,21 +7049,21 @@ test("Vortex family impact: marks stakes and picker cards, preserves native pick
     await toggle.uncheck();
     await group
       .getByRole("button", {
-        name: "Cancel overlay settings changes",
+        name: "Cancel family impact settings changes",
         exact: true,
       })
       .click();
     await expect(toggle).toBeChecked();
     await toggle.uncheck();
     await group
-      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .getByRole("button", { name: "Save family impact settings", exact: true })
       .click();
     await expect(page.locator("[data-kosmore-fusion-family]")).toHaveCount(0);
     await options.reload();
     await expect(toggle).not.toBeChecked();
     await toggle.check();
     await group
-      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .getByRole("button", { name: "Save family impact settings", exact: true })
       .click();
     await tile("307").scrollIntoViewIfNeeded();
     await expect(badge("307")).toBeVisible();
@@ -6946,7 +7077,10 @@ test("Vortex family impact: marks stakes and picker cards, preserves native pick
       ),
     ).toBe(true);
     await group
-      .getByRole("switch", { name: "Enable card overlays", exact: true })
+      .getByRole("switch", {
+        name: "Enable family impact overlays",
+        exact: true,
+      })
       .uncheck();
     await expect(page.locator("[data-kosmore-fusion-family]")).toHaveCount(0);
     expect(writeRequests).toBe(0);
@@ -7089,7 +7223,7 @@ test("fusion family impact: marks tiles safe or not from the page's own reads, f
     for (const fixed of await badge("306").locator(".fixed").all())
       await expect(fixed).toBeVisible();
 
-    // Fusion is a Card overlays feature, independent of hover tooltips.
+    // Family impact has its own master switch, independent of hover tooltips.
     await worker.evaluate(async () => {
       const saved = (await chrome.storage.local.get("kosmore.settings"))[
         "kosmore.settings"

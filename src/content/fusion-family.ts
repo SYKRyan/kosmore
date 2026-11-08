@@ -1,4 +1,8 @@
 import { resolveCard } from "../kosmora/dom";
+import { foldFamilyName } from "../kosmora/families";
+import { salesTargets } from "../kosmora/sales";
+import { saleSelectionKey } from "../shared/sale-family-selection";
+import { SaleFamilySelection } from "./sale-family-selection";
 import {
   parseFusionCards,
   parseMilestones,
@@ -9,6 +13,8 @@ import {
   isRelayMessage,
   RELAY_FUSION,
   RELAY_VORTEX,
+  RELAY_LISTED,
+  LISTING_WRITES,
 } from "../shared/page-relay";
 import {
   fusionVerdict,
@@ -51,12 +57,13 @@ const STYLE = `
 .fixed{flex-shrink:0}
 .safe{background:#0f2118f0;border-color:#5fbf8a;color:#9be3b9}
 .drop{background:#3a0d14f2;border-color:#ff6b78;color:#ffd0d4}
+.pending{background:#282a30f2;border-color:#858994;color:#d2d5dc}
 .wait{border-style:dashed}
 @container (max-width:130px){.verdict{gap:3px;padding:0 5px;font-size:9px}}
 `;
 
 /**
- * Family impact on Fusion, Trade, and Vortex: each card you could pick is marked
+ * Family impact on Fusion, Trade, Vortex, and sales: each card you could pick is marked
  * "✓ Safe" or, when fusing it drops one of its families a tier,
  * "⚠ Loses <Family> <tier>", counting the cards already in the tray.
  * Reads the game's own grid and milestone responses (via the page relay), your
@@ -68,6 +75,8 @@ export class FusionFamilyImpact {
   private cards = new Map<string, FusionCard>();
   /** Every family each card belongs to (the grid only names the primary one). */
   private families = new Map<string, CardFamily[]>();
+  /** All memberships, including families that do not affect tiers. No extra reads. */
+  private cardFamilies = new Map<string, CardFamily[]>();
   /** Total ownership across finishes and availability, not only tradable copies. */
   private owned = new Map<string, number>();
   private freshOwned = new Set<string>();
@@ -94,16 +103,30 @@ export class FusionFamilyImpact {
   private intersection?: IntersectionObserver;
   private frame = 0;
   private retry?: ReturnType<typeof setTimeout>;
+  private sales: SaleFamilySelection;
 
   constructor(
     private client: Reads,
     private win: Window = window,
     private gap = COUNTS_GAP,
     private now: () => number = Date.now,
-  ) {}
+  ) {
+    this.sales = new SaleFamilySelection(win, () => this.schedule());
+  }
 
   start() {
     const onMessage = (event: MessageEvent) => {
+      if (
+        event.source === this.win &&
+        event.origin === this.win.location.origin &&
+        event.data?.type === RELAY_LISTED &&
+        typeof event.data.path === "string" &&
+        LISTING_WRITES.test(event.data.path)
+      ) {
+        this.invalidateOwnership();
+        this.schedule();
+        return;
+      }
       if (
         event.source !== this.win ||
         event.origin !== this.win.location.origin ||
@@ -115,6 +138,7 @@ export class FusionFamilyImpact {
       this.receive(event.data.path, event.data.data);
     };
     this.win.addEventListener("message", onMessage);
+    const stopSales = this.sales.start();
     // Half a screen ahead, so badges are ready as cards scroll into view. Kept
     // small: every read shares the player's rate limit with the game itself.
     this.intersection = new IntersectionObserver(
@@ -142,6 +166,7 @@ export class FusionFamilyImpact {
       this.cards.clear();
       this.owned.clear();
       this.freshOwned.clear();
+      this.sales.reset();
       this.counts = undefined;
       // Reads in flight for the old account fail: start over without waiting.
       this.accountKnown = false;
@@ -154,6 +179,7 @@ export class FusionFamilyImpact {
       this.win.removeEventListener("focus", back);
       this.win.document.removeEventListener("visibilitychange", back);
       unobserve();
+      stopSales();
       this.intersection?.disconnect();
       this.visible.clear();
       this.observed.clear();
@@ -196,11 +222,12 @@ export class FusionFamilyImpact {
 
   private enabled() {
     return (
-      !!this.settings?.cardOverlaysEnabled &&
+      !!this.settings?.familyImpactOverlaysEnabled &&
       ((this.settings.showFusionFamilyOverlay &&
         this.win.location.pathname === "/fusion") ||
         (this.settings.showTradeFamilyOverlay && this.trading()) ||
-        (this.settings.showVortexFamilyOverlay && this.vortex()))
+        (this.settings.showVortexFamilyOverlay && this.vortex()) ||
+        (this.settings.showSalesFamilyOverlay && this.selling()))
     );
   }
 
@@ -215,6 +242,13 @@ export class FusionFamilyImpact {
 
   private vortex() {
     return this.win.location.pathname === "/vortex";
+  }
+
+  private selling() {
+    return (
+      /^\/market\/sell(?:\/batch)?$/.test(this.win.location.pathname) ||
+      !!this.sales.activePicker()
+    );
   }
 
   private invalidateOwnership() {
@@ -316,7 +350,8 @@ export class FusionFamilyImpact {
       if (
         this.reading.has(id) ||
         (this.families.has(id) &&
-          (!(this.trading() || this.vortex()) || this.owned.has(id)))
+          (!(this.trading() || this.vortex() || this.selling()) ||
+            this.owned.has(id)))
       )
         continue;
       if (this.now() - (this.failed.get(id) ?? 0) < this.gap) continue;
@@ -335,16 +370,18 @@ export class FusionFamilyImpact {
           )
             return;
           if (card.copies) this.owned.set(id, card.copies.length);
-          else if (this.trading() || this.vortex())
+          else if (this.trading() || this.vortex() || this.selling())
             this.failed.set(id, this.now());
           this.freshOwned.delete(id);
           // Only memberships that count toward tiers (as Kosmora's own tiers).
-          if (card.families)
+          if (card.families) {
+            this.cardFamilies.set(id, card.families);
             this.families.set(
               id,
               card.families.filter((f) => f.economic !== false),
             );
-          else {
+          } else {
+            this.cardFamilies.delete(id);
             this.families.delete(id);
             this.failed.set(id, this.now());
           }
@@ -373,7 +410,13 @@ export class FusionFamilyImpact {
   }
 
   private render() {
+    const salePicks = this.sales.pickerSelection();
     if (!this.enabled()) return this.clear();
+    if (this.selling()) {
+      const ready = this.accountReady();
+      if (ready) this.load();
+      return this.renderSales(salePicks, ready);
+    }
     if (!this.accountReady()) return this.clear();
     this.load();
     if (this.trading() || this.vortex()) return this.renderSingleCopy();
@@ -466,6 +509,7 @@ export class FusionFamilyImpact {
       if (!verdict) continue;
       seen.add(article);
       this.draw(article, verdict, {
+        subjectId: card.subjectId,
         picked: chosenN > 0,
         waiting: chosenN > 0 && !inFusion ? cost : undefined,
       });
@@ -475,6 +519,154 @@ export class FusionFamilyImpact {
         host.remove();
         this.hosts.delete(article);
       }
+  }
+
+  /** Like Fusion's tray: selected last copies count once per subject and family. */
+  private renderSales(picks: Set<string>, accountReady: boolean) {
+    const doc = this.win.document,
+      picker = this.sales.activePicker();
+    const targets = salesTargets(doc);
+    const selected = picker ? picks : this.sales.batchSelection(targets);
+    const tiles: {
+      root: HTMLElement;
+      id: string;
+      key: string;
+      after?: HTMLElement;
+    }[] = [];
+    if (picker) {
+      for (const article of picker.querySelectorAll<HTMLElement>(
+        ".pick .kc-article",
+      )) {
+        const card = resolveCard(article, doc);
+        if (card)
+          tiles.push({
+            root: article,
+            id: card.subjectId,
+            key: saleSelectionKey(card),
+          });
+      }
+    } else
+      for (const target of targets.values())
+        tiles.push({
+          root: target.input,
+          id: target.context.subjectId,
+          key: saleSelectionKey(target.context),
+          after: target.after,
+        });
+    const current = new Set(tiles.map((tile) => tile.root));
+    for (const [root, host] of this.hosts)
+      if (!current.has(root)) {
+        host.remove();
+        this.hosts.delete(root);
+      }
+    const pending = (tile: (typeof tiles)[number], text = "Calculating…") =>
+      this.draw(
+        tile.root,
+        null,
+        {
+          subjectId: tile.id,
+          picked: false,
+          action: "sell",
+          pendingText: text,
+        },
+        tile.after,
+      );
+    const pendingAll = (text?: string) => {
+      for (const tile of tiles) pending(tile, text);
+    };
+    for (const root of current)
+      if (!this.observed.has(root)) {
+        this.observed.add(root);
+        this.intersection?.observe(root);
+      }
+    for (const root of this.observed)
+      if (!current.has(root as HTMLElement)) {
+        this.observed.delete(root);
+        this.visible.delete(root);
+        this.intersection?.unobserve(root);
+      }
+    const picked = new Map<string, number>();
+    for (const key of selected ?? []) {
+      const id = key.split(".")[0];
+      picked.set(id, (picked.get(id) ?? 0) + 1);
+    }
+    this.wanted = new Set([
+      ...picked.keys(),
+      ...tiles
+        .filter((tile) => this.visible.has(tile.root))
+        .map((tile) => tile.id),
+    ]);
+    if (accountReady) this.readFamilies();
+    if (
+      !accountReady ||
+      !selected ||
+      !this.counts ||
+      !this.milestones ||
+      this.countsStale ||
+      this.loading
+    )
+      return pendingAll(
+        this.failedAt && !this.loading ? "Impact unavailable" : undefined,
+      );
+    const leaving = new Map<string, number>();
+    for (const [id, n] of picked) {
+      const families = this.families.get(id),
+        quantity = this.owned.get(id);
+      if (!families || !quantity || n > quantity)
+        return pendingAll(
+          this.failed.has(id) ||
+            quantity === 0 ||
+            (quantity !== undefined && n > quantity)
+            ? "Impact unavailable"
+            : undefined,
+        );
+      if (n < quantity) continue;
+      for (const family of families)
+        leaving.set(family.id, (leaving.get(family.id) ?? 0) + 1);
+    }
+    for (const tile of tiles) {
+      const families = this.families.get(tile.id),
+        quantity = this.owned.get(tile.id);
+      if (!families || !quantity) {
+        pending(
+          tile,
+          this.failed.has(tile.id) || quantity === 0
+            ? "Impact unavailable"
+            : undefined,
+        );
+        continue;
+      }
+      const chosenN = picked.get(tile.id) ?? 0;
+      const copies = chosenN + (selected.has(tile.key) ? 0 : 1);
+      if (copies > quantity) {
+        pending(tile, "Impact unavailable");
+        continue;
+      }
+      const others = new Map(leaving);
+      if (chosenN >= quantity)
+        for (const family of families)
+          others.set(family.id, (others.get(family.id) ?? 1) - 1);
+      // Keep an already-crossed threshold visible when several cards from the
+      // same family leave together, rather than judging only the final step.
+      const verdict = fusionVerdict(
+        families,
+        copies >= quantity,
+        this.counts,
+        others,
+        this.milestones,
+        true,
+      );
+      if (!verdict) {
+        pending(tile, "Impact unavailable");
+        continue;
+      }
+      this.draw(
+        tile.root,
+        verdict,
+        { subjectId: tile.id, picked: selected.has(tile.key), action: "sell" },
+        tile.after,
+      );
+    }
   }
 
   /** Trades and Vortex stakes risk one copy, including any copies kept elsewhere. */
@@ -528,6 +720,7 @@ export class FusionFamilyImpact {
         if (!verdict) continue;
         seen.add(article);
         this.draw(article, verdict, {
+          subjectId: id,
           picked: true,
           action: vortex ? "vortex" : "trade",
         });
@@ -541,17 +734,60 @@ export class FusionFamilyImpact {
 
   private draw(
     article: HTMLElement,
-    verdict: Verdict,
-    state: { picked: boolean; waiting?: number; action?: "trade" | "vortex" },
+    verdict: Verdict | null,
+    state: {
+      subjectId: string;
+      picked: boolean;
+      waiting?: number;
+      action?: "trade" | "vortex" | "sell";
+      pendingText?: string;
+    },
+    saleAfter?: HTMLElement,
   ) {
-    const { parts, label } = describe(verdict, state);
-    const sig = `${verdict.safe}|${label}`;
+    let { parts, label } = verdict
+      ? describe(verdict, state)
+      : {
+          parts: [["fixed", state.pendingText ?? "Calculating…"]],
+          label: state.pendingText ?? "Calculating family impact…",
+        };
+    // This is intentionally render-only and opt-in. Tier-loss and pending
+    // badges skip the match, and enabling it never starts another card read.
+    let blacklisted = false;
+    if (verdict?.safe && this.settings?.useFamilyBlacklist) {
+      const blocked = new Set(
+        this.settings.familyBlacklist.map(foldFamilyName),
+      );
+      const matches = (this.cardFamilies.get(state.subjectId) ?? []).filter(
+        (family) => blocked.has(foldFamilyName(family.name)),
+      );
+      if (matches.length) {
+        blacklisted = true;
+        parts = [["fixed", "Blacklist"]];
+        label = `Blacklist: ${matches.map((family) => family.name).join(", ")}. ${label}`;
+      }
+    }
+    const sig = `${blacklisted ? "blacklist" : (verdict?.safe ?? "pending")}|${label}`;
     // On the card art when there is one, so no card text is covered.
-    const anchor = article.querySelector<HTMLElement>(".kc-window") ?? article;
+    const before = saleAfter
+      ?.closest("form.sell-form")
+      ?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    const after = saleAfter?.nextElementSibling?.matches(
+      "[data-kosmore-sales-overlay]",
+    )
+      ? saleAfter.nextElementSibling
+      : saleAfter;
+    const anchor =
+      before?.parentElement ??
+      saleAfter?.parentElement ??
+      article.querySelector<HTMLElement>(".kc-window") ??
+      article;
     let host = this.hosts.get(article);
     if (
       host?.isConnected &&
       host.parentElement === anchor &&
+      (before
+        ? host.nextElementSibling === before
+        : !after || host.previousElementSibling === after) &&
       host.dataset.sig === sig
     )
       return;
@@ -563,18 +799,25 @@ export class FusionFamilyImpact {
     }
     host.dataset.sig = sig;
     const style = el("style");
-    style.textContent = STYLE;
+    const batchSale = !!saleAfter?.closest(".bsell-row");
+    style.textContent =
+      STYLE +
+      (saleAfter
+        ? `:host{position:static;display:block;inset:auto;height:28px;min-width:0;grid-column:1/-1;margin:6px 0 ${batchSale ? 0 : 10}px;font-size:12px;z-index:auto;text-align:${batchSale ? "right" : "center"}}.verdict{height:28px;padding:4px 8px}`
+        : "");
     const badge = el(
       "div",
-      `verdict ${verdict.safe ? "safe" : "drop"}${state.waiting ? " wait" : ""}`,
+      `verdict ${blacklisted ? "drop blacklist" : !verdict ? "pending" : verdict.safe ? "safe" : "drop"}${state.waiting ? " wait" : ""}`,
     );
     badge.setAttribute("role", "img");
     badge.setAttribute("aria-label", label);
     badge.append(...parts.map(([cls, text]) => el("span", cls, text)));
     host.shadowRoot!.replaceChildren(style, badge);
-    if (this.win.getComputedStyle(anchor).position === "static")
+    if (!saleAfter && this.win.getComputedStyle(anchor).position === "static")
       anchor.style.setProperty("position", "relative");
-    if (host.parentElement !== anchor) anchor.append(host);
+    if (before) before.before(host);
+    else if (after) after.after(host);
+    else if (host.parentElement !== anchor) anchor.append(host);
   }
 
   private clear() {
@@ -597,7 +840,11 @@ const kept = (e: FamilyEffect) =>
 /** Badge pieces ([class, text]: only "name" may be shortened) and the full label. */
 export function describe(
   verdict: Verdict,
-  state: { picked: boolean; waiting?: number; action?: "trade" | "vortex" },
+  state: {
+    picked: boolean;
+    waiting?: number;
+    action?: "trade" | "vortex" | "sell";
+  },
 ): { parts: [string, string][]; label: string } {
   const { picked } = state;
   // Chosen, but outside the complete batches the game will fuse.
@@ -615,7 +862,7 @@ export function describe(
           `${tierName(first.tierBefore)}${rest.length ? ` +${rest.length}` : ""}`,
         ],
       ],
-      label: `${wait}Not safe: ${state.action === "vortex" ? "losing" : state.action === "trade" ? "trading" : picked ? "fusing" : "picking"} this card${state.action === "vortex" ? " in the Vortex" : ""} drops ${verdict.drops.map(lost).join(", and ")}.`,
+      label: `${wait}Not safe: ${state.action === "vortex" ? "losing" : state.action === "trade" ? "trading" : state.action === "sell" ? "selling" : picked ? "fusing" : "picking"} this card${state.action === "vortex" ? " in the Vortex" : state.action === "sell" ? " with the rest of the sale selection" : ""} drops ${verdict.drops.map(lost).join(", and ")}.`,
     };
   }
   const why =
@@ -626,6 +873,6 @@ export function describe(
         : `${verdict.families.map(kept).join("; ")}.`;
   return {
     parts: [["fixed", "✓ Safe"]],
-    label: `${wait}${state.action === "vortex" ? "Family tiers safe if this copy is lost in the Vortex" : `Safe to ${state.action === "trade" ? "trade" : "fuse"}`}: ${why}`,
+    label: `${wait}${state.action === "vortex" ? "Family tiers safe if this copy is lost in the Vortex" : state.action === "sell" ? "Safe to sell with the rest of the sale selection" : `Safe to ${state.action === "trade" ? "trade" : "fuse"}`}: ${why}`,
   };
 }

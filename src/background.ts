@@ -21,7 +21,8 @@ chrome.action.onClicked.addListener(() => {
 });
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (sender.id !== chrome.runtime.id || !isRequest(message)) return false;
-  const isOptions = sender.url === chrome.runtime.getURL("options.html");
+  const isOptions =
+    sender.url?.split(/[?#]/, 1)[0] === chrome.runtime.getURL("options.html");
   const isGame = !!sender.tab && sender.url?.startsWith("https://kosmora.io/");
   if (
     (message.op === "popupState" ||
@@ -109,13 +110,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         r.status === "fulfilled" ? [r.value] : [],
       );
     }
-    if (message.op === "albums") {
+    if (message.op === "albums" || message.op === "families") {
       const tab = await chrome.tabs.get(message.tabId);
       if (!tab.url?.startsWith("https://kosmora.io/"))
         throw new Error("Choose a Kosmora tab.");
       const result = (await chrome.tabs.sendMessage(message.tabId, {
         requestId: message.requestId,
-        op: "listAlbums",
+        op: message.op === "families" ? "listFamilies" : "listAlbums",
         accountKey: message.accountKey,
       })) as Result<unknown>;
       if (!result?.ok || result.requestId !== message.requestId)

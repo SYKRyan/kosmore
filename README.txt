@@ -16,8 +16,9 @@ to Kosmora.
   auction, sales, and local sale-rate boxes.
 - Card overlays: spot active auctions, recent sales, your listed cards, quest
   cards, and matches for friends' saved family preferences.
-- Family impact: see whether fusing, trading, or losing a card in Vortex would
-  lower a family tier, accounting for other copies and the Fusion tray.
+- Family impact: see whether fusing, trading, selling, or losing cards in
+  Vortex would lower a family tier, accounting for other copies and the
+  current batch or selection.
 - Friend tooltip: expand matching friends' saved families and notes in a
   separate popup with Social and Profile links.
 - Social and profile reminders: keep private family preferences and notes for
@@ -97,6 +98,12 @@ displayed inside the card tooltip need that tooltip enabled.
 Disable in Pulsar, available separately under Hover tooltip and Card overlays,
 applies to Constellation, Aion, Photon, Horizon, and Umbra. Vortex and the
 Pulsar hub keep their normal settings.
+
+Disable in Vortex sits directly below each Pulsar control in Hover Tooltip
+and Card Overlays. Each option independently hides its feature throughout
+Vortex, including subpages, while preserving the main enabled switch. Both
+default to off. The hover option also hides tooltip open buttons; the overlay
+option also hides tooltip header indicators.
 
 Hover tooltip
 -------------
@@ -235,33 +242,48 @@ configured independently:
   preferences you saved for current friends.
 - Quest: a gold Quest badge when the card belongs to any quest, whether you
   follow it or not.
-- Family impact on the Fusion page: a badge at the bottom left of each card's
-  art showing ✓ Safe when no family loses a tier, or ⚠ Loses Asteroids I when
-  fusing it drops that family from tier I. A +1 indicates another affected
-  family. Counts include cards already in the tray and all families the card
-  counts toward. Keeping another copy preserves that card's family
-  contribution.
-- Family impact on the Trade page: show Safe or the affected family tiers
-  while choosing your card to trade. It uses the same family checks as Fusion;
-  trading a copy preserves the family contribution when you still own another
-  copy. This has its own Show family impact on the Trade page setting.
-- Family impact on the Vortex page: show Safe or the affected family tiers on
-  your stake cards and in the card picker, based on losing one copy. All owned
-  copies and economic families count. Checks refresh after spins, and badges
-  stay hidden when ownership or family data is unknown. Use Show family impact
-  on the Vortex page to turn them on or off independently of Fusion and Trade.
-
-Fusion impact follows complete batches in the order you choose cards. A chosen
-card still waiting for its batch has a dashed outline. Badges do not block
-card selection. Use Show family impact on the Fusion page to turn them on or
-off.
-
 The price switches are subsettings of their respective indicators. Friend
 indicators on cards are passive; use the indicator inside the card tooltip to
 open the companion friend popup.
 
 Compact Market Activity and journal thumbnails omit price/signal overlays.
 They still support the tooltip overlay button when enabled.
+
+Family Impact Overlay
+---------------------
+
+This group has its own master switch and independent Fusion, Trade, Vortex,
+and Show on sale screens options. All default to on; existing saved choices
+remain intact. Card overlays and Sales Overlay work independently.
+
+The Blacklist subsection has Use Family Blacklist, off by default, and the
+same searchable family tokens used for friend interests. Enable it, add
+families, then save the group. Otherwise Safe cards matching a listed family
+show a red Blacklist tag; tier-loss warnings retain their normal labels.
+Matching runs only while rendering with the feature enabled, using loaded
+card families without extra reads. Disabling it preserves the tokens, and
+backups include the option and list.
+
+- Fusion: badges on card art show Safe or the affected family tier. Checks
+  account for every economic family, other copies, and the current tray.
+  Complete batches follow selection order; waiting cards have dashed badges.
+- Trade: check your card choices against losing one copy. Keeping another
+  copy preserves that card's family contribution.
+- Vortex: check stake cards and the picker against losing one copy. Counts
+  and ownership refresh after spins.
+- Sale screens: Sell Many recalculates while selecting or deselecting cards,
+  before Continue. Selected cards and prospective additions account for the
+  whole selection, including cards hidden by filters or pagination. Single
+  and batch sale drafts show impact beneath each listing's price controls,
+  outside card art. Checks assume submitted copies sell. Removing a listing
+  recalculates the remaining batch, including shared families and copies
+  across finishes.
+
+Badges do not block native actions. Sale checks reserve a gray Calculating…
+badge while loading, then show Safe or family impact without changing the
+row height. Batch sale badges sit at the bottom right of each listing.
+Unavailable sale impact stays gray; other family checks stay hidden while
+required data is unknown.
 
 Friend tooltip
 --------------

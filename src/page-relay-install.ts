@@ -7,7 +7,9 @@
  * the game's own successful `GET /api/auctions`, `GET /api/auctions/{id}`,
  * `GET /api/fusion`, `GET /api/fusion/cards`, `GET /api/families`, and
  * `GET /api/vortex/lobby` responses to
- * the content script. Successful native single/batch listing submissions also
+ * the content script. Native batch reads and draft updates also pass selection
+ * identities only, so family checks include filtered-out entries. Successful
+ * native single/batch listing submissions also
  * emit an invalidation-only notification, without their request body or prices.
  * The observer sends no requests and returns the page's response untouched.
  */
@@ -21,6 +23,11 @@ import {
   LISTING_WRITES,
   type ListingChangedMessage,
 } from "./shared/page-relay";
+import {
+  RELAY_SALE_BATCH,
+  saleSelectionKeys,
+  type SaleBatchMessage,
+} from "./shared/sale-family-selection";
 
 declare global {
   interface Window {
@@ -32,11 +39,16 @@ export function installPageRelay(win: Window = window) {
   if (win.__kosmoreRelay) return;
   win.__kosmoreRelay = true;
   const original = win.fetch;
-  const buffer: (RelayMessage | ListingChangedMessage)[] = [];
+  const buffer: (RelayMessage | ListingChangedMessage | SaleBatchMessage)[] =
+    [];
+  let revision = 0;
   let ready = false;
-  const send = (message: RelayMessage | ListingChangedMessage) =>
-    win.postMessage(message, win.location.origin);
-  const relay = (message: RelayMessage | ListingChangedMessage) => {
+  const send = (
+    message: RelayMessage | ListingChangedMessage | SaleBatchMessage,
+  ) => win.postMessage(message, win.location.origin);
+  const relay = (
+    message: RelayMessage | ListingChangedMessage | SaleBatchMessage,
+  ) => {
     if (ready) send(message);
     else {
       buffer.push(message);
@@ -55,6 +67,25 @@ export function installPageRelay(win: Window = window) {
     }
   });
   win.fetch = function (this: unknown, ...args: Parameters<typeof fetch>) {
+    // fetch consumes a Request body synchronously; clone the specific draft
+    // request first, without ever consuming or replacing the original body.
+    let draftRequest: Request | undefined;
+    try {
+      const [input, init] = args;
+      if (
+        input instanceof Request &&
+        init?.body === undefined &&
+        (init?.method ?? input.method).toUpperCase() === "PUT" &&
+        win.location.pathname === "/market/sell/batch"
+      ) {
+        const url = new URL(input.url);
+        if (
+          url.origin === win.location.origin &&
+          url.pathname === "/api/market/sell-draft"
+        )
+          draftRequest = input.clone();
+      }
+    } catch {}
     const response = original.apply(this, args);
     try {
       const [input, init] = args;
@@ -65,6 +96,39 @@ export function installPageRelay(win: Window = window) {
       const method = (
         init?.method ?? (input instanceof Request ? input.method : "GET")
       ).toUpperCase();
+      // Keep filtered-out sale entries in the impact calculation. Observe only
+      // the game's own batch reads and draft writes; never request or save one.
+      if (
+        url.origin === win.location.origin &&
+        win.location.pathname === "/market/sell/batch" &&
+        ((method === "GET" && url.pathname === "/api/market/listings/batch") ||
+          (method === "PUT" && url.pathname === "/api/market/sell-draft"))
+      ) {
+        const page = win.location.href,
+          nextRevision = ++revision;
+        const source = method === "GET" ? "batch" : "draft";
+        const data =
+          source === "batch"
+            ? response.then((res) => (res.ok ? res.clone().json() : undefined))
+            : typeof init?.body === "string"
+              ? Promise.resolve().then(() => JSON.parse(init.body as string))
+              : draftRequest
+                ? draftRequest.json()
+                : Promise.resolve(undefined);
+        void data
+          .then((value: unknown) => {
+            const keys = saleSelectionKeys(value, source);
+            if (keys)
+              relay({
+                type: RELAY_SALE_BATCH,
+                page,
+                revision: nextRevision,
+                source,
+                keys,
+              });
+          })
+          .catch(() => {});
+      }
       if (
         method === "POST" &&
         url.origin === win.location.origin &&

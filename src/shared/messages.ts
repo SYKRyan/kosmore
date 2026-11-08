@@ -22,7 +22,12 @@ export type Request =
   | { requestId: string; op: "friendPopupState" }
   | { requestId: string; op: "friendPopupLayout"; change: PopupLayoutChange }
   | { requestId: string; op: "sessions" }
-  | { requestId: string; op: "albums"; tabId: number; accountKey: string }
+  | {
+      requestId: string;
+      op: "albums" | "families";
+      tabId: number;
+      accountKey: string;
+    }
   | { requestId: string; op: "openOptions" };
 export type TabRequest =
   | {
@@ -34,7 +39,11 @@ export type TabRequest =
   | { requestId: string; op: "cancelListingBatch"; target: string }
   | { requestId: string; op: "listingCacheChanged"; accountKey: string }
   | { requestId: string; op: "session" }
-  | { requestId: string; op: "listAlbums"; accountKey: string };
+  | {
+      requestId: string;
+      op: "listAlbums" | "listFamilies";
+      accountKey: string;
+    };
 export interface Session {
   tabId: number;
   account: Account;
@@ -70,7 +79,7 @@ export function isRequest(x: unknown): x is Request {
       (r.op === "popupLayout" && isPopupLayoutChange(r.change)) ||
       (r.op === "friendPopupLayout" &&
         isPopupLayoutChange(r.change, { minWidth: 240, minHeight: 160 })) ||
-      (r.op === "albums" &&
+      ((r.op === "albums" || r.op === "families") &&
         Number.isInteger(r.tabId) &&
         r.tabId >= 0 &&
         /^[a-z0-9_]{1,24}$/.test(r.accountKey)))
@@ -88,7 +97,8 @@ export function isTabRequest(x: unknown): x is TabRequest {
       (r.op === "readListingBatch" &&
         /^[a-z0-9_]{1,24}$/.test(r.accountKey) &&
         validListingLimits(r.limits)) ||
-      (r.op === "listAlbums" && /^[a-z0-9_]{1,24}$/.test(r.accountKey)))
+      ((r.op === "listAlbums" || r.op === "listFamilies") &&
+        /^[a-z0-9_]{1,24}$/.test(r.accountKey)))
   );
 }
 export async function request<T>(

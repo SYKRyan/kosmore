@@ -346,7 +346,14 @@ export class SalesOverlays {
       apply(result);
     } catch (error) {
       if (!valid()) return;
-      entry.mineError = `Your listing history: ${messageOf(error)}`;
+      // The optional price control has nothing to offer without a known price.
+      // Keep failed/absent history quiet rather than showing an empty control
+      // and an error on every sale row. A saved price can still explain a
+      // failed refresh in its existing tooltip/status.
+      entry.mineError =
+        entry.myPrice === undefined
+          ? undefined
+          : `Your listing history: ${messageOf(error)}`;
       if (error instanceof ApiError && error.status === 429)
         this.notBefore = error.retryAt || Date.now() + 30_000;
       if (error instanceof ApiError && error.status === 401)

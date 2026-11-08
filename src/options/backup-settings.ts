@@ -51,11 +51,11 @@ export class BackupSettings {
   private generation = 0;
   private previewVersion = 0;
   constructor(private actions: BackupActions) {
-    this.host.setAttribute("aria-label", "Backup & restore");
+    this.host.setAttribute("aria-label", "Backup & Restore");
     this.status.setAttribute("role", "status");
     this.status.setAttribute("aria-live", "polite");
     this.host.append(
-      el("h2", "", "Backup & restore"),
+      el("h2", "", "Backup & Restore"),
       el(
         "p",
         "sub",

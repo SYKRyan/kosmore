@@ -47,7 +47,7 @@ export class FriendTooltipSettings {
   }[] = [];
   constructor(change: (update: Partial<Settings>) => void) {
     this.host.append(
-      el("h2", "", "Friend tooltip"),
+      el("h2", "", "Friend Tooltip"),
       el(
         "p",
         "sub",

@@ -6,6 +6,8 @@ import { settingsNavigation } from "./settings-navigation";
 import { SalesSettings, SALES_SETTINGS_KEYS } from "./sales-settings";
 import { BackupSettings } from "./backup-settings";
 import { TradeSettings, TRADE_SETTINGS_KEYS } from "./trade-settings";
+import { FamilyBlacklistSettings } from "./family-blacklist-settings";
+import type { FamilyChoice } from "../kosmora/families";
 import {
   FriendTooltipSettings,
   FRIEND_TOOLTIP_KEYS,
@@ -29,6 +31,7 @@ type FeatureKey =
   | "friendTooltipEnabled"
   | "navigationHotkeysEnabled"
   | "cardOverlaysEnabled"
+  | "familyImpactOverlaysEnabled"
   | "salesOverlaysEnabled"
   | "statBoxesEnabled"
   | "pinnedAlbumsEnabled";
@@ -58,7 +61,7 @@ head.append(el("p", "brand", "✦ KosMore"), el("h1", "", "More Kosmora"));
 header.append(head, el("span", "badge", "LOCAL BROWSER SETTINGS"));
 app.append(header);
 const general = el("section", "panel");
-general.append(el("h2", "", "Hover tooltip"));
+general.append(el("h2", "", "Hover Tooltip"));
 general.append(
   el(
     "p",
@@ -67,20 +70,31 @@ general.append(
   ),
 );
 const enabled = sectionToggle(general, "enabled", "Enable card hover tooltips");
-const disableHoverInPulsar = pulsarToggle(
+const disableHoverInPulsar = pageExclusionToggle(
   general,
   "disableHoverTooltipInPulsar",
   "Hide card tooltips and their open buttons in Pulsar games, except Vortex.",
 );
+const disableHoverInVortex = pageExclusionToggle(
+  general,
+  "disableHoverTooltipInVortex",
+  "Hide card tooltips and their open buttons in Vortex.",
+  "Disable in Vortex",
+);
 
-function pulsarToggle(
+function pageExclusionToggle(
   host: HTMLElement,
-  key: "disableHoverTooltipInPulsar" | "disableCardOverlaysInPulsar",
+  key:
+    | "disableHoverTooltipInPulsar"
+    | "disableCardOverlaysInPulsar"
+    | "disableHoverTooltipInVortex"
+    | "disableCardOverlaysInVortex",
   hint: string,
+  text = "Disable in Pulsar",
 ) {
   const row = el("div", "row"),
     input = el("input"),
-    label = el("label", "label settings-toggle", "Disable in Pulsar");
+    label = el("label", "label settings-toggle", text);
   input.type = "checkbox";
   input.id = key;
   label.prepend(input);
@@ -327,7 +341,7 @@ const friendTooltipEnabled = sectionToggle(
 );
 const profileSettings = el("section", "panel");
 profileSettings.append(
-  el("h2", "", "Profile reminders"),
+  el("h2", "", "Profile Reminders"),
   el(
     "p",
     "sub",
@@ -362,7 +376,7 @@ const tradeEnabled = sectionToggle(
 );
 const overlays = el("section", "panel");
 overlays.append(
-  el("h2", "", "Card overlays"),
+  el("h2", "", "Card Overlays"),
   el(
     "p",
     "sub",
@@ -374,16 +388,23 @@ const overlaysEnabled = sectionToggle(
   "cardOverlaysEnabled",
   "Enable card overlays",
 );
-const disableOverlaysInPulsar = pulsarToggle(
+const disableOverlaysInPulsar = pageExclusionToggle(
   overlays,
   "disableCardOverlaysInPulsar",
   "Hide card indicators and tooltip header indicators in Pulsar games, except Vortex.",
+);
+const disableOverlaysInVortex = pageExclusionToggle(
+  overlays,
+  "disableCardOverlaysInVortex",
+  "Hide card indicators and tooltip header indicators in Vortex.",
+  "Disable in Vortex",
 );
 function overlayToggle(
   id: string,
   label: string,
   hint: string,
   update: (checked: boolean) => void,
+  host: HTMLElement = overlays,
 ) {
   const row = el("div", "row"),
     input = el("input"),
@@ -393,7 +414,7 @@ function overlayToggle(
   text.prepend(input);
   row.append(text, el("span", "hint", hint));
   input.addEventListener("change", () => update(input.checked));
-  overlays.append(el("div", "rule"), row);
+  host.append(el("div", "rule"), row);
   return input;
 }
 function overlayPriceToggle(
@@ -476,6 +497,20 @@ const questOverlay = overlayToggle(
     draft.showQuestOverlay = checked;
   },
 );
+const familyImpact = el("section", "panel");
+familyImpact.append(
+  el("h2", "", "Family Impact Overlay"),
+  el(
+    "p",
+    "sub",
+    "Check whether losing the chosen cards would lower a family tier. These checks work independently of card and sales overlays.",
+  ),
+);
+const familyImpactEnabled = sectionToggle(
+  familyImpact,
+  "familyImpactOverlaysEnabled",
+  "Enable family impact overlays",
+);
 const fusionFamilyOverlay = overlayToggle(
   "fusion-family-overlay",
   "Show family impact on the Fusion page",
@@ -483,6 +518,7 @@ const fusionFamilyOverlay = overlayToggle(
   (checked) => {
     draft.showFusionFamilyOverlay = checked;
   },
+  familyImpact,
 );
 const tradeFamilyOverlay = overlayToggle(
   "trade-family-overlay",
@@ -491,6 +527,7 @@ const tradeFamilyOverlay = overlayToggle(
   (checked) => {
     draft.showTradeFamilyOverlay = checked;
   },
+  familyImpact,
 );
 const vortexFamilyOverlay = overlayToggle(
   "vortex-family-overlay",
@@ -499,7 +536,34 @@ const vortexFamilyOverlay = overlayToggle(
   (checked) => {
     draft.showVortexFamilyOverlay = checked;
   },
+  familyImpact,
 );
+const salesFamilyOverlay = overlayToggle(
+  "sales-family-overlay",
+  "Show on sale screens",
+  "Check the whole selection as you pick cards in Sell Many, then show impact beneath each sale listing. Removing a listing recalculates the remaining batch.",
+  (checked) => {
+    draft.showSalesFamilyOverlay = checked;
+  },
+  familyImpact,
+);
+const familyBlacklistSettings = new FamilyBlacklistSettings(
+  (update) => Object.assign(draft, update),
+  async () => {
+    const session =
+      selected ??
+      sessions[0] ??
+      (await request<Session[]>({ op: "sessions" }))[0];
+    if (!session)
+      throw new Error("Open a signed-in Kosmora tab, then retry families.");
+    return request<FamilyChoice[]>({
+      op: "families",
+      tabId: session.tabId,
+      accountKey: session.account.key,
+    });
+  },
+);
+familyImpact.append(el("div", "rule"), familyBlacklistSettings.host);
 const salesSettings = new SalesSettings((update) =>
   Object.assign(draft, update),
 );
@@ -525,7 +589,7 @@ const connection = el("section", "panel"),
   select = el("select");
 select.setAttribute("aria-label", "Kosmora account");
 connection.append(
-  el("h2", "", "Connected account"),
+  el("h2", "", "Connected Account"),
   el(
     "p",
     "sub",
@@ -545,7 +609,7 @@ connection.append(connectionStatus);
 connection.setAttribute("aria-label", "connected account");
 const albumSettings = el("section", "panel");
 albumSettings.append(
-  el("h2", "", "Pinned albums"),
+  el("h2", "", "Pinned Albums"),
   el(
     "p",
     "sub",
@@ -563,7 +627,7 @@ const grid = el("div", "grid"),
   catalogPanel = el("section", "panel"),
   pinnedPanel = el("section", "panel");
 const catalogHeader = el("div", "section-top");
-catalogHeader.append(el("h2", "", "Your albums"));
+catalogHeader.append(el("h2", "", "Your Albums"));
 catalogPanel.append(catalogHeader);
 const search = el("input");
 search.type = "search";
@@ -578,7 +642,7 @@ const catalog = el("div", "album-list"),
   pins = el("div", "pin-list");
 catalogPanel.append(catalog);
 pinnedPanel.append(
-  el("h2", "", "Pinned shortcuts"),
+  el("h2", "", "Pinned Shortcuts"),
   el("p", "sub", "Buttons appear in this order in the card tooltip."),
   pins,
 );
@@ -632,6 +696,7 @@ groupControls({
   name: "tooltip settings",
   keys: [
     "disableHoverTooltipInPulsar",
+    "disableHoverTooltipInVortex",
     "enabled",
     "useOverlayButtonInsteadOfHover",
     "outsideClickClosesTooltipOnly",
@@ -702,6 +767,7 @@ groupControls({
   name: "overlay settings",
   keys: [
     "disableCardOverlaysInPulsar",
+    "disableCardOverlaysInVortex",
     "cardOverlaysEnabled",
     "showSaleHistoryOverlay",
     "showLastSalePriceOverlay",
@@ -710,11 +776,26 @@ groupControls({
     "showOnSaleOverlay",
     "showFriendInterestOverlay",
     "showQuestOverlay",
+  ],
+  render: renderSettings,
+});
+groupControls({
+  host: familyImpact,
+  name: "family impact settings",
+  keys: [
+    "familyImpactOverlaysEnabled",
+    "useFamilyBlacklist",
+    "familyBlacklist",
+    "showSalesFamilyOverlay",
     "showFusionFamilyOverlay",
     "showTradeFamilyOverlay",
     "showVortexFamilyOverlay",
   ],
-  render: renderSettings,
+  render: () => {
+    familyBlacklistSettings.resetInput();
+    renderSettings();
+  },
+  validate: () => familyBlacklistSettings.validate(draft),
 });
 groupControls({
   host: statSettings.host,
@@ -739,7 +820,9 @@ groupControls({
   },
 });
 const backupSettings = new BackupSettings({
-  isDirty: () => JSON.stringify(draft) !== JSON.stringify(saved),
+  isDirty: () =>
+    familyBlacklistSettings.pendingInput ||
+    JSON.stringify(draft) !== JSON.stringify(saved),
   isBusy: () => busy || savingGroups.size > 0 || !settingsReady,
   setApplying: (applying) => {
     busy = applying;
@@ -758,43 +841,49 @@ const backupSettings = new BackupSettings({
 const settingsGroups = [
   {
     id: "hover-tooltip",
-    label: "Hover tooltip",
+    label: "Hover Tooltip",
     host: general,
     path: "M4 3h16v13H9l-5 5V3Z M8 7h8 M8 11h5",
   },
   {
     id: "pinned-albums",
-    label: "Pinned albums",
+    label: "Pinned Albums",
     host: albumSettings,
     path: "M5 3h14v18H5Z M8 3v18 M12 8h4 M12 12h4",
   },
   {
     id: "stat-boxes",
-    label: "Tooltip stat boxes",
+    label: "Tooltip Stat Boxes",
     host: statSettings.host,
     path: "M3 3h7v7H3Z M14 3h7v7h-7Z M3 14h7v7H3Z M14 14h7v7h-7Z",
   },
   {
     id: "card-overlays",
-    label: "Card overlays",
+    label: "Card Overlays",
     host: overlays,
     path: "M7 3h14v14H7Z M3 7v14h14 M12 7h4 M12 11h4",
   },
   {
+    id: "family-impact-overlay",
+    label: "Family Impact Overlay",
+    host: familyImpact,
+    path: "M12 3 3 8l9 5 9-5-9-5Z M3 12l9 5 9-5 M3 16l9 5 9-5",
+  },
+  {
     id: "friend-tooltip",
-    label: "Friend tooltip",
+    label: "Friend Tooltip",
     host: friendTooltipSettings.host,
     path: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-4 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
   },
   {
     id: "profile-reminders",
-    label: "Profile reminders",
+    label: "Profile Reminders",
     host: profileSettings,
     path: "M4 3h16v18H4Z M8 15h8 M8 18h5 M15 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
   },
   {
     id: "trade-reminders",
-    label: "Trade reminders",
+    label: "Trade Reminders",
     host: tradeSettings.host,
     path: "M3 7h18 M17 3l4 4-4 4 M21 17H3 M7 13l-4 4 4 4",
   },
@@ -806,19 +895,19 @@ const settingsGroups = [
   },
   {
     id: "navigation-hotkeys",
-    label: "Navigation hotkeys",
+    label: "Navigation Hotkeys",
     host: hotkeySettings.host,
     path: "M3 5h18v14H3Z M7 9h.01 M11 9h.01 M15 9h.01 M7 12h.01 M11 12h.01 M15 12h.01 M7 15h10",
   },
   {
     id: "backup-restore",
-    label: "Backup & restore",
+    label: "Backup & Restore",
     host: backupSettings.host,
     path: "M12 3v12 M7 10l5 5 5-5 M4 15v6h16v-6",
   },
   {
     id: "connected-account",
-    label: "Connected account",
+    label: "Connected Account",
     host: connection,
     path: "M20 21v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2 M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
   },
@@ -845,12 +934,15 @@ function renderSettings() {
   friendTooltipSettings.render(draft);
   hotkeysEnabled.checked = draft.navigationHotkeysEnabled;
   overlaysEnabled.checked = draft.cardOverlaysEnabled;
+  familyImpactEnabled.checked = draft.familyImpactOverlaysEnabled;
   salesEnabled.checked = draft.salesOverlaysEnabled;
   statsEnabled.checked = draft.statBoxesEnabled;
   albumsEnabled.checked = draft.pinnedAlbumsEnabled;
   enabled.checked = draft.enabled;
   disableHoverInPulsar.checked = draft.disableHoverTooltipInPulsar;
+  disableHoverInVortex.checked = draft.disableHoverTooltipInVortex;
   disableOverlaysInPulsar.checked = draft.disableCardOverlaysInPulsar;
+  disableOverlaysInVortex.checked = draft.disableCardOverlaysInVortex;
   useOverlayButton.checked = draft.useOverlayButtonInsteadOfHover;
   outsideClickOnly.checked = draft.outsideClickClosesTooltipOnly;
   fullScreenCentered.checked = draft.fullScreenCenteredOnOpen;
@@ -873,6 +965,8 @@ function renderSettings() {
   fusionFamilyOverlay.checked = draft.showFusionFamilyOverlay;
   tradeFamilyOverlay.checked = draft.showTradeFamilyOverlay;
   vortexFamilyOverlay.checked = draft.showVortexFamilyOverlay;
+  salesFamilyOverlay.checked = draft.showSalesFamilyOverlay;
+  familyBlacklistSettings.render(draft);
   statSettings.render(draft.stats);
   hotkeySettings.render(draft.hotkeys);
   salesSettings.render(draft);
@@ -884,6 +978,7 @@ function renderSettings() {
     albumSettings,
     statSettings.host,
     overlays,
+    familyImpact,
     salesSettings.host,
     hotkeySettings.host,
   ])
@@ -1221,5 +1316,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
   draft.friendTooltipPosition = next.friendTooltipPosition;
   saved.popupPosition = next.popupPosition;
   draft.popupPosition = next.popupPosition;
+  for (const key of ["useFamilyBlacklist", "familyBlacklist"] as const) {
+    if (JSON.stringify(draft[key]) === JSON.stringify(saved[key]))
+      Object.assign(draft, { [key]: structuredClone(next[key]) });
+    Object.assign(saved, { [key]: structuredClone(next[key]) });
+  }
+  familyBlacklistSettings.render(draft);
   backupSettings.refreshControls();
 });

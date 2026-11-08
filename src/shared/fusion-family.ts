@@ -26,7 +26,7 @@ export function tierName(tier: number): string {
 
 export interface FamilyEffect {
   name: string;
-  /** Tier with the other chosen cards gone (this card excluded). */
+  /** Tier before this card, or the current tier when comparing the whole batch. */
   tierBefore: number;
   /** Tier with this card gone too. */
   tierAfter: number;
@@ -49,6 +49,8 @@ export type Verdict =
  * count of every family it belongs to, only when all its copies are fused:
  * `leaves` says whether this pick does that. `othersLeaving` counts, per family,
  * the other chosen cards that leave. null when a family's count is unknown.
+ * wholeBatch compares the resulting tier to today's tier, for sale submissions
+ * that should still warn when the other entries already cross a threshold.
  */
 export function fusionVerdict(
   families: { id: string; name: string }[],
@@ -56,6 +58,7 @@ export function fusionVerdict(
   counts: Map<string, number>,
   othersLeaving: Map<string, number>,
   milestones: number[],
+  wholeBatch = false,
 ): Verdict | null {
   if (!families.length)
     return { safe: true, reason: "no-family", families: [] };
@@ -69,7 +72,7 @@ export function fusionVerdict(
     for (const m of milestones) if (before >= m) floor = m;
     effects.push({
       name: family.name,
-      tierBefore: tierOf(before, milestones),
+      tierBefore: tierOf(wholeBatch ? collected : before, milestones),
       tierAfter: tierOf(after, milestones),
       more: Math.max(0, after - floor),
     });

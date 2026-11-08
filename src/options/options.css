@@ -447,6 +447,122 @@ input.section-switch:checked::before {
   background: linear-gradient(90deg, #b397e830, #b397e80d);
   margin: 18px 0;
 }
+.family-blacklist .blacklist-fields {
+  border: 0;
+  padding: 0;
+  margin: 12px 0 0;
+  min-width: 0;
+}
+.family-blacklist .blacklist-picker-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+.family-blacklist .blacklist-picker-row > button {
+  flex: none;
+  margin-top: 8px;
+}
+.family-blacklist .family-picker {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.family-blacklist .token-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 9px;
+  min-height: 52px;
+  border: 1px solid #66547d;
+  border-radius: 10px;
+  background: #130e26;
+}
+.family-blacklist .tokens {
+  display: contents;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.family-blacklist .token {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  color: #f4dfa7;
+  background: #302442;
+  border: 1px solid #77603f;
+  border-radius: 7px;
+  padding: 4px 6px 4px 9px;
+  font-size: 12px;
+}
+.family-blacklist .token span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.family-blacklist .token button {
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: #d7c6e8;
+  font-size: 17px;
+  line-height: 1.1;
+}
+.family-blacklist .token-editor input {
+  flex: 1;
+  min-width: 110px;
+  width: 110px;
+  max-width: 100%;
+  background: transparent;
+  border: 0;
+  padding: 5px;
+  color: #eeeaf7;
+}
+.family-blacklist .family-options {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 10;
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 4px;
+  max-height: 230px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: #211731;
+  border: 1px solid #80653f;
+  border-radius: 10px;
+  box-shadow: 0 12px 25px #0008;
+}
+.family-blacklist .family-options li {
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+.family-blacklist .family-options [role="option"] {
+  cursor: pointer;
+}
+.family-blacklist .family-options [role="option"]:hover,
+.family-blacklist .family-options .active {
+  background: #403052;
+}
+.family-blacklist .family-options span {
+  display: block;
+  color: #f1e0b3;
+}
+.family-blacklist .family-options small,
+.family-blacklist .family-options .empty {
+  color: #baa8ce;
+  font-size: 11px;
+}
+.family-blacklist .hint {
+  font-size: 12px;
+  margin-top: 7px;
+}
+.family-blacklist .hint:empty {
+  display: none;
+}
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

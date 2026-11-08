@@ -774,7 +774,9 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       throw new Error(
         "Your Kosmora account changed. Refresh connected accounts.",
       );
-    return client.albums();
+    return message.op === "listFamilies"
+      ? client.families(undefined, true)
+      : client.albums();
   })().then(
     (data) => respond({ requestId: message.requestId, ok: true, data }),
     (error) =>

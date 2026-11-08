@@ -80,6 +80,8 @@ export class CardOverlays {
       this.settings?.cardOverlaysEnabled !== settings.cardOverlaysEnabled ||
       this.settings?.disableCardOverlaysInPulsar !==
         settings.disableCardOverlaysInPulsar ||
+      this.settings?.disableCardOverlaysInVortex !==
+        settings.disableCardOverlaysInVortex ||
       this.settings?.showOnSaleOverlay !== settings.showOnSaleOverlay ||
       this.settings?.showActiveAuctionsOverlay !==
         settings.showActiveAuctionsOverlay ||

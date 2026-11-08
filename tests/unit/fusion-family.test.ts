@@ -23,6 +23,12 @@ import {
 } from "../../src/shared/page-relay";
 import { defaults } from "../../src/shared/settings";
 import type { CardFamily, OwnedCopy } from "../../src/shared/types";
+import {
+  batchSellRow,
+  sellPickerTile,
+  singleSellFixture,
+} from "../fixtures/sell-many";
+import { RELAY_SALE_BATCH } from "../../src/shared/sale-family-selection";
 
 // Shapes and values as Kosmora returned them on 2026-11-06.
 const MS = [2, 5, 10, 25, 50, 100, 250, 500, 1000];
@@ -502,7 +508,7 @@ it("reads nothing until the account is known, and starts over when it changes", 
   expect(shown("4")).toBe("drop: ⚠ Loses | Parrots | I");
 });
 
-it("works with hover tooltips disabled and obeys the Card overlays switch", async () => {
+it("works independently of hover and card overlays and obeys its own switch", async () => {
   page();
   const { impact } = setup();
   impact.setSettings({ ...defaults(), enabled: false });
@@ -514,10 +520,51 @@ it("works with hover tooltips disabled and obeys the Card overlays switch", asyn
     cardOverlaysEnabled: false,
   });
   await settle();
+  expect(shown("4")).toBe("drop: ⚠ Loses | Parrots | I");
+  impact.setSettings({ ...defaults(), familyImpactOverlaysEnabled: false });
+  await settle();
   expect(document.querySelector(`[${FUSION_FAMILY_ATTR}]`)).toBeNull();
   impact.setSettings({ ...defaults(), enabled: false });
   await settle();
   expect(shown("4")).toBe("drop: ⚠ Loses | Parrots | I");
+});
+
+it("matches the blacklist only while rendering an otherwise Safe badge with the feature enabled", async () => {
+  page();
+  const { impact, client } = setup();
+  await settle();
+  const reads = client.insights.mock.calls.length;
+  let blacklistReads = 0;
+  const settings = { ...defaults(), useFamilyBlacklist: false };
+  Object.defineProperty(settings, "familyBlacklist", {
+    get: () => {
+      blacklistReads++;
+      return [" astéroïds ", "Parrots"];
+    },
+  });
+  impact.setSettings(settings);
+  await settle();
+  expect(blacklistReads).toBe(0);
+  expect(badge("1")?.textContent).toBe("✓ Safe");
+  settings.useFamilyBlacklist = true;
+  impact.setSettings(settings);
+  await settle();
+  expect(blacklistReads).toBeGreaterThan(0);
+  expect(badge("1")?.textContent).toBe("Blacklist");
+  expect(badge("1")?.classList.contains("drop")).toBe(true);
+  expect(badge("1")?.getAttribute("aria-label")).toContain(
+    "Blacklist: Asteroids",
+  );
+  // Tier loss still wins, and memberships that don't count toward tiers can be blacklisted.
+  expect(badge("4")?.textContent).toBe("⚠ LosesParrotsI");
+  expect(badge("5")?.textContent).toBe("Blacklist");
+  expect(client.insights).toHaveBeenCalledTimes(reads);
+  blacklistReads = 0;
+  settings.useFamilyBlacklist = false;
+  impact.setSettings(settings);
+  await settle();
+  expect(blacklistReads).toBe(0);
+  expect(badge("1")?.textContent).toBe("✓ Safe");
 });
 
 it("sits on the card art, and draws nothing off the Fusion page or with the setting off", async () => {
@@ -553,6 +600,323 @@ const tradeBadge = (id: string) =>
     ?.closest(".kc-article")
     ?.querySelector(`[${FUSION_FAMILY_ATTR}]`)
     ?.shadowRoot?.querySelector(".verdict");
+
+function setupSales(quantities: Record<string, number> = {}) {
+  const client = {
+    onAccountChange: () => {},
+    familyCounts: vi.fn(
+      async () =>
+        new Map([
+          [ASTEROIDS.id, 4],
+          [PARROTS.id, 2],
+          [MUSIC_AWARDS.id, 9],
+          [MAMA.id, 2],
+        ]),
+    ),
+    familyMilestones: vi.fn(async () => MS),
+    insights: vi.fn(async (id: string) => ({
+      families: MEMBERSHIP[id],
+      copies: ownedCopies(quantities[id] ?? 1),
+    })),
+  };
+  const impact = (running = new FusionFamilyImpact(client, window, 15_000));
+  impact.start();
+  impact.setSettings({
+    ...defaults(),
+    enabled: false,
+    cardOverlaysEnabled: false,
+    salesOverlaysEnabled: false,
+  });
+  return { impact, client };
+}
+const saleRow = (id: string) =>
+  document.querySelector(`img[src*="/cards/${id}/"]`)!.closest(".bsell-row")!;
+const saleBadge = (id: string) =>
+  saleRow(id)
+    .querySelector(`[${FUSION_FAMILY_ATTR}]`)
+    ?.shadowRoot?.querySelector(".verdict");
+function saleBatch(keys = ["1", "2", "3"]) {
+  history.replaceState(null, "", "/market/sell/batch?s=" + keys.join(","));
+  document.body.innerHTML = `<ul class="bsell-list">${keys.map((key) => batchSellRow(key.split(".")[0], key, key.endsWith(".v") ? "kc-veil" : key.endsWith(".f") ? "kc-fa" : "")).join("")}</ul>`;
+}
+function saleSnapshot(
+  keys: string[],
+  revision = 1,
+  source: "batch" | "draft" = "batch",
+) {
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      source: window,
+      origin: location.origin,
+      data: {
+        type: RELAY_SALE_BATCH,
+        source,
+        keys,
+        page: location.href,
+        revision,
+      },
+    }),
+  );
+}
+
+it("checks Sell Many before Continue and recomputes shared families on pick/unpick without re-reading", async () => {
+  history.replaceState(null, "", "/market");
+  document.body.innerHTML = `<div class="mk-sell-sheet"><ul>${["1", "2", "3", "7"].map((id) => sellPickerTile(id, id)).join("")}</ul><button data-testid="sell-many-go">Continue</button></div>`;
+  const { client } = setupSales();
+  await settle();
+  expect(tradeBadge("3")?.textContent).toBe("✓ Safe");
+  expect(tradeBadge("7")?.textContent).toContain("MAMA Awards");
+  const picks = document.querySelectorAll<HTMLButtonElement>(".pick-hit");
+  picks[0].setAttribute("aria-pressed", "true");
+  picks[1].setAttribute("aria-pressed", "true");
+  await settle();
+  expect(tradeBadge("3")?.textContent).toBe("⚠ LosesAsteroidsI");
+  picks[2].setAttribute("aria-pressed", "true");
+  await settle();
+  expect(tradeBadge("1")?.textContent).toBe("⚠ LosesAsteroidsI");
+  const reads = client.insights.mock.calls.length;
+  picks[1].setAttribute("aria-pressed", "false");
+  await settle();
+  expect(tradeBadge("1")?.textContent).toBe("✓ Safe");
+  expect(client.insights).toHaveBeenCalledTimes(reads);
+  expect(client.familyCounts).toHaveBeenCalledTimes(1);
+  expect(document.body.dataset.continued).toBeUndefined();
+});
+
+it("keeps picked cards across filters/pages, then clears selection when the picker closes", async () => {
+  history.replaceState(null, "", "/market");
+  document.body.innerHTML = `<div class="mk-sell-sheet"><ul>${["1", "2", "3"].map((id) => sellPickerTile(id, id)).join("")}</ul><button data-testid="sell-many-go">Continue</button></div>`;
+  setupSales();
+  await settle();
+  const sheet = document.querySelector<HTMLElement>(".mk-sell-sheet")!;
+  const picks = sheet.querySelectorAll(".pick-hit");
+  picks[0].setAttribute("aria-pressed", "true");
+  picks[1].setAttribute("aria-pressed", "true");
+  await settle();
+  picks[0].closest("li")!.remove();
+  picks[1].closest("li")!.remove();
+  await settle();
+  expect(tradeBadge("3")?.textContent).toBe("⚠ LosesAsteroidsI");
+  sheet.hidden = true;
+  await settle();
+  expect(document.querySelector(`[${FUSION_FAMILY_ATTR}]`)).toBeNull();
+  sheet.hidden = false;
+  await settle();
+  expect(tradeBadge("3")?.textContent).toBe("✓ Safe");
+});
+
+it("keeps a gray sale placeholder in the same host while family counts load, then replaces it with Safe", async () => {
+  saleBatch(["1"]);
+  const { client } = setupSales();
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  client.familyCounts.mockImplementationOnce(async () => {
+    await waiting;
+    return new Map([[ASTEROIDS.id, 4]]);
+  });
+  await settle();
+  const host = saleRow("1").querySelector(`[${FUSION_FAMILY_ATTR}]`);
+  expect(saleBadge("1")?.textContent).toBe("Calculating…");
+  expect(saleBadge("1")?.classList.contains("pending")).toBe(true);
+  release();
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("✓ Safe");
+  expect(saleRow("1").querySelector(`[${FUSION_FAMILY_ATTR}]`)).toBe(host);
+});
+
+it("recalculates draft rows after removal, outside card art and after price badges", async () => {
+  saleBatch();
+  const after = saleRow("1").querySelector(".bsell-prices")!;
+  const prices = document.createElement("div");
+  prices.setAttribute("data-kosmore-sales-overlay", "");
+  after.after(prices);
+  const { client } = setupSales();
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("⚠ LosesAsteroidsI");
+  expect(prices.nextElementSibling?.hasAttribute(FUSION_FAMILY_ATTR)).toBe(
+    true,
+  );
+  expect(
+    document.querySelector(`.kc-article [${FUSION_FAMILY_ATTR}]`),
+  ).toBeNull();
+  const reads = client.insights.mock.calls.length;
+  saleRow("2").querySelector<HTMLButtonElement>(".bsell-x")!.click();
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("✓ Safe");
+  expect(saleBadge("3")?.textContent).toBe("✓ Safe");
+  expect(client.insights).toHaveBeenCalledTimes(reads);
+});
+
+it("includes filtered-out draft entries and distinguishes removal from filtering", async () => {
+  saleBatch();
+  setupSales();
+  await settle();
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    '<p class="bsell-shown">Shown 1 of 3</p>',
+  );
+  const hidden2 = saleRow("2"),
+    hidden3 = saleRow("3");
+  hidden2.remove();
+  hidden3.remove();
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("⚠ LosesAsteroidsI");
+  document.querySelector(".bsell-list")!.append(hidden2);
+  await settle();
+  hidden2.querySelector<HTMLButtonElement>(".bsell-x")!.click();
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("✓ Safe");
+});
+
+it("withholds filtered draft verdicts until a complete native snapshot arrives", async () => {
+  saleBatch(["1"]);
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    '<p class="bsell-shown">Shown 1 of 3</p>',
+  );
+  const { client } = setupSales();
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("Calculating…");
+  expect(saleBadge("1")?.classList.contains("pending")).toBe(true);
+  saleSnapshot(["1", "2", "3"]);
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("⚠ LosesAsteroidsI");
+  expect(client.insights.mock.calls.map(([id]) => id).sort()).toEqual([
+    "1",
+    "2",
+    "3",
+  ]);
+  // Late data from a previous page cannot replace this batch.
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      source: window,
+      origin: location.origin,
+      data: {
+        type: RELAY_SALE_BATCH,
+        source: "draft",
+        keys: ["1"],
+        page: location.origin + "/market/sell/batch?s=old",
+        revision: 99,
+      },
+    }),
+  );
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("⚠ LosesAsteroidsI");
+});
+
+it("retains native batch data received before the draft finishes rendering", async () => {
+  history.replaceState(null, "", "/market/sell/batch?s=1,2,3");
+  document.body.innerHTML = "<p>Loading draft</p>";
+  setupSales();
+  saleSnapshot(["1", "2", "3"]);
+  await settle();
+  document.body.innerHTML = `<p class="bsell-shown">Shown 1 of 3</p><ul class="bsell-list">${batchSellRow("1", "1")}</ul>`;
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("⚠ LosesAsteroidsI");
+});
+
+it("uses the latest draft snapshot and recalculates a filtered draft reset from the original choices", async () => {
+  saleBatch();
+  const { client } = setupSales();
+  await settle();
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    '<p class="bsell-shown">Shown 1 of 2</p><button data-testid="bsell-draft-clear-ok">Reset draft</button>',
+  );
+  saleRow("2").remove();
+  saleRow("3").remove();
+  saleSnapshot(["1", "2"], 2, "draft");
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("✓ Safe");
+  // This older response can supply reset candidates but cannot replace revision 2.
+  saleSnapshot(["1", "2", "3"], 1);
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("✓ Safe");
+  const reads = client.insights.mock.calls.length;
+  document
+    .querySelector<HTMLButtonElement>('[data-testid="bsell-draft-clear-ok"]')!
+    .click();
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("⚠ LosesAsteroidsI");
+  expect(client.insights).toHaveBeenCalledTimes(reads);
+});
+
+it("combines finishes of a subject, counts each family departure once, and keeps spares safe", async () => {
+  saleBatch(["4", "4.v"]);
+  setupSales({ "4": 2 });
+  await settle();
+  expect(saleBadge("4")?.textContent).toBe("⚠ LosesParrotsI");
+  saleRow("4").querySelector<HTMLButtonElement>(".bsell-x")!.click();
+  await settle();
+  expect(saleBadge("4")?.textContent).toBe("✓ Safe");
+  expect(saleBadge("4")?.getAttribute("aria-label")).toContain(
+    "you keep another copy",
+  );
+});
+
+it("still warns when the other sale entries alone already crossed a tier threshold", async () => {
+  saleBatch(["4", "8"]);
+  setupSales();
+  await settle();
+  expect(saleBadge("4")?.textContent).toBe("⚠ LosesParrotsI");
+  expect(saleBadge("8")?.textContent).toBe("⚠ LosesParrotsI");
+});
+
+it("withholds sale batch verdicts while any selected subject has unknown ownership", async () => {
+  saleBatch(["1", "7"]);
+  const { client } = setupSales();
+  client.insights.mockImplementation(async (id) => ({
+    families: MEMBERSHIP[id],
+    copies: ownedCopies(id === "7" ? 0 : 1),
+  }));
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("Impact unavailable");
+  expect(saleBadge("1")?.classList.contains("safe")).toBe(false);
+});
+
+it("renders sale blacklist badges from existing families without replacing tier-loss warnings", async () => {
+  saleBatch(["1", "7"]);
+  const { impact, client } = setupSales();
+  await settle();
+  const reads = client.insights.mock.calls.length;
+  impact.setSettings({
+    ...defaults(),
+    useFamilyBlacklist: true,
+    familyBlacklist: ["Asteroids", "MAMA Awards"],
+  });
+  await settle();
+  expect(saleBadge("1")?.textContent).toBe("Blacklist");
+  expect(saleBadge("7")?.textContent).toBe("⚠ LosesMAMA AwardsI");
+  expect(client.insights).toHaveBeenCalledTimes(reads);
+});
+
+it("checks single-sale forms and honors both sale and family master toggles independently", async () => {
+  history.replaceState(null, "", "/market/sell?subject=7");
+  document.body.innerHTML = singleSellFixture("7");
+  const { impact } = setupSales();
+  await settle();
+  const badge = () =>
+    document
+      .querySelector(`[${FUSION_FAMILY_ATTR}]`)
+      ?.shadowRoot?.querySelector(".verdict");
+  expect(badge()?.textContent).toBe("⚠ LosesMAMA AwardsI");
+  expect(badge()?.getAttribute("aria-label")).toContain("selling this card");
+  impact.setSettings({ ...defaults(), showSalesFamilyOverlay: false });
+  await settle();
+  expect(badge()).toBeUndefined();
+  impact.setSettings({ ...defaults(), familyImpactOverlaysEnabled: false });
+  await settle();
+  expect(badge()).toBeUndefined();
+  impact.setSettings({
+    ...defaults(),
+    salesOverlaysEnabled: false,
+    cardOverlaysEnabled: false,
+  });
+  await settle();
+  expect(badge()?.textContent).toContain("MAMA Awards");
+});
 
 it("uses total owned copies and every economic family for trade choices and refreshes ownership on focus", async () => {
   tradePage();
@@ -647,6 +1011,30 @@ function setupVortex(gap = 0) {
   return { client, impact };
 }
 
+it.each([
+  { name: "Trade", makePage: tradePage },
+  { name: "Vortex", makePage: vortexPage },
+])(
+  "blacklists otherwise Safe $name cards using existing memberships",
+  async ({ makePage }) => {
+    makePage();
+    const { impact, client } = setupVortex();
+    impact.setSettings(defaults());
+    await settle();
+    const reads = client.insights.mock.calls.length;
+    expect(tradeBadge("8")?.textContent).toBe("✓ Safe");
+    impact.setSettings({
+      ...defaults(),
+      useFamilyBlacklist: true,
+      familyBlacklist: ["Parrots"],
+    });
+    await settle();
+    expect(tradeBadge("8")?.textContent).toBe("Blacklist");
+    expect(tradeBadge("4")?.textContent).toBe("⚠ LosesParrotsI");
+    expect(client.insights).toHaveBeenCalledTimes(reads);
+  },
+);
+
 it("marks Vortex stakes and picker cards across all economic families, independently of the other overlays", async () => {
   vortexPage();
   const { impact, client } = setupVortex();
@@ -686,7 +1074,7 @@ it("marks Vortex stakes and picker cards across all economic families, independe
     ),
   ).toBeNull();
   expect(client.insights).toHaveBeenCalledTimes(4); // same card in both surfaces shares one read
-  impact.setSettings({ ...defaults(), cardOverlaysEnabled: false });
+  impact.setSettings({ ...defaults(), familyImpactOverlaysEnabled: false });
   await settle();
   expect(document.querySelectorAll(`[${FUSION_FAMILY_ATTR}]`)).toHaveLength(0);
   impact.setSettings(defaults());

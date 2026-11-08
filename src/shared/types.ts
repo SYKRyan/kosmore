@@ -92,6 +92,7 @@ export interface Settings {
   schemaVersion: 1;
   enabled: boolean;
   disableHoverTooltipInPulsar: boolean;
+  disableHoverTooltipInVortex: boolean;
   useOverlayButtonInsteadOfHover: boolean;
   outsideClickClosesTooltipOnly: boolean;
   fullScreenCenteredOnOpen: boolean;
@@ -116,6 +117,7 @@ export interface Settings {
   navigationHotkeysEnabled: boolean;
   cardOverlaysEnabled: boolean;
   disableCardOverlaysInPulsar: boolean;
+  disableCardOverlaysInVortex: boolean;
   salesOverlaysEnabled: boolean;
   showSalesLastSale: boolean;
   salesLastSaleSetsPrice: boolean;
@@ -142,6 +144,10 @@ export interface Settings {
   showOnSaleOverlay: boolean;
   showFriendInterestOverlay: boolean;
   showQuestOverlay: boolean;
+  familyImpactOverlaysEnabled: boolean;
+  useFamilyBlacklist: boolean;
+  familyBlacklist: string[];
+  showSalesFamilyOverlay: boolean;
   showFusionFamilyOverlay: boolean;
   showTradeFamilyOverlay: boolean;
   showVortexFamilyOverlay: boolean;

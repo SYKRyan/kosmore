@@ -59,7 +59,7 @@ export class TradeSettings {
   }[] = [];
   constructor(change: (update: Partial<Settings>) => void) {
     this.host.append(
-      el("h2", "", "Trade reminders"),
+      el("h2", "", "Trade Reminders"),
       el(
         "p",
         "sub",
