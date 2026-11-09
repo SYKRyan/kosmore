@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "KosMore",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Card insights and pinned album shortcuts for Kosmora, including pack reveals and summaries.",
   "minimum_chrome_version": "120",
   "permissions": ["storage"],
