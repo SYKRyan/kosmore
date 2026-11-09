@@ -561,6 +561,21 @@ export class GameClient implements KosmoraClient {
       [path],
     );
   }
+  async readyPackIds(signal?: AbortSignal): Promise<string[]> {
+    const inventory = object(await this.read("/packs/inventory", signal));
+    if (!Array.isArray(inventory.packs))
+      throw new Error("Kosmora returned an unfamiliar pack inventory.");
+    return [
+      ...new Set(
+        inventory.packs.flatMap((entry) => {
+          const pack = object(entry);
+          return pack.status === "ready" && pack.openingId
+            ? [uuid(pack.openingId).toLowerCase()]
+            : [];
+        }),
+      ),
+    ];
+  }
   async albums(
     id?: string,
     signal?: AbortSignal,

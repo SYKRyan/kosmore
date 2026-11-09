@@ -12,6 +12,7 @@ import { CardSignalProvider, type CardSignals } from "./card-signals";
 import { SIGNAL_BADGE_CSS, signalBadges } from "./signal-badges";
 import { el } from "./ui";
 import { observePage, affected, type PageChanges } from "./page-changes";
+import { packSummaryStatus } from "./pack-summary-status";
 interface Entry {
   root: HTMLElement;
   context: CardContext;
@@ -48,6 +49,7 @@ export class CardOverlays {
   private generation = 0;
   private notBefore = 0;
   private timer?: ReturnType<typeof setTimeout>;
+  private summaryStatus?: ReturnType<typeof packSummaryStatus>;
   constructor(client: KosmoraClient) {
     this.provider = new CardSignalProvider(client);
     this.intersection = new IntersectionObserver((records) => {
@@ -55,10 +57,11 @@ export class CardOverlays {
         const entry = this.entries.get(record.target as HTMLElement);
         if (!entry) continue;
         entry.visible = record.isIntersecting;
-        if (entry.visible && !entry.done) this.queue.add(entry);
+        if (this.shouldLoad(entry) && !entry.done) this.queue.add(entry);
         else this.queue.delete(entry);
       }
       this.pump();
+      this.updateSummaryStatus();
     });
   }
   start() {
@@ -108,7 +111,7 @@ export class CardOverlays {
       else {
         entry.done = false;
         entry.loading = false;
-        if (entry.visible) this.queue.add(entry);
+        if (this.shouldLoad(entry)) this.queue.add(entry);
       }
     }
     if (clear) this.entries.clear();
@@ -151,10 +154,12 @@ export class CardOverlays {
     });
   }
   private scan(changes?: PageChanges) {
+    this.mountSummaryStatus();
     if (!this.enabled()) {
       for (const entry of this.entries.values()) this.remove(entry);
       this.entries.clear();
       this.queue.clear();
+      this.updateSummaryStatus();
       return;
     }
     const targets = new Map<HTMLElement, CardContext>();
@@ -177,7 +182,7 @@ export class CardOverlays {
       } else if (entry.host && !entry.host.isConnected) {
         entry.host = undefined;
         entry.done = false;
-        if (entry.visible) this.queue.add(entry);
+        if (this.shouldLoad(entry)) this.queue.add(entry);
       }
     }
     for (const [root, context] of targets) {
@@ -191,8 +196,45 @@ export class CardOverlays {
       };
       this.entries.set(root, entry);
       this.intersection.observe(root);
+      if (this.isSummaryEntry(entry)) this.queue.add(entry);
     }
     this.pump();
+    this.updateSummaryStatus();
+  }
+  private mountSummaryStatus() {
+    const grid =
+      location.pathname === "/packs/open"
+        ? document.querySelector<HTMLElement>(".ko-summary > .ko-grid")
+        : null;
+    if (grid !== this.summaryStatus?.grid) {
+      this.summaryStatus?.host.remove();
+      this.summaryStatus = grid ? packSummaryStatus(grid) : undefined;
+    }
+    if (
+      this.summaryStatus &&
+      grid?.previousElementSibling !== this.summaryStatus.host
+    )
+      grid?.before(this.summaryStatus.host);
+  }
+  private updateSummaryStatus() {
+    const status = this.summaryStatus;
+    if (!status?.host.isConnected) return;
+    const loading = [...this.entries.values()].some(
+      (entry) =>
+        this.isSummaryEntry(entry) &&
+        !entry.done &&
+        (entry.loading || this.notBefore !== Infinity),
+    );
+    status.setLoading(loading);
+  }
+  private isSummaryEntry(entry: Entry) {
+    return (
+      entry.context.surface === "summary" &&
+      !!this.summaryStatus?.grid.contains(entry.root)
+    );
+  }
+  private shouldLoad(entry: Entry) {
+    return entry.visible || this.isSummaryEntry(entry);
   }
   private remove(entry: Entry) {
     this.intersection.unobserve(entry.root);
@@ -242,7 +284,7 @@ export class CardOverlays {
     const entry = this.queue.values().next().value!;
     this.queue.delete(entry);
     if (
-      !entry.visible ||
+      !this.shouldLoad(entry) ||
       entry.loading ||
       !this.current(entry, this.generation)
     ) {
@@ -282,6 +324,7 @@ export class CardOverlays {
         this.running--;
         if (generation === this.generation) entry.loading = false;
         this.pump();
+        this.updateSummaryStatus();
       });
     this.pump();
   }

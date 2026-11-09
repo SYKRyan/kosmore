@@ -336,6 +336,11 @@ var j = [
 		path: "/packs"
 	},
 	{
+		id: "history",
+		label: "History",
+		path: "/history"
+	},
+	{
 		id: "fusion",
 		label: "Fusion",
 		path: "/fusion"
@@ -355,47 +360,113 @@ var j = [
 		label: "My Profile",
 		path: null
 	}
+], M = [
+	{
+		id: "focusFirstCard",
+		label: "Focus First Card"
+	},
+	{
+		id: "focusLastCard",
+		label: "Focus Last Card"
+	},
+	{
+		id: "nextCard",
+		label: "Next Card"
+	},
+	{
+		id: "previousCard",
+		label: "Previous Card"
+	},
+	{
+		id: "skipOpening",
+		label: "Skip Opening"
+	},
+	{
+		id: "later",
+		label: "Later"
+	},
+	{
+		id: "nextPack",
+		label: "Next Pack/Back to Packs"
+	},
+	{
+		id: "dismissFoundPack",
+		label: "Dismiss Found Pack"
+	},
+	{
+		id: "seeCard",
+		label: "See Card"
+	},
+	{
+		id: "share",
+		label: "Share"
+	},
+	{
+		id: "home",
+		label: "Home"
+	}
 ];
-function M(e) {
+function N(e, t = !1) {
+	return typeof e == "string" && (/^(Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-2]))$/.test(e) || t && /^(Arrow(?:Up|Down|Left|Right)|Home|End)$/.test(e));
+}
+function P(e) {
 	return `${e.ctrl}-${e.alt}-${e.shift}-${e.meta}-${e.code}`;
 }
-function N(e) {
-	let t = {}, n = /* @__PURE__ */ new Set();
-	if (!e || typeof e != "object") return t;
-	let r = e;
-	for (let e of j) {
-		let i = r[e.id];
-		if (!i || typeof i != "object") continue;
-		let a = i;
-		if (typeof a.code != "string" || !/^(Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-2]))$/.test(a.code) || ![
-			a.ctrl,
-			a.alt,
-			a.shift,
-			a.meta
+function F(e, t, n, r) {
+	if (!e || typeof e != "object") return {};
+	let i = e, a = [...Object.values(n), ...Object.values(r)].map(P);
+	return Object.fromEntries(Object.entries(t).flatMap(([e, t]) => {
+		if (!Object.hasOwn(i, e)) return [];
+		let n = R(i[e], t.map((e) => ({
+			id: e,
+			label: e
+		})), new Set(a));
+		return Object.keys(n).length ? [[e, n]] : [];
+	}));
+}
+function I(e) {
+	return R(e, j);
+}
+function L(e, t) {
+	return R(e, M, new Set(Object.values(t).map(P)), !0);
+}
+function R(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
+	let i = {};
+	if (!e || typeof e != "object") return i;
+	let a = e;
+	for (let e of t) {
+		let t = a[e.id];
+		if (!t || typeof t != "object") continue;
+		let o = t;
+		if (!N(o.code, r) || ![
+			o.ctrl,
+			o.alt,
+			o.shift,
+			o.meta
 		].every((e) => typeof e == "boolean")) continue;
-		let o = {
-			code: a.code,
-			ctrl: a.ctrl,
-			alt: a.alt,
-			shift: a.shift,
-			meta: a.meta
-		}, s = M(o);
-		n.has(s) || (n.add(s), t[e.id] = o);
+		let s = {
+			code: o.code,
+			ctrl: o.ctrl,
+			alt: o.alt,
+			shift: o.shift,
+			meta: o.meta
+		}, c = P(s);
+		n.has(c) || (n.add(c), i[e.id] = s);
 	}
-	return t;
+	return i;
 }
 // src/shared/sales-prices.ts
-function P(e) {
+function z(e) {
 	if (typeof e != "number" || !Number.isFinite(e)) return;
 	let t = String(e).match(/^(-?)(\d+)(?:\.(\d{1,6}))?$/);
 	if (!t) return;
 	let n = BigInt(t[2]) * 1000000n + BigInt((t[3] ?? "").padEnd(6, "0"));
 	if (!(n > BigInt(2 ** 53 - 1))) return t[1] ? -n : n;
 }
-function F(e) {
-	return P(e) !== void 0;
+function B(e) {
+	return z(e) !== void 0;
 }
-function I(e, t = "per friend") {
+function V(e, t = "per friend") {
 	let n = [];
 	for (let r of e) {
 		let e = r.trim().replace(/\s+/g, " ");
@@ -407,7 +478,7 @@ function I(e, t = "per friend") {
 	return n;
 }
 // src/shared/settings.ts
-var L = "kosmore.settings", R = () => ({
+var H = "kosmore.settings", U = () => ({
 	schemaVersion: 1,
 	enabled: !0,
 	disableHoverTooltipInPulsar: !1,
@@ -415,6 +486,7 @@ var L = "kosmore.settings", R = () => ({
 	useOverlayButtonInsteadOfHover: !1,
 	outsideClickClosesTooltipOnly: !1,
 	fullScreenCenteredOnOpen: !1,
+	socialRemindersMasterEnabled: !0,
 	profileRemindersEnabled: !0,
 	profileRemindersPinned: !1,
 	socialRemindersEnabled: !0,
@@ -436,6 +508,11 @@ var L = "kosmore.settings", R = () => ({
 	friendTooltipHeight: 560,
 	friendTooltipPosition: null,
 	navigationHotkeysEnabled: !0,
+	packOpeningHotkeysEnabled: !1,
+	anyKeyDismissesFoundPack: !0,
+	autoSkipOpening: !1,
+	autoDismissFoundPack: !1,
+	showRemainingPackCount: !0,
 	cardOverlaysEnabled: !0,
 	disableCardOverlaysInPulsar: !1,
 	disableCardOverlaysInVortex: !1,
@@ -474,23 +551,25 @@ var L = "kosmore.settings", R = () => ({
 	showVortexFamilyOverlay: !0,
 	stats: k(),
 	hotkeys: {},
-	pinnedAlbums: {}
+	packOpeningHotkeys: {},
+	pinnedAlbums: {},
+	pinnedAlbumHotkeys: {}
 });
-function z(e) {
-	let t = R();
+function W(e) {
+	let t = U();
 	if (!e || typeof e != "object") return t;
 	let n = e;
 	if (n.schemaVersion !== 1) return t;
-	if (t.stats = A(n.stats), t.hotkeys = N(n.hotkeys), t.popupPosition = S(n.popupPosition), t.friendTooltipPosition = S(n.friendTooltipPosition), Array.isArray(n.familyBlacklist) && n.familyBlacklist.every((e) => typeof e == "string")) try {
-		t.familyBlacklist = I(n.familyBlacklist, "in the family blacklist");
+	if (t.stats = A(n.stats), t.hotkeys = I(n.hotkeys), t.packOpeningHotkeys = L(n.packOpeningHotkeys, t.hotkeys), t.popupPosition = S(n.popupPosition), t.friendTooltipPosition = S(n.friendTooltipPosition), Array.isArray(n.familyBlacklist) && n.familyBlacklist.every((e) => typeof e == "string")) try {
+		t.familyBlacklist = V(n.familyBlacklist, "in the family blacklist");
 	} catch {}
 	typeof n.enabled == "boolean" && (t.enabled = n.enabled);
-	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.navigationHotkeysEnabled.cardOverlaysEnabled.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
+	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.navigationHotkeysEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.cardOverlaysEnabled.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
 	for (let e of [
 		"salesLastSaleAdjustment",
 		"salesLowestListingAdjustment",
 		"salesMyLastListingAdjustment"
-	]) F(n[e]) && (t[e] = n[e]);
+	]) B(n[e]) && (t[e] = n[e]);
 	typeof n.closeTooltipWhenAddedToAlbum == "boolean" && (t.closeTooltipWhenAddedToAlbum = n.closeTooltipWhenAddedToAlbum), typeof n.applyCloseBehaviorToPinnedTooltips == "boolean" && (t.applyCloseBehaviorToPinnedTooltips = n.applyCloseBehaviorToPinnedTooltips), typeof n.showSaleHistoryOverlay == "boolean" && (t.showSaleHistoryOverlay = n.showSaleHistoryOverlay), typeof n.showLastSalePriceOverlay == "boolean" && (t.showLastSalePriceOverlay = n.showLastSalePriceOverlay), typeof n.showActiveAuctionsOverlay == "boolean" && (t.showActiveAuctionsOverlay = n.showActiveAuctionsOverlay), typeof n.showLowestListingPriceOverlay == "boolean" && (t.showLowestListingPriceOverlay = n.showLowestListingPriceOverlay), typeof n.showOnSaleOverlay == "boolean" && (t.showOnSaleOverlay = n.showOnSaleOverlay), typeof n.showFriendInterestOverlay == "boolean" && (t.showFriendInterestOverlay = n.showFriendInterestOverlay), typeof n.showQuestOverlay == "boolean" && (t.showQuestOverlay = n.showQuestOverlay), typeof n.showFusionFamilyOverlay == "boolean" && (t.showFusionFamilyOverlay = n.showFusionFamilyOverlay), typeof n.hoverDelayMs == "number" && Number.isFinite(n.hoverDelayMs) && (t.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(n.hoverDelayMs))));
 	for (let [e, r, i] of [
 		[
@@ -558,16 +637,16 @@ function z(e) {
 		writable: !0,
 		value: [...new Set(r.filter((e) => typeof e == "string" && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(e)))].slice(0, 200)
 	});
-	return t;
+	return t.pinnedAlbumHotkeys = F(n.pinnedAlbumHotkeys, t.pinnedAlbums, t.hotkeys, t.packOpeningHotkeys), t;
 }
-async function B() {
-	return z((await chrome.storage.local.get(L))[L]);
+async function G() {
+	return W((await chrome.storage.local.get(H))[H]);
 }
-async function V(e) {
-	await chrome.storage.local.set({ [L]: z(e) });
+async function K(e) {
+	await chrome.storage.local.set({ [H]: W(e) });
 }
 // src/shared/listing-cache.ts
-var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e > 0 && Date.now() - e < 3e5, G = (e, t) => d.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), K = () => new DOMException("Listing lookup canceled.", "AbortError"), q = class {
+var q = "kosmore.myListingPrices", J = "kosmore.listingHistory.", Y = (e) => e > 0 && Date.now() - e < 3e5, X = (e, t) => d.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), Z = () => new DOMException("Listing lookup canceled.", "AbortError"), Q = class {
 	local;
 	session;
 	writes = Promise.resolve();
@@ -581,7 +660,7 @@ var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e >
 		return this.writes = t.catch(() => {}), t;
 	}
 	async index() {
-		let e = (await this.local.get(H))[H], t = {
+		let e = (await this.local.get(q))[q], t = {
 			v: 1,
 			entries: {}
 		};
@@ -591,8 +670,8 @@ var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e >
 	async cached(e, t, n = !0) {
 		return this.write(async () => {
 			let r = await this.index(), i = `${e}:${t}`, a = r.entries[i];
-			a && n && (a.usedAt = Date.now(), await this.local.set({ [H]: r }));
-			let o = (await this.session.get(U + e))[U + e];
+			a && n && (a.usedAt = Date.now(), await this.local.set({ [q]: r }));
+			let o = (await this.session.get(J + e))[J + e];
 			return {
 				...m(o) ? { batch: o } : {},
 				...a ? { latest: {
@@ -605,7 +684,7 @@ var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e >
 	async saveBatch(e, t, n) {
 		await this.write(async () => {
 			if (this.epochs.get(e) !== n) return;
-			let r = await this.session.get(null), i = U + e, a = Object.keys(r).filter((e) => e.startsWith(U)), o = JSON.stringify(t).length * 2;
+			let r = await this.session.get(null), i = J + e, a = Object.keys(r).filter((e) => e.startsWith(J)), o = JSON.stringify(t).length * 2;
 			if (o > 6e6) return;
 			let s = a.filter((e) => e !== i).sort((e, t) => Number(r[e]?.fetchedAt ?? 0) - Number(r[t]?.fetchedAt ?? 0));
 			o += s.reduce((e, t) => e + JSON.stringify(r[t]).length * 2, 0);
@@ -619,7 +698,7 @@ var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e >
 	}
 	async batch(e) {
 		await this.writes;
-		let t = U + e, n = (await this.session.get(t))[t];
+		let t = J + e, n = (await this.session.get(t))[t];
 		return m(n) ? n : void 0;
 	}
 	async savePrice(e, t, n, r) {
@@ -632,15 +711,15 @@ var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e >
 			};
 			let a = Object.keys(i.entries).sort((e, t) => i.entries[e].usedAt - i.entries[t].usedAt);
 			for (let e of a.slice(0, Math.max(0, a.length - 1e4))) delete i.entries[e];
-			await this.local.set({ [H]: i });
+			await this.local.set({ [q]: i });
 		});
 	}
 	async invalidate(e) {
 		this.epochs.set(e, (this.epochs.get(e) ?? 0) + 1), this.pending.get(e)?.controller.abort(), this.pending.delete(e), await this.write(async () => {
 			let t = await this.index();
 			for (let [n, r] of Object.entries(t.entries)) n.startsWith(`${e}:`) && (r.checkedAt = 0);
-			await this.local.set({ [H]: t });
-			let n = U + e, r = await this.session.get(n);
+			await this.local.set({ [q]: t });
+			let n = J + e, r = await this.session.get(n);
 			m(r[n]) && await this.session.set({ [n]: {
 				...r[n],
 				fetchedAt: 0
@@ -651,25 +730,25 @@ var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e >
 		let o = await this.cached(e, t);
 		i.throwIfAborted();
 		let s = o.batch;
-		if (n === "initial" && s && W(s.fetchedAt) || n === "more" && s && g(s) && W(s.fetchedAt)) return s;
+		if (n === "initial" && s && Y(s.fetchedAt) || n === "more" && s && g(s) && Y(s.fetchedAt)) return s;
 		let c = n === "more" && a ? a : n === "more" && s ? v(s) : f();
-		return this.ensure(e, c, r, i, n === "refresh" || !!s && !W(s.fetchedAt));
+		return this.ensure(e, c, r, i, n === "refresh" || !!s && !Y(s.fetchedAt));
 	}
 	async latest(e, t, n, r) {
 		let i = await this.cached(e, t);
-		if (r.throwIfAborted(), i.latest && W(i.latest.checkedAt) && (!i.batch || i.batch.fetchedAt <= i.latest.checkedAt)) return i.latest;
+		if (r.throwIfAborted(), i.latest && Y(i.latest.checkedAt) && (!i.batch || i.batch.fetchedAt <= i.latest.checkedAt)) return i.latest;
 		let a = this.epochs.get(e) ?? 0;
 		this.epochs.set(e, a);
 		let o = i.batch;
-		for (o && W(o.fetchedAt) || (o = await this.ensure(e, f(), n, r, !!o));;) {
-			if (r.throwIfAborted(), this.epochs.get(e) !== a) throw K();
+		for (o && Y(o.fetchedAt) || (o = await this.ensure(e, f(), n, r, !!o));;) {
+			if (r.throwIfAborted(), this.epochs.get(e) !== a) throw Z();
 			let i = _(o, t);
 			if (!i.length) {
 				let n = {
 					listing: o.listings.find((e) => e.subjectId === t) ?? null,
 					checkedAt: o.fetchedAt
 				};
-				if (await this.savePrice(e, t, n, a), r.aborted || this.epochs.get(e) !== a) throw K();
+				if (await this.savePrice(e, t, n, a), r.aborted || this.epochs.get(e) !== a) throw Z();
 				return n;
 			}
 			o = await this.ensure(e, v(o, i), n, r);
@@ -680,7 +759,7 @@ var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e >
 			let a = this.epochs.get(e);
 			if (!i) {
 				let n = await this.batch(e);
-				if (r.throwIfAborted(), n && W(n.fetchedAt) && G(n, t)) return n;
+				if (r.throwIfAborted(), n && Y(n.fetchedAt) && X(n, t)) return n;
 			}
 			let o = this.pending.get(e);
 			if (!o || o.controller.signal.aborted) {
@@ -708,12 +787,12 @@ var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e >
 						}
 					}
 					if (!r || !m(r)) throw Error("Your listing history is unavailable.");
-					if (this.epochs.get(e) !== a || n.controller.signal.aborted) throw K();
+					if (this.epochs.get(e) !== a || n.controller.signal.aborted) throw Z();
 					let i = await this.batch(e);
 					if (i && r.fetchedAt <= i.fetchedAt && (r = {
 						...r,
 						fetchedAt: i.fetchedAt + 1
-					}), i && W(i.fetchedAt)) {
+					}), i && Y(i.fetchedAt)) {
 						for (let e of d) if (n.limits[e] > i.limits[e] && r.counts[e] <= i.counts[e] && r.counts[e] < r.totals[e]) throw Error("Your listing history stopped before all auctions were returned.");
 					}
 					return await this.saveBatch(e, r, a), r;
@@ -724,8 +803,8 @@ var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e >
 				n.promise.then(r, r);
 			} else if (!o.started) for (let e of d) o.limits[e] = Math.max(o.limits[e], t[e]);
 			let s = await this.consume(o, n, r);
-			if (r.throwIfAborted(), this.epochs.get(e) !== a) throw K();
-			if (G(s, t)) return s;
+			if (r.throwIfAborted(), this.epochs.get(e) !== a) throw Z();
+			if (X(s, t)) return s;
 			i = !1;
 		}
 	}
@@ -737,7 +816,7 @@ var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e >
 				let r = e.readers.get(t) - 1;
 				return r ? e.readers.set(t, r) : e.readers.delete(t), e.users || e.controller.abort(), !0;
 			}, s = () => {
-				o() && i(K());
+				o() && i(Z());
 			};
 			n.addEventListener("abort", s, { once: !0 }), n.aborted ? s() : e.promise.then((e) => {
 				o() && r(e);
@@ -748,8 +827,8 @@ var H = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e >
 	}
 };
 // src/listing-background.ts
-function J() {
-	let e = new q(chrome.storage.local, chrome.storage.session), t = /* @__PURE__ */ new Map(), n = /* @__PURE__ */ new Set();
+function ee() {
+	let e = new Q(chrome.storage.local, chrome.storage.session), t = /* @__PURE__ */ new Map(), n = /* @__PURE__ */ new Set();
 	chrome.tabs.onRemoved.addListener((e) => {
 		for (let [n, r] of t) n.startsWith(`${e}:`) && (r.abort(), t.delete(n));
 	}), chrome.runtime.onMessage.addListener((r, i, a) => {
@@ -821,8 +900,8 @@ function J() {
 	});
 }
 // src/background.ts
-J();
-var Y = Promise.resolve();
+ee();
+var $ = Promise.resolve();
 chrome.tabs.onRemoved.addListener((e) => {
 	chrome.storage.session.remove([`${b}${e}`, `${x}${e}`]);
 }), chrome.action.onClicked.addListener(() => {
@@ -831,17 +910,17 @@ chrome.tabs.onRemoved.addListener((e) => {
 	if (t.id !== chrome.runtime.id || !E(e)) return !1;
 	let r = t.url?.split(/[?#]/, 1)[0] === chrome.runtime.getURL("options.html"), i = !!t.tab && t.url?.startsWith("https://kosmora.io/");
 	if ((e.op === "popupState" || e.op === "popupLayout" || e.op === "friendPopupState" || e.op === "friendPopupLayout") && i && t.tab?.id !== void 0 && t.frameId === 0) {
-		let r = e.op === "friendPopupState" || e.op === "friendPopupLayout", i = `${r ? x : b}${t.tab.id}`, a = Y.then(async () => {
+		let r = e.op === "friendPopupState" || e.op === "friendPopupLayout", i = `${r ? x : b}${t.tab.id}`, a = $.then(async () => {
 			let t = C((await chrome.storage.session.get(i))[i]);
 			if (e.op === "popupState" || e.op === "friendPopupState") return t;
 			let n = e.change;
 			if (n.tab !== void 0 && (t.tab = n.tab), n.pinned !== void 0 && (t.pinned = n.pinned), n.position && (t.position = S(n.position)), await chrome.storage.session.set({ [i]: t }), n.position || n.width !== void 0 || n.height !== void 0) {
-				let e = await B();
-				n.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = S(n.position)), n.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(n.width)), n.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(n.height)), await V(e);
+				let e = await G();
+				n.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = S(n.position)), n.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(n.width)), n.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(n.height)), await K(e);
 			}
 			return t;
 		});
-		return Y = a.then(() => {}, () => {}), a.then((t) => n({
+		return $ = a.then(() => {}, () => {}), a.then((t) => n({
 			requestId: e.requestId,
 			ok: !0,
 			data: t

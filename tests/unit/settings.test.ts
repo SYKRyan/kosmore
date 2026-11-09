@@ -192,6 +192,7 @@ it("enables new feature groups for older settings and keeps configuration when g
   const keys = [
     "navigationHotkeysEnabled",
     "tradeRemindersEnabled",
+    "socialRemindersMasterEnabled",
     "socialRemindersEnabled",
     "showTradeFamilyBadges",
     "showTradePossibleInterest",

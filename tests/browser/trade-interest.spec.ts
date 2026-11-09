@@ -474,7 +474,7 @@ test("wraps the badges and native symbols on a narrow trade screen", async () =>
   });
 });
 
-test("trade settings follow Profile, save independently, cancel drafts, and update the open trade", async () => {
+test("trade settings follow Social Reminders, save independently, cancel drafts, and update the open trade", async () => {
   await open();
   await expect(summary()).toBeVisible();
   const options = await context.newPage();
@@ -484,12 +484,12 @@ test("trade settings follow Profile, save independently, cancel drafts, and upda
     );
     const group = options.locator("#trade-reminders"),
       save = group.getByRole("button", {
-        name: "Save trade reminder settings",
+        name: "Save",
         exact: true,
       });
     expect(
       await options
-        .locator("#profile-reminders")
+        .locator("#social-reminders")
         .evaluate((e) => e.nextElementSibling?.id),
     ).toBe("trade-reminders");
     await expect(
@@ -540,7 +540,7 @@ test("trade settings follow Profile, save independently, cancel drafts, and upda
     ).toBeDisabled();
     await group
       .getByRole("button", {
-        name: "Cancel trade reminder settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
@@ -556,7 +556,7 @@ test("trade settings follow Profile, save independently, cancel drafts, and upda
     await expect(save).toBeDisabled();
     await expect(
       group.getByRole("button", {
-        name: "Cancel trade reminder settings changes",
+        name: "Cancel",
         exact: true,
       }),
     ).toBeDisabled();
@@ -830,7 +830,7 @@ test("trade notes settings validate sizes, save only their group, pin, cancel, a
     );
     const group = options.locator("#trade-reminders"),
       save = group.getByRole("button", {
-        name: "Save trade reminder settings",
+        name: "Save",
         exact: true,
       });
     await group.getByLabel("Notes tooltip width", { exact: true }).fill("100");
@@ -856,7 +856,7 @@ test("trade notes settings validate sizes, save only their group, pin, cancel, a
     await group.getByLabel("Show saved notes badge", { exact: true }).check();
     await group
       .getByRole("button", {
-        name: "Cancel trade reminder settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
@@ -864,12 +864,13 @@ test("trade notes settings validate sizes, save only their group, pin, cancel, a
       group.getByLabel("Show saved notes badge", { exact: true }),
     ).not.toBeChecked();
     await options
-      .getByLabel("Show family impact on the Trade page", {
+      .getByLabel("Show on Trade page", {
         exact: true,
       })
       .uncheck();
     await options
-      .getByRole("button", { name: "Save family impact settings", exact: true })
+      .locator("#family-impact-overlay")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     expect(
       await worker.evaluate(

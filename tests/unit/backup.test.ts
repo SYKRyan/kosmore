@@ -53,7 +53,11 @@ function values(): StoredValues {
       disableCardOverlaysInVortex: true,
       showVortexFamilyOverlay: false,
       useFamilyBlacklist: true,
+      socialRemindersMasterEnabled: false,
+      socialRemindersEnabled: false,
       socialRemindersPinned: true,
+      profileRemindersEnabled: true,
+      profileRemindersPinned: false,
       familyBlacklist: ["Asteroids", "Ducks, Geese and Swans"],
       salesLastSaleAdjustment: -1.25,
       popupPosition: { left: 100, top: 50 },
@@ -63,6 +67,31 @@ function values(): StoredValues {
           code: "KeyC",
           ctrl: false,
           alt: true,
+          shift: false,
+          meta: false,
+        },
+      },
+      packOpeningHotkeysEnabled: true,
+      anyKeyDismissesFoundPack: false,
+      autoSkipOpening: true,
+      autoDismissFoundPack: true,
+      showRemainingPackCount: false,
+      pinnedAlbumHotkeys: {
+        player: {
+          [ALBUM_A]: {
+            code: "KeyA",
+            ctrl: false,
+            alt: true,
+            shift: false,
+            meta: false,
+          },
+        },
+      },
+      packOpeningHotkeys: {
+        nextCard: {
+          code: "ArrowRight",
+          ctrl: false,
+          alt: false,
           shift: false,
           meta: false,
         },
@@ -131,8 +160,16 @@ it("imports older family settings and round-trips independent family impact choi
     delete old.settings.familyImpactOverlaysEnabled;
     delete old.settings.showSalesFamilyOverlay;
     delete old.settings.useFamilyBlacklist;
+    delete old.settings.socialRemindersMasterEnabled;
     delete old.settings.socialRemindersEnabled;
     delete old.settings.socialRemindersPinned;
+    delete old.settings.packOpeningHotkeys;
+    delete old.settings.packOpeningHotkeysEnabled;
+    delete old.settings.anyKeyDismissesFoundPack;
+    delete old.settings.autoSkipOpening;
+    delete old.settings.autoDismissFoundPack;
+    delete old.settings.showRemainingPackCount;
+    delete old.settings.pinnedAlbumHotkeys;
     delete old.settings.familyBlacklist;
     delete old.settings.disableHoverTooltipInVortex;
     delete old.settings.disableCardOverlaysInVortex;
@@ -143,8 +180,16 @@ it("imports older family settings and round-trips independent family impact choi
       familyImpactOverlaysEnabled: true,
       showSalesFamilyOverlay: true,
       useFamilyBlacklist: false,
+      socialRemindersMasterEnabled: true,
       socialRemindersEnabled: true,
       socialRemindersPinned: false,
+      packOpeningHotkeys: {},
+      packOpeningHotkeysEnabled: false,
+      anyKeyDismissesFoundPack: true,
+      autoSkipOpening: false,
+      autoDismissFoundPack: false,
+      showRemainingPackCount: true,
+      pinnedAlbumHotkeys: {},
       familyBlacklist: [],
       disableHoverTooltipInVortex: false,
       disableCardOverlaysInVortex: false,
@@ -251,6 +296,9 @@ it("ignores arbitrary extra backup fields and preserves handles that are object 
   imported.settings.pinnedAlbums = JSON.parse(
     `{"__proto__":["${ALBUM_A}"],"constructor":[]}`,
   );
+  imported.settings.pinnedAlbumHotkeys = JSON.parse(
+    `{"__proto__":{"${ALBUM_A}":{"code":"KeyA","alt":true,"ctrl":false,"shift":false,"meta":false}}}`,
+  );
   imported.friendReminders.push({
     account: "__proto__",
     friend: "constructor",
@@ -263,6 +311,9 @@ it("ignores arbitrary extra backup fields and preserves handles that are object 
     Object.prototype,
   );
   expect(Object.hasOwn(parsed.settings.pinnedAlbums, "__proto__")).toBe(true);
+  expect(Object.hasOwn(parsed.settings.pinnedAlbumHotkeys, "__proto__")).toBe(
+    true,
+  );
   expect(h.data()["unrelated.key"]).toBe("keep");
   expect(h.data()["kosmore.friend.__proto__.constructor"]).toEqual(
     reminder("safe"),

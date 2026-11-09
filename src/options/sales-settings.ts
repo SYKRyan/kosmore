@@ -89,11 +89,10 @@ export class SalesSettings {
         "Fill only the starting price for this card.",
         true,
       );
-      const row = el("div", "row settings-subsetting"),
+      const row = el("div", "row settings-subsetting settings-subsetting-text"),
         info = el("div"),
         label = el("label", "", `${option.name} price adjustment`),
         adjustment = el("input");
-      row.style.paddingLeft = "54px";
       adjustment.id = option.adjustment;
       adjustment.type = "number";
       adjustment.step = "any";
