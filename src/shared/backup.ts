@@ -6,7 +6,15 @@ import {
   type FriendReminder,
 } from "./friend-reminders";
 import { parseCardNote, type CardNote } from "./card-notes";
-import { NAVIGATION, hotkeyConflict, type Hotkeys } from "./hotkeys";
+import {
+  NAVIGATION,
+  PACK_OPENING,
+  hotkeyConflict,
+  validShortcutCode,
+  type Hotkeys,
+  type PackOpeningId,
+  type PinnedAlbumHotkeys,
+} from "./hotkeys";
 import { STAT_CATALOG } from "./stat-catalog";
 import { parsePopupPosition } from "./popup-layout";
 import { validSaleAdjustment } from "./sales-prices";
@@ -163,14 +171,17 @@ function backupSettings(value: unknown): Settings {
     });
     unique(ids, "Stat preferences");
   }
-  if (Object.hasOwn(raw, "hotkeys")) {
-    const keys = record(raw.hotkeys, "Shortcuts");
+  for (const [field, actions] of [
+    ["hotkeys", NAVIGATION],
+    ["packOpeningHotkeys", PACK_OPENING],
+  ] as const) {
+    if (!Object.hasOwn(raw, field)) continue;
+    const keys = record(raw[field], "Shortcuts");
     for (const [id, value] of Object.entries(keys)) {
       const shortcut = record(value, "Shortcut");
       if (
-        !NAVIGATION.some((item) => item.id === id) ||
-        typeof shortcut.code !== "string" ||
-        !/^(Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-2]))$/.test(shortcut.code) ||
+        !actions.some((item) => item.id === id) ||
+        !validShortcutCode(shortcut.code, field === "packOpeningHotkeys") ||
         ![shortcut.ctrl, shortcut.alt, shortcut.shift, shortcut.meta].every(
           (flag) => typeof flag === "boolean",
         )
@@ -179,10 +190,46 @@ function backupSettings(value: unknown): Settings {
           "The backup contains an invalid or unsupported shortcut.",
         );
     }
-    const conflict = hotkeyConflict(keys as Hotkeys);
-    if (conflict) throw new Error(conflict);
   }
+  const conflict = hotkeyConflict(
+    (raw.hotkeys as Hotkeys) ?? {},
+    (raw.packOpeningHotkeys as Hotkeys<PackOpeningId>) ?? {},
+    validateAlbumHotkeys(raw.pinnedAlbumHotkeys, raw.pinnedAlbums),
+  );
+  if (conflict) throw new Error(conflict);
   return parseSettings(raw);
+}
+
+function validateAlbumHotkeys(
+  value: unknown,
+  pins: unknown,
+): PinnedAlbumHotkeys {
+  if (value === undefined) return {};
+  const shortcuts = record(value, "Pinned album shortcuts");
+  const accounts = pins === undefined ? {} : record(pins, "Pinned albums");
+  for (const [handle, bindings] of Object.entries(shortcuts)) {
+    account(handle);
+    const ids = Object.hasOwn(accounts, handle)
+      ? array(accounts[handle], "Pinned album IDs")
+      : [];
+    for (const [id, value] of Object.entries(
+      record(bindings, "Album shortcuts"),
+    )) {
+      const shortcut = record(value, "Album shortcut");
+      if (
+        !ids.includes(uuid(id)) ||
+        !validShortcutCode(shortcut.code) ||
+        ![shortcut.ctrl, shortcut.alt, shortcut.shift, shortcut.meta].every(
+          (flag) => typeof flag === "boolean",
+        )
+      ) {
+        throw new Error(
+          "The backup contains an invalid pinned album shortcut.",
+        );
+      }
+    }
+  }
+  return shortcuts as PinnedAlbumHotkeys;
 }
 
 export function validateBackup(value: unknown): KosMoreBackup {
@@ -358,14 +405,30 @@ function importValues(
   current: StoredValues,
 ) {
   const writes = backupValues(backup);
-  if (mode === "merge")
-    writes[SETTINGS_KEY] = {
+  if (mode === "merge") {
+    const existing = parseSettings(current[SETTINGS_KEY]);
+    const pinnedAlbumHotkeys = { ...existing.pinnedAlbumHotkeys };
+    for (const handle of Object.keys(backup.settings.pinnedAlbums))
+      delete pinnedAlbumHotkeys[handle];
+    const settings = {
       ...backup.settings,
       pinnedAlbums: {
-        ...parseSettings(current[SETTINGS_KEY]).pinnedAlbums,
+        ...existing.pinnedAlbums,
         ...backup.settings.pinnedAlbums,
       },
+      pinnedAlbumHotkeys: {
+        ...pinnedAlbumHotkeys,
+        ...backup.settings.pinnedAlbumHotkeys,
+      },
     };
+    const conflict = hotkeyConflict(
+      settings.hotkeys,
+      settings.packOpeningHotkeys,
+      settings.pinnedAlbumHotkeys,
+    );
+    if (conflict) throw new Error(conflict);
+    writes[SETTINGS_KEY] = settings;
+  }
   const remove =
     mode === "replace"
       ? Object.keys(supported(current)).filter(
@@ -378,12 +441,17 @@ function importValues(
 function entries(values: StoredValues): StoredValues {
   const result = supported(values);
   if (Object.hasOwn(result, SETTINGS_KEY)) {
-    const { pinnedAlbums, ...preferences } = parseSettings(
+    const { pinnedAlbums, pinnedAlbumHotkeys, ...preferences } = parseSettings(
       result[SETTINGS_KEY],
     );
     result[SETTINGS_KEY] = preferences;
     for (const [handle, ids] of Object.entries(pinnedAlbums))
-      result[`pins:${handle}`] = ids;
+      result[`pins:${handle}`] = {
+        ids,
+        hotkeys: Object.hasOwn(pinnedAlbumHotkeys, handle)
+          ? pinnedAlbumHotkeys[handle]
+          : {},
+      };
   }
   return result;
 }

@@ -28,7 +28,9 @@ to Kosmora.
 - Sales Overlay: compare Last Sale, Lowest Listed, and My Last Listing prices
   on single and batch selling screens, with independent click-to-fill
   adjustments.
-- Navigation hotkeys: assign keyboard shortcuts to 15 Kosmora destinations.
+- Navigation hotkeys: assign keyboard shortcuts to 16 Kosmora destinations.
+- Pack opening hotkeys: open packs, inspect cards, and use summary actions
+  with configurable shortcuts.
 - Backup & restore: export and import settings, album shortcuts, family
   preferences, and private notes across browsers or computers.
 - Account-aware data: keep album shortcuts and private reminders associated
@@ -183,7 +185,10 @@ you are configuring.
 - Reorder Pinned shortcuts with the move controls; the tooltip follows this
   order and displays three compact shortcuts per row, aligned with the stat
   boxes. Long album names use ellipses.
-- Save the group to store the selection and order for that account.
+- Record or clear an album hotkey in its Pinned shortcuts row. With a card
+  tooltip open, press the saved hotkey to use the album button for the
+  selected copy. Save the group to store the pins, order, and hotkeys
+  for that account.
 - In a card tooltip, choose the owned copy when necessary and click an album
   shortcut to add it. Existing membership is shown, with a remove control for
   removing the card from that album.
@@ -253,7 +258,7 @@ Family Impact Overlay
 ---------------------
 
 This group has its own master switch and independent Fusion, Trade, Vortex,
-and Show on sale screens options. All default to on; existing saved choices
+and Show on Sell pages options. All default to on; existing saved choices
 remain intact. Card overlays and Sales Overlay work independently.
 
 The Blacklist subsection has Use Family Blacklist, off by default, and the
@@ -315,9 +320,10 @@ Profile links and above Between You. The launcher occupies the pinned
 editor's location. Pin the popup to keep the editor inline; unpin to return
 to a popup. Pinning and unpinning preserve unsaved edits.
 
-Social Reminders has its own enable switch and Keep reminders pinned on
-Social preference, independent of Profile Reminders. It is enabled and
-unpinned by default. Both pages edit the same private families and notes.
+In Settings → Social Reminders, the master switch hides reminders on both pages
+and keeps your preferences. Show on social page and Show on profile page control
+where the editor appears. Each has its own pin switch. Both pages show reminders
+by default, with pinning off. They share private families and notes.
 
 Profile Reminders
 -----------------
@@ -409,8 +415,8 @@ Navigation hotkeys
 ------------------
 
 Assign shortcuts for Home, Collection, Albums, Atlas, Social, Market, My
-Auctions, My Activity, Alerts, Talents, Packs, Fusion, Pulsar, Odyssey, and My
-Profile.
+Auctions, My Activity, Alerts, Talents, Packs, History, Fusion, Pulsar,
+Odyssey, and My Profile.
 
 Click a shortcut control and press a letter, number, or F1–F12, optionally
 with Ctrl, Alt, Shift, or Meta. Escape cancels recording; Clear removes a
@@ -419,6 +425,34 @@ rejected.
 
 Shortcuts work on Kosmora pages and pause while typing in fields or editors.
 Browser-reserved shortcuts may not reach KosMore.
+
+Pack Openings
+--------------------
+
+Find Pack Openings just below Navigation Hotkeys. Its hotkeys start off
+and bindings start empty. You can also record arrows, Home, and End.
+Save the group to apply your choices.
+
+Show remaining pack count starts on and shows the number of ready packs
+above Open the Next Pack.
+
+- Next Card tears the ready pack and steps through the reveal. On the
+  summary, use Next Card, Previous Card, Focus First Card, or Focus Last
+  Card to inspect the grid. The tooltip follows focus when enabled.
+- See Card opens the focused card’s detail page. Press Enter on a focused
+  summary card to use Kosmora’s close-up viewer.
+- Dismiss Found Pack, Skip Opening, Later, Share, and Home activate the
+  corresponding controls when Kosmora offers them. Next Pack/Back to Packs
+  opens the next pack or returns to Packs when the summary offers that link.
+- Any key dismisses found pack starts on. Turn it off to use the Dismiss
+  Found Pack keybind instead.
+- Auto-dismiss found pack starts off. Turn it on to dismiss full-screen
+  Rogue and Mega pack alerts automatically. The found packs still appear
+  on the summary.
+- Auto-skip on next pack starts off. After you activate Next Pack by
+  mouse or hotkey, it presses Skip once when the next pack appears.
+  Kosmora's reveal hints must be enabled so it can warn you about
+  special packs.
 
 Backup & restore
 ----------------

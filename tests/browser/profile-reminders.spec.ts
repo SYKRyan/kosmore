@@ -384,19 +384,21 @@ test("Social popup, mobile widget, and its own settings preserve shared reminder
       `chrome-extension://${extensionId}/options.html#social-reminders`,
     );
     const section = options.locator("#social-reminders");
-    const pin = section.getByLabel("Keep reminders pinned on Social", {
-      exact: true,
+    const pin = section.getByRole("switch", {
+      name: "Keep reminders pinned on Social",
+    });
+    const profilePin = section.getByRole("switch", {
+      name: "Keep reminders pinned on profiles",
+    });
+    const showSocial = section.getByRole("checkbox", {
+      name: "Show on social page",
     });
     await expect(pin).toBeChecked();
-    await expect(
-      options
-        .locator("#profile-reminders")
-        .getByLabel("Keep reminders pinned on profiles", { exact: true }),
-    ).not.toBeChecked();
+    await expect(profilePin).not.toBeChecked();
     await pin.uncheck();
     await section
       .getByRole("button", {
-        name: "Cancel social reminder settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
@@ -404,7 +406,7 @@ test("Social popup, mobile widget, and its own settings preserve shared reminder
     await pin.uncheck();
     await section
       .getByRole("button", {
-        name: "Save social reminder settings",
+        name: "Save",
         exact: true,
       })
       .click();
@@ -413,15 +415,12 @@ test("Social popup, mobile widget, and its own settings preserve shared reminder
     await expect(socialEditor.getByLabel("Notes", { exact: true })).toHaveValue(
       "Mobile Social draft",
     );
-    await section
-      .getByRole("switch", { name: "Enable social reminders", exact: true })
-      .uncheck();
+    await showSocial.uncheck();
     await expect(page.locator("#kosmore-social-trigger")).toHaveCount(0);
     await expect(socialEditor).toHaveCount(0);
     await expect(pin).toBeDisabled();
-    await section
-      .getByRole("switch", { name: "Enable social reminders", exact: true })
-      .check();
+    await expect(profilePin).toBeEnabled();
+    await showSocial.check();
     await expect(socialTrigger).toBeVisible();
     expect(
       await worker.evaluate(
@@ -528,30 +527,63 @@ test("pinned notes follow the token box height as saved families grow and tokens
   await checkAddPlacement(editor());
 });
 
-test("profile settings disable immediately without removing stored notes and can cancel edits", async () => {
+test("master and page visibility apply live and retain pin preferences and notes", async () => {
   await open();
   const options = await context.newPage();
+  const social = await context.newPage();
   try {
+    await social.goto("https://kosmora.io/social?f=batu");
+    const socialTrigger = social.locator("#kosmore-social-trigger");
+    await expect(socialTrigger).toBeVisible();
     await options.goto(
-      `chrome-extension://${extensionId}/options.html#profile-reminders`,
+      `chrome-extension://${extensionId}/options.html#social-reminders`,
     );
-    const section = options.locator("#profile-reminders");
+    const section = options.locator("#social-reminders");
+    const master = section.getByRole("switch", {
+      name: "Enable social reminders",
+    });
+    const showSocial = section.getByRole("checkbox", {
+      name: "Show on social page",
+    });
+    const showProfile = section.getByRole("checkbox", {
+      name: "Show on profile page",
+    });
+    const pin = section.getByRole("switch", {
+      name: "Keep reminders pinned on profiles",
+    });
+    await pin.check();
     await section
-      .getByRole("switch", { name: "Enable profile reminders", exact: true })
-      .uncheck();
-    await expect(
-      section.getByRole("button", {
-        name: "Save profile reminder settings",
+      .getByRole("button", {
+        name: "Save",
         exact: true,
-      }),
-    ).toBeDisabled();
-    await expect(
-      section.getByRole("button", {
-        name: "Cancel profile reminder settings changes",
-        exact: true,
-      }),
-    ).toBeDisabled();
+      })
+      .click();
+    await expect(section.getByRole("status")).toContainText("Saved.");
+    await master.uncheck();
+    await expect(editor()).toHaveCount(0);
+    await expect(socialTrigger).toHaveCount(0);
+    await expect(showSocial).toBeDisabled();
+    await expect(showProfile).toBeDisabled();
+    await expect(pin).toBeDisabled();
+    await options.reload();
+    await expect(master).toBeEnabled();
+    await expect(master).not.toBeChecked();
+    await master.check();
+    await expect(editor()).toBeVisible();
+    await expect(socialTrigger).toBeVisible();
+    await showProfile.uncheck();
     await expect(page.locator("#kosmore-profile-trigger")).toHaveCount(0);
+    await expect(editor()).toHaveCount(0);
+    await options.reload();
+    await expect(showProfile).not.toBeChecked();
+    await expect(pin).toBeChecked();
+    await expect(pin).toBeDisabled();
+    await expect(showSocial).toBeChecked();
+    await master.uncheck();
+    await expect(socialTrigger).toHaveCount(0);
+    await master.check();
+    await expect(socialTrigger).toBeVisible();
+    await expect(showProfile).not.toBeChecked();
     await expect(editor()).toHaveCount(0);
     expect(
       await worker.evaluate(
@@ -559,12 +591,14 @@ test("profile settings disable immediately without removing stored notes and can
         key,
       ),
     ).toMatchObject({ notes: "Bring a gift 🌌\nPrivate profile note" });
-    await section.getByRole("switch").check();
+    await showProfile.check();
     await expect(section.getByRole("status")).toContainText("Saved.");
-    await expect(trigger()).toBeVisible();
-    await open();
+    await expect(editor()).toBeVisible();
+    await expect(pin).toBeEnabled();
+    await expect(pin).toBeChecked();
   } finally {
     await options.close();
+    await social.close();
   }
 });
 

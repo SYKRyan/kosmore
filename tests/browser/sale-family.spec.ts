@@ -397,11 +397,11 @@ test("family blacklist uses friend-style tokens, defaults off, saves and cancels
       exact: true,
     });
     const save = group.getByRole("button", {
-      name: "Save family impact settings",
+      name: "Save",
       exact: true,
     });
     const cancel = group.getByRole("button", {
-      name: "Cancel family impact settings changes",
+      name: "Cancel",
       exact: true,
     });
     const tokens = group.getByRole("list", {
@@ -516,9 +516,7 @@ test("blacklist catalog failures preserve saved tokens and can be retried withou
         .getByRole("list", { name: "Blacklisted families", exact: true })
         .locator("li"),
     ).toHaveCount(1);
-    await group
-      .getByRole("button", { name: "Save family impact settings", exact: true })
-      .click();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
     await expect(row("301").locator(".verdict")).toHaveText("Blacklist");
     catalogFailure = false;
     await group
@@ -561,12 +559,12 @@ test("family impact settings follow section order, preserve preferences and save
     expect(links.indexOf("Family Impact Overlay")).toBe(
       links.indexOf("Card Overlays") + 1,
     );
-    const sale = family.getByLabel("Show on sale screens", { exact: true });
+    const sale = family.getByLabel("Show on Sell pages", { exact: true });
     await expect(sale).toBeChecked();
     await sale.uncheck();
     await family
       .getByRole("button", {
-        name: "Cancel family impact settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
@@ -577,12 +575,8 @@ test("family impact settings follow section order, preserve preferences and save
     await cards
       .getByLabel("Show quest icon on cards", { exact: true })
       .uncheck();
-    await family
-      .getByLabel("Show family impact on the Fusion page", { exact: true })
-      .uncheck();
-    await family
-      .getByRole("button", { name: "Save family impact settings", exact: true })
-      .click();
+    await family.getByLabel("Show on Fusion page", { exact: true }).uncheck();
+    await family.getByRole("button", { name: "Save", exact: true }).click();
     await expect(family.getByRole("status")).toContainText("Saved.");
     expect(
       await worker.evaluate(
@@ -613,7 +607,7 @@ test("family impact settings follow section order, preserve preferences and save
       })
       .check();
     await expect(
-      family.getByLabel("Show family impact on the Fusion page", {
+      family.getByLabel("Show on Fusion page", {
         exact: true,
       }),
     ).not.toBeChecked();

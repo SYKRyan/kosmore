@@ -249,9 +249,7 @@ test("backup merge retains destination-only notes while replace previews removal
   await expect(
     backup.getByRole("button", { name: "Import backup", exact: true }),
   ).toBeDisabled();
-  await backup
-    .getByRole("button", { name: "Cancel import", exact: true })
-    .click();
+  await backup.getByRole("button", { name: "Cancel", exact: true }).click();
   expect(await snapshot()).toEqual(before);
   await choose(options);
   await backup
@@ -287,9 +285,7 @@ test("backup preview and cancellation preserve unsaved settings, and invalid fil
   await expect(
     backup.getByText(/Save or cancel your unsaved settings/),
   ).toBeVisible();
-  await backup
-    .getByRole("button", { name: "Cancel import", exact: true })
-    .click();
+  await backup.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(width).toHaveValue("720");
   expect(await snapshot()).toEqual(before);
   await backup
@@ -303,8 +299,9 @@ test("backup preview and cancellation preserve unsaved settings, and invalid fil
   expect(await snapshot()).toEqual(before);
   await choose(options, serializeBackup(imported));
   await options
+    .locator("#hover-tooltip")
     .getByRole("button", {
-      name: "Cancel tooltip settings changes",
+      name: "Cancel",
       exact: true,
     })
     .click();
@@ -327,6 +324,21 @@ test("backup screen remains usable by keyboard on a narrow viewport", async () =
   await choose(options);
   const backup = options.locator("#backup-restore"),
     mode = backup.getByLabel("Import mode", { exact: true });
+  const previewOffsets = await backup.evaluate((section) => {
+    const headingLeft = section
+      .querySelector("h3")!
+      .getBoundingClientRect().left;
+    return [
+      ...section.querySelectorAll(
+        ".backup-preview > :is(dl, label, select, .sub, .backup-actions)",
+      ),
+    ]
+      .filter((control) => control.getClientRects().length > 0)
+      .map((control) =>
+        Math.abs(control.getBoundingClientRect().left - headingLeft),
+      );
+  });
+  for (const offset of previewOffsets) expect(offset).toBeLessThanOrEqual(1);
   await mode.focus();
   await mode.selectOption("replace");
   const confirmation = backup.getByLabel(
@@ -348,9 +360,7 @@ test("backup screen remains usable by keyboard on a narrow viewport", async () =
   await backup.screenshot({
     path: "test-results/screenshots/backup-restore-390.png",
   });
-  await backup
-    .getByRole("button", { name: "Cancel import", exact: true })
-    .click();
+  await backup.getByRole("button", { name: "Cancel", exact: true }).click();
 });
 
 test("backup imports update open game settings and notes while preserving a dirty card-note draft", async () => {

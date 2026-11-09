@@ -1,7 +1,8 @@
 import { HOST_ID, FRIEND_TOOLTIP_ID, OVERLAY_ATTR } from "../kosmora/dom";
 import { FRIEND_REMINDERS_ID } from "../kosmora/social";
+import { PACK_SUMMARY_STATUS_ATTR } from "./pack-summary-status";
 
-const OWN_UI = `#${HOST_ID},#${FRIEND_TOOLTIP_ID},#${FRIEND_REMINDERS_ID},[${OVERLAY_ATTR}],[data-kosmore-tooltip-buttons],[data-kosmore-sales-overlay],[data-kosmore-profile],[data-kosmore-fusion-family],[data-kosmore-trade]`;
+const OWN_UI = `#${HOST_ID},#${FRIEND_TOOLTIP_ID},#${FRIEND_REMINDERS_ID},[${OVERLAY_ATTR}],[${PACK_SUMMARY_STATUS_ATTR}],[data-kosmore-remaining-packs],[data-kosmore-tooltip-buttons],[data-kosmore-sales-overlay],[data-kosmore-profile],[data-kosmore-fusion-family],[data-kosmore-trade]`;
 export interface PageChanges {
   roots: Element[];
   full: boolean;

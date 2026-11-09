@@ -27,6 +27,7 @@ import {
 import { Popup } from "./popup";
 import { CardOverlays } from "./card-overlays";
 import { NavigationHotkeys } from "./navigation";
+import { PACK_FOCUS, PackOpeningHotkeys } from "./pack-opening-hotkeys";
 import { SalesOverlays } from "./sales-overlays";
 import { observePage } from "./page-changes";
 import { FriendTooltip } from "./friend-tooltip";
@@ -39,6 +40,8 @@ import { FusionFamilyImpact } from "./fusion-family";
 import { TooltipButtons } from "./tooltip-buttons";
 import { RELAY_LISTED, LISTING_WRITES } from "../shared/page-relay";
 import { settingsForPage } from "../shared/page-settings";
+import { isTyping, shortcutFromEvent, shortcutKey } from "../shared/hotkeys";
+import { RemainingPacks } from "./remaining-packs";
 
 function pageSettings() {
   return settingsForPage(settings, location.pathname);
@@ -97,11 +100,28 @@ client.onAuctionListings((listings) =>
   ),
 );
 let settings = defaults();
+const remainingPacks = new RemainingPacks(
+  client,
+  () => settings.showRemainingPackCount,
+);
 let pinnedState: PopupState = { pinned: false, position: null };
 const navigationHotkeys = new NavigationHotkeys(
   () => settings,
   client,
   navigationAway,
+);
+const packOpeningHotkeys = new PackOpeningHotkeys(
+  () => settings,
+  openFromKeyboard,
+  closeKeyboardTooltip,
+  navigationAway,
+  (element) => element === popup?.host || friendTooltip.contains(element),
+  () =>
+    !!(
+      popup?.isPinned &&
+      popup.host.matches(":popover-open") &&
+      pageSettings().enabled
+    ),
 );
 let marketFinishes: Finish[] = [...FINISHES];
 let pendingFilterWrites = 0;
@@ -124,6 +144,8 @@ const preferencesReady = Promise.all([
   tooltipButtons.setSettings(settings);
   if (!pageSettings().enabled) hide();
   else if (pinnedState.pinned && !popup && !current) createView(null);
+  packOpeningHotkeys.start();
+  remainingPacks.start();
 });
 let current: CardContext | null = null,
   popup: Popup | undefined;
@@ -134,12 +156,14 @@ let headerSignalRequest = 0;
 let lastUrl = location.href,
   hovered = false,
   buttonOpened = false,
+  keyboardOpened = false,
   dialog: HTMLDialogElement | undefined;
 function cancelClose() {
   clearTimeout(closeTimer);
 }
 function hide() {
   buttonOpened = false;
+  keyboardOpened = false;
   clearTimeout(openTimer);
   cancelClose();
   activeRequest?.abort();
@@ -165,8 +189,17 @@ function navigationAway() {
 }
 function checkUrl() {
   if (lastUrl === location.href) return;
-  const previous = settingsForPage(settings, new URL(lastUrl).pathname);
+  const previousUrl = new URL(lastUrl);
+  const previous = settingsForPage(settings, previousUrl.pathname);
   lastUrl = location.href;
+  remainingPacks.refresh();
+  if (packOpeningHotkeys.keepFocusOnRecap(previousUrl)) {
+    const recap = current && resolveCard(current.anchor);
+    if (recap && current && contextKey(recap) !== contextKey(current))
+      openFromKeyboard(recap);
+    return;
+  }
+  packOpeningHotkeys.reset();
   friendTooltip.setSettings(pageSettings());
   tooltipButtons.setSettings(settings);
   if (previous.cardOverlaysEnabled !== pageSettings().cardOverlaysEnabled)
@@ -175,10 +208,11 @@ function checkUrl() {
 }
 function laterHide() {
   cancelClose();
-  if (popup?.isPinned || buttonOpened) return;
+  if (popup?.isPinned || buttonOpened || keyboardOpened) return;
   closeTimer = setTimeout(() => {
     if (
       !popup?.isPinned &&
+      !keyboardOpened &&
       !hovered &&
       !popup?.host.matches(":hover") &&
       !popup?.shadow.activeElement &&
@@ -197,7 +231,7 @@ async function show(context: CardContext, fresh = false) {
   if (
     !pageSettings().enabled ||
     current !== context ||
-    (!buttonOpened && tooltipButtons.showing(context))
+    (!buttonOpened && !keyboardOpened && tooltipButtons.showing(context))
   )
     return;
   activeRequest?.abort();
@@ -289,7 +323,9 @@ function createView(
     placement,
     () => {
       cancelClose();
-      if (!view.isPinned && !current) hide();
+      if (view.isPinned && keyboardOpened)
+        packOpeningHotkeys.restoreCardFocus();
+      else if (!view.isPinned && !current) hide();
       else if (!view.isPinned && !hovered) laterHide();
     },
     (change) => saveLayout(view, change),
@@ -297,6 +333,51 @@ function createView(
     pinnedState.tab,
   );
   popup = view;
+  view.host.addEventListener("mousedown", (event) => {
+    if (!view.isPinned || !context || event.button !== 0) return;
+    const active = document.activeElement;
+    if (
+      !(active instanceof HTMLElement) ||
+      resolveCard(active)?.anchor !== context.anchor
+    )
+      return;
+    const targets = event.composedPath().flatMap((node) => {
+      const target = node instanceof HTMLLabelElement ? node.control : node;
+      return target instanceof HTMLElement ? [target] : [];
+    });
+    const choice = targets.find((target) =>
+      target.matches('select, input[type="checkbox"], input[type="radio"]'),
+    );
+    if (choice) {
+      // Native labels and pickers may focus their control during activation.
+      const pointerChoice = new AbortController();
+      choice.addEventListener("blur", () => pointerChoice.abort(), {
+        once: true,
+        signal: pointerChoice.signal,
+      });
+      choice.addEventListener(
+        "change",
+        () => {
+          pointerChoice.abort();
+          if (popup === view && view.isPinned && active.isConnected)
+            active.focus({ preventScroll: true });
+        },
+        { capture: true, once: true, signal: pointerChoice.signal },
+      );
+    }
+    if (
+      targets.some(
+        (target) =>
+          target.isContentEditable ||
+          target.matches(
+            'textarea, select, input:not([type="checkbox"], [type="radio"])',
+          ),
+      )
+    )
+      return;
+    // Keep focus on the card while allowing the tooltip's click action to run.
+    event.preventDefault();
+  });
   view.host.addEventListener("pointerenter", cancelClose);
   view.host.addEventListener("pointerleave", () => {
     if (!hovered) laterHide();
@@ -369,6 +450,7 @@ function enter(target: Element) {
     cancelClose();
     return;
   }
+  if (keyboardOpened || target.hasAttribute(PACK_FOCUS)) return;
   const context = resolveCard(target);
   if (!context) {
     hovered = false;
@@ -412,6 +494,26 @@ function openFromButton(context: CardContext) {
   current = context;
   void show(context);
 }
+function openFromKeyboard(context: CardContext) {
+  if (!pageSettings().enabled) return;
+  clearTimeout(openTimer);
+  cancelClose();
+  if (
+    keyboardOpened &&
+    popup &&
+    current?.anchor === context.anchor &&
+    contextKey(current) === contextKey(context)
+  )
+    return;
+  buttonOpened = false;
+  keyboardOpened = true;
+  hovered = false;
+  current = context;
+  void show(context);
+}
+function closeKeyboardTooltip() {
+  if (keyboardOpened) navigationAway();
+}
 function insideTooltip(event: Event) {
   return event
     .composedPath()
@@ -422,6 +524,14 @@ function insideTooltip(event: Event) {
     );
 }
 function closeOnlyOutside(event: Event) {
+  if (
+    event instanceof MouseEvent &&
+    event.type === "click" &&
+    event.detail === 0 &&
+    event.target instanceof Element &&
+    event.target.closest(`[${PACK_FOCUS}]`)
+  )
+    return false;
   return (
     settings.outsideClickClosesTooltipOnly &&
     !!popup &&
@@ -593,6 +703,21 @@ document.addEventListener(
   "keydown",
   (event) => {
     if (
+      !event.defaultPrevented &&
+      popup?.host.matches(":popover-open") &&
+      !isTyping(event) &&
+      !document.querySelector(".ko-summary .ko-drop")
+    ) {
+      const dialog = topDialog();
+      const shortcut =
+        (!dialog || dialog.contains(popup.host)) && shortcutFromEvent(event);
+      if (shortcut && popup.activateAlbumShortcut(shortcutKey(shortcut))) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+    }
+    if (
       event
         .composedPath()
         .some(
@@ -696,11 +821,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (area === "local" && changes[SETTINGS_KEY]) {
     const previousOverlayMode = settings.useOverlayButtonInsteadOfHover;
+    const previousPackHotkeys = settings.packOpeningHotkeysEnabled;
     settings = parseSettings(changes[SETTINGS_KEY].newValue);
     if (previousOverlayMode !== settings.useOverlayButtonInsteadOfHover)
       navigationAway();
     friendTooltip.setSettings(pageSettings());
     navigationHotkeys.settingsChanged();
+    if (previousPackHotkeys && !settings.packOpeningHotkeysEnabled)
+      packOpeningHotkeys.reset();
     overlays.setSettings(settings);
     salesOverlays.setSettings(settings);
     fusionFamily.setSettings(settings);
@@ -713,6 +841,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
     } else if (pinnedState.pinned) {
       createView(null);
     }
+    packOpeningHotkeys.dismissFoundPackAutomatically();
+    remainingPacks.refresh();
   }
   if (
     area === "local" &&

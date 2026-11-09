@@ -6,6 +6,7 @@ import { FriendList } from "./friend-list";
 import { ListingHistory } from "./listing-history";
 import statCss from "./stat-box.css?inline";
 import { defaults } from "../shared/settings";
+import { shortcutKey } from "../shared/hotkeys";
 import {
   statSnapshot,
   visibleStats,
@@ -373,6 +374,27 @@ export class Popup {
   }
   get isPinned() {
     return !!this.placement;
+  }
+  activateAlbumShortcut(key: string): boolean {
+    if (
+      !this.account ||
+      !this.context?.anchor.isConnected ||
+      !this.settings.pinnedAlbumsEnabled
+    )
+      return false;
+    const shortcuts = this.settings.pinnedAlbumHotkeys[this.account.key];
+    if (!shortcuts) return false;
+    const id = this.pinned.find((id) => {
+      const binding = shortcuts[id];
+      return binding && shortcutKey(binding) === key;
+    });
+    if (!id) return false;
+    const target = this.albumArea.querySelector<HTMLButtonElement>(
+      `.album-add[data-album-id="${CSS.escape(id)}"]`,
+    );
+    if (!target || target.disabled || this.albumArea.hidden) return false;
+    target.click();
+    return true;
   }
   pinnedPlacement(): PopupPlacement | undefined {
     return this.placement
@@ -1429,6 +1451,7 @@ export class Popup {
       const album = this.albums.find((a) => a.id === id);
       const tile = el("div", "album-tile");
       const b = button("", () => void this.add(id, selected), "album-add");
+      b.dataset.albumId = id;
       const albumName = album?.name ?? "Album unavailable";
       b.append(el("span", "album-name", albumName));
       b.title = albumName;

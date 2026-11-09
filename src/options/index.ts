@@ -1,7 +1,7 @@
 import "./options.css";
 import "../content/stat-box.css";
 import { StatSettings } from "./stat-settings";
-import { HotkeySettings } from "./hotkey-settings";
+import { HotkeySettings, shortcutControls } from "./hotkey-settings";
 import { settingsNavigation } from "./settings-navigation";
 import { SalesSettings, SALES_SETTINGS_KEYS } from "./sales-settings";
 import { BackupSettings } from "./backup-settings";
@@ -12,8 +12,14 @@ import {
   FriendTooltipSettings,
   FRIEND_TOOLTIP_KEYS,
 } from "./friend-tooltip-settings";
-import { hotkeyConflict } from "../shared/hotkeys";
+import {
+  hotkeyConflict,
+  NAVIGATION,
+  PACK_OPENING,
+  type Shortcut,
+} from "../shared/hotkeys";
 import { button, el, note } from "../content/ui";
+import { headerIcon } from "../content/icons";
 import {
   readSettings,
   saveSettings,
@@ -26,11 +32,14 @@ import { messageOf, type Album, type Settings } from "../shared/types";
 const app = document.getElementById("app")!;
 type FeatureKey =
   | "enabled"
+  | "socialRemindersMasterEnabled"
   | "profileRemindersEnabled"
   | "socialRemindersEnabled"
   | "tradeRemindersEnabled"
   | "friendTooltipEnabled"
   | "navigationHotkeysEnabled"
+  | "packOpeningHotkeysEnabled"
+  | "showRemainingPackCount"
   | "cardOverlaysEnabled"
   | "familyImpactOverlaysEnabled"
   | "salesOverlaysEnabled"
@@ -281,9 +290,21 @@ const popupInputs = (
   return { field, input, title, min, max };
 });
 general.append(el("div", "rule"), mobileFriendly);
-const hotkeySettings = new HotkeySettings((hotkeys) => {
-  draft.hotkeys = hotkeys;
-});
+const hotkeySettings = new HotkeySettings(
+  "Navigation Hotkeys",
+  NAVIGATION,
+  (hotkeys) => {
+    draft.hotkeys = hotkeys;
+  },
+);
+const packHotkeySettings = new HotkeySettings(
+  "Pack Openings",
+  PACK_OPENING,
+  (hotkeys) => {
+    draft.packOpeningHotkeys = hotkeys;
+  },
+  true,
+);
 function syncTooltipSizing() {
   for (const { field, input } of popupInputs)
     if (field === "popupWidth" || field === "popupHeight")
@@ -303,7 +324,7 @@ function sectionToggle(host: HTMLElement, key: FeatureKey, label: string) {
   featureGroups.set(host, { key, input });
   input.addEventListener("change", () => {
     draft[key] = input.checked;
-    void persistFeature(host);
+    void persistFeature(host, key, input);
   });
   heading.replaceWith(row);
   const state = el("span", "settings-group-state", "Disabled");
@@ -320,7 +341,11 @@ function renderGroupState(host: HTMLElement) {
   const content = host.querySelector<HTMLFieldSetElement>(
     ":scope > .settings-group-content",
   );
-  if (content) content.disabled = disabled || saving;
+  if (content) content.disabled = disabled || saving || !settingsReady;
+  for (const input of host.querySelectorAll<HTMLInputElement>(
+    ".settings-group-independent input",
+  ))
+    input.disabled = saving || !settingsReady;
   for (const button of host.querySelectorAll<HTMLButtonElement>(
     ":scope > .savebar button",
   ))
@@ -331,6 +356,11 @@ const hotkeysEnabled = sectionToggle(
   hotkeySettings.host,
   "navigationHotkeysEnabled",
   "Enable navigation hotkey",
+);
+const packHotkeysEnabled = sectionToggle(
+  packHotkeySettings.host,
+  "packOpeningHotkeysEnabled",
+  "Enable pack opening hotkeys",
 );
 const friendTooltipSettings = new FriendTooltipSettings((update) =>
   Object.assign(draft, update),
@@ -346,54 +376,66 @@ socialSettings.append(
   el(
     "p",
     "sub",
-    "Open KosMore below Collection and Profile and above Between You on a friend's Social card. Pin the same private families and notes at that location. Social and Profile keep separate pin preferences.",
+    "Social and player profiles share the same private families and notes. Choose where the reminder editor appears and whether it stays pinned on each page.",
   ),
 );
-const socialEnabled = sectionToggle(
+const socialRemindersMaster = sectionToggle(
   socialSettings,
-  "socialRemindersEnabled",
+  "socialRemindersMasterEnabled",
   "Enable social reminders",
 );
-const socialPinned = el("input");
-socialPinned.type = "checkbox";
-socialPinned.id = "social-reminders-pinned";
-const socialPinLabel = el(
-  "label",
-  "label settings-toggle",
-  "Keep reminders pinned on Social",
-);
-socialPinLabel.prepend(socialPinned);
-socialSettings.append(el("div", "rule"), socialPinLabel);
-socialPinned.addEventListener("change", () => {
-  draft.socialRemindersPinned = socialPinned.checked;
+const reminderControls = (
+  [
+    {
+      enabledKey: "socialRemindersEnabled",
+      pinnedKey: "socialRemindersPinned",
+      pinnedId: "social-reminders-pinned",
+      label: "Show on social page",
+      pinLabel: "Keep reminders pinned on Social",
+      hint: "Find KosMore below Collection and Profile and above Between You on a friend's Social card.",
+    },
+    {
+      enabledKey: "profileRemindersEnabled",
+      pinnedKey: "profileRemindersPinned",
+      pinnedId: "profile-reminders-pinned",
+      label: "Show on profile page",
+      pinLabel: "Keep reminders pinned on profiles",
+      hint: "Find KosMore below a player's profile header and above Albums.",
+    },
+  ] as const
+).map(({ enabledKey, pinnedKey, pinnedId, label, pinLabel, hint }) => {
+  const enabled = checkboxSetting(
+    enabledKey,
+    label,
+    hint,
+    async (checked) => {
+      draft[enabledKey] = checked;
+      await persistFeature(socialSettings, enabledKey, enabled);
+      renderReminderSettings();
+    },
+    socialSettings,
+  );
+  const row = el("div", "row settings-subsetting"),
+    pinned = el("input", "section-switch"),
+    text = el("label", "label settings-toggle", pinLabel);
+  pinned.type = "checkbox";
+  pinned.id = pinnedId;
+  pinned.setAttribute("role", "switch");
+  pinned.addEventListener("change", () => {
+    draft[pinnedKey] = pinned.checked;
+  });
+  text.prepend(pinned);
+  row.append(text);
+  socialSettings.append(row);
+  return { enabledKey, pinnedKey, enabled, pinned };
 });
-const profileSettings = el("section", "panel");
-profileSettings.append(
-  el("h2", "", "Profile Reminders"),
-  el(
-    "p",
-    "sub",
-    "Open KosMore below a player's profile header and above Albums to edit the same private families and notes as Social. Pin the editor at that location, with families on the left and notes on the right. These reminders stay in this browser.",
-  ),
-);
-const profileEnabled = sectionToggle(
-  profileSettings,
-  "profileRemindersEnabled",
-  "Enable profile reminders",
-);
-const profilePinned = el("input");
-profilePinned.type = "checkbox";
-profilePinned.id = "profile-reminders-pinned";
-const profilePinLabel = el(
-  "label",
-  "label settings-toggle",
-  "Keep reminders pinned on profiles",
-);
-profilePinLabel.prepend(profilePinned);
-profileSettings.append(el("div", "rule"), profilePinLabel);
-profilePinned.addEventListener("change", () => {
-  draft.profileRemindersPinned = profilePinned.checked;
-});
+function renderReminderSettings() {
+  for (const { enabledKey, pinnedKey, enabled, pinned } of reminderControls) {
+    enabled.checked = draft[enabledKey];
+    pinned.checked = draft[pinnedKey];
+    pinned.disabled = !enabled.checked;
+  }
+}
 const tradeSettings = new TradeSettings((update) =>
   Object.assign(draft, update),
 );
@@ -427,12 +469,13 @@ const disableOverlaysInVortex = pageExclusionToggle(
   "Hide card indicators and tooltip header indicators in Vortex.",
   "Disable in Vortex",
 );
-function overlayToggle(
+function checkboxSetting(
   id: string,
   label: string,
   hint: string,
   update: (checked: boolean) => void,
   host: HTMLElement = overlays,
+  before: Element | null = null,
 ) {
   const row = el("div", "row"),
     input = el("input"),
@@ -442,9 +485,58 @@ function overlayToggle(
   text.prepend(input);
   row.append(text, el("span", "hint", hint));
   input.addEventListener("change", () => update(input.checked));
-  host.append(el("div", "rule"), row);
+  host.insertBefore(el("div", "rule"), before);
+  host.insertBefore(row, before);
   return input;
 }
+const anyKeyDismissesFoundPack = checkboxSetting(
+  "anyKeyDismissesFoundPack",
+  "Any key dismisses found pack",
+  "Press any key to continue past a found pack. When off, the Dismiss Found Pack keybind is used instead.",
+  (checked) => {
+    draft.anyKeyDismissesFoundPack = checked;
+  },
+  packHotkeySettings.host,
+  packHotkeySettings.host.querySelector(".hotkey-list"),
+);
+const autoSkipOpening = checkboxSetting(
+  "autoSkipOpening",
+  "Auto-skip on next pack",
+  "After using Next Pack with the mouse or a hotkey, press Skip once when the next pack appears. Requires Kosmora’s reveal hints. If a warning appears, choose how to continue.",
+  (checked) => {
+    draft.autoSkipOpening = checked;
+  },
+  packHotkeySettings.host,
+  packHotkeySettings.host.querySelector(".hotkey-list"),
+);
+const autoDismissFoundPack = checkboxSetting(
+  "autoDismissFoundPack",
+  "Auto-dismiss found pack",
+  "Automatically continue past the full-screen Rogue and Mega pack alerts. The found packs still appear on the summary above the cards.",
+  (checked) => {
+    draft.autoDismissFoundPack = checked;
+  },
+  packHotkeySettings.host,
+  packHotkeySettings.host.querySelector(".hotkey-list"),
+);
+const packDisplaySettings = el("div", "settings-group-independent");
+packHotkeySettings.host
+  .querySelector(".settings-group-heading")!
+  .after(packDisplaySettings);
+const showRemainingPackCount = checkboxSetting(
+  "showRemainingPackCount",
+  "Show remaining pack count",
+  "Show how many ready packs remain above Open the Next Pack.",
+  (checked) => {
+    draft.showRemainingPackCount = checked;
+    void persistFeature(
+      packHotkeySettings.host,
+      "showRemainingPackCount",
+      showRemainingPackCount,
+    );
+  },
+  packDisplaySettings,
+);
 function overlayPriceToggle(
   parent: HTMLInputElement,
   id: string,
@@ -467,7 +559,7 @@ function overlayPriceToggle(
   overlays.append(row);
   return input;
 }
-const auctionOverlay = overlayToggle(
+const auctionOverlay = checkboxSetting(
   "active-auctions-overlay",
   "Show active auctions icon on cards",
   "Red sale tag · current listings at the top right",
@@ -484,7 +576,7 @@ const listingPriceOverlay = overlayPriceToggle(
     draft.showLowestListingPriceOverlay = checked;
   },
 );
-const onSaleOverlay = overlayToggle(
+const onSaleOverlay = checkboxSetting(
   "on-sale-overlay",
   "Show For Sale label on cards",
   "Black and white label · you have a copy listed on the market",
@@ -492,7 +584,7 @@ const onSaleOverlay = overlayToggle(
     draft.showOnSaleOverlay = checked;
   },
 );
-const saleOverlay = overlayToggle(
+const saleOverlay = checkboxSetting(
   "sale-history-overlay",
   "Show sale history icon on cards",
   "Gavel · final sale prices in the last 30 days, at the top right",
@@ -509,7 +601,7 @@ const lastSalePriceOverlay = overlayPriceToggle(
     draft.showLastSalePriceOverlay = checked;
   },
 );
-const friendOverlay = overlayToggle(
+const friendOverlay = checkboxSetting(
   "friend-interest-overlay",
   "Show interested friends icon on cards",
   "Friends · matching saved family preferences",
@@ -517,7 +609,7 @@ const friendOverlay = overlayToggle(
     draft.showFriendInterestOverlay = checked;
   },
 );
-const questOverlay = overlayToggle(
+const questOverlay = checkboxSetting(
   "quest-overlay",
   "Show quest icon on cards",
   "Quest · belongs to any quest, followed or not",
@@ -539,37 +631,39 @@ const familyImpactEnabled = sectionToggle(
   "familyImpactOverlaysEnabled",
   "Enable family impact overlays",
 );
-const fusionFamilyOverlay = overlayToggle(
+const familyImpactBadgeHint =
+  "✓ Safe means no family loses a tier. ⚠ Loses shows the family and tier that would drop.";
+const fusionFamilyOverlay = checkboxSetting(
   "fusion-family-overlay",
-  "Show family impact on the Fusion page",
-  "Bottom left of each card, counting cards already chosen · ✓ Safe: no family loses a tier · ⚠ Loses: fusing it drops its family a tier",
+  "Show on Fusion page",
+  `Badges appear at the bottom left of each card. Checks count the cards already selected for fusion. ${familyImpactBadgeHint}`,
   (checked) => {
     draft.showFusionFamilyOverlay = checked;
   },
   familyImpact,
 );
-const tradeFamilyOverlay = overlayToggle(
+const tradeFamilyOverlay = checkboxSetting(
   "trade-family-overlay",
-  "Show family impact on the Trade page",
-  "Bottom left of your card choices · ✓ Safe: you keep every family tier · ⚠ Loses: trading your last copy drops a family tier. Uses the same family checks as Fusion.",
+  "Show on Trade page",
+  `Badges appear at the bottom left of your card choices. Checks assume you trade one copy. ${familyImpactBadgeHint}`,
   (checked) => {
     draft.showTradeFamilyOverlay = checked;
   },
   familyImpact,
 );
-const vortexFamilyOverlay = overlayToggle(
+const vortexFamilyOverlay = checkboxSetting(
   "vortex-family-overlay",
-  "Show family impact on the Vortex page",
-  "Bottom left of your stake cards and card picker · ✓ Safe: losing one copy keeps every family tier · ⚠ Loses: losing your last copy drops a family tier.",
+  "Show on Vortex page",
+  `Badges appear at the bottom left of stake cards and card picker choices. Checks assume you lose one copy. ${familyImpactBadgeHint}`,
   (checked) => {
     draft.showVortexFamilyOverlay = checked;
   },
   familyImpact,
 );
-const salesFamilyOverlay = overlayToggle(
+const salesFamilyOverlay = checkboxSetting(
   "sales-family-overlay",
-  "Show on sale screens",
-  "Check the whole selection as you pick cards in Sell Many, then show impact beneath each sale listing. Removing a listing recalculates the remaining batch.",
+  "Show on Sell pages",
+  `Badges appear on Sell Many card choices and beneath each sale listing. Checks update as you select cards or remove listings. ${familyImpactBadgeHint}`,
   (checked) => {
     draft.showSalesFamilyOverlay = checked;
   },
@@ -613,27 +707,26 @@ delay.addEventListener("input", () => {
   draft.hoverDelayMs = Number(delay.value);
 });
 const connection = el("section", "panel"),
+  connectionContent = el("div", "settings-group-content"),
   accountRow = el("div", "account-row"),
   select = el("select");
 select.setAttribute("aria-label", "Kosmora account");
-connection.append(
-  el("h2", "", "Connected Account"),
+connection.append(el("h2", "", "Connected Account"), connectionContent);
+connectionContent.append(
   el(
     "p",
     "sub",
     "Select the Kosmora account used for pinned albums. Keep a signed-in game tab open.",
   ),
 );
-accountRow.style.marginTop = "14px";
 const refresh = button(
   "Refresh accounts",
   () => void discover(),
   "ghost small",
 );
 accountRow.append(select, refresh);
-connection.append(accountRow);
 const connectionStatus = el("div");
-connection.append(connectionStatus);
+connectionContent.append(el("div", "rule"), accountRow, connectionStatus);
 connection.setAttribute("aria-label", "connected account");
 const albumSettings = el("section", "panel");
 albumSettings.append(
@@ -641,7 +734,7 @@ albumSettings.append(
   el(
     "p",
     "sub",
-    "Choose the albums that appear as shortcuts in the card tooltip.",
+    "Choose the albums that appear as shortcuts in the card tooltip. Set a shortcut in an album’s row to add the selected card while its tooltip is open. Use a letter, number, or F-key with optional Ctrl, Alt, Shift, or Meta. Escape cancels recording, and Clear removes the shortcut. Shortcuts pause while typing.",
   ),
 );
 const albumsEnabled = sectionToggle(
@@ -649,8 +742,6 @@ const albumsEnabled = sectionToggle(
   "pinnedAlbumsEnabled",
   "Enable pinned albums",
 );
-const albumAccount = el("p", "sub album-account");
-albumSettings.append(albumAccount);
 const grid = el("div", "grid"),
   catalogPanel = el("section", "panel"),
   pinnedPanel = el("section", "panel");
@@ -669,9 +760,12 @@ catalogPanel.append(search);
 const catalog = el("div", "album-list"),
   pins = el("div", "pin-list");
 catalogPanel.append(catalog);
+const albumShortcutHint = el("p", "sub");
+albumShortcutHint.setAttribute("aria-live", "polite");
 pinnedPanel.append(
   el("h2", "", "Pinned Shortcuts"),
   el("p", "sub", "Buttons appear in this order in the card tooltip."),
+  albumShortcutHint,
   pins,
 );
 grid.append(catalogPanel, pinnedPanel);
@@ -681,6 +775,7 @@ type SettingsGroup = {
   host: HTMLElement;
   name: string;
   keys: (keyof Settings)[];
+  validateSave?: (settings: Settings) => string | undefined;
   validate?: () => string | undefined;
   render: () => void;
 };
@@ -689,7 +784,7 @@ function groupControls(group: SettingsGroup) {
   const content = el("fieldset", "settings-group-content");
   content.setAttribute("aria-label", `${group.name} options`);
   for (const child of [...group.host.children])
-    if (!child.classList.contains("settings-group-heading"))
+    if (!child.matches(".settings-group-heading, .settings-group-independent"))
       content.append(child);
   group.host.append(content);
   renderGroupState(group.host);
@@ -697,12 +792,12 @@ function groupControls(group: SettingsGroup) {
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
   const save = button(
-    `Save ${group.name}`,
+    "Save",
     () => void persist(group, status, save),
-    "primary",
+    "primary settings-action",
   );
   const cancel = button(
-    `Cancel ${group.name} changes`,
+    "Cancel",
     () => {
       for (const key of group.keys)
         Object.assign(draft, { [key]: structuredClone(saved[key]) });
@@ -710,7 +805,7 @@ function groupControls(group: SettingsGroup) {
       renderGroupState(group.host);
       status.textContent = "Unsaved changes discarded.";
     },
-    "ghost",
+    "ghost settings-action",
   );
   const bar = el("div", "savebar"),
     actions = el("div", "save-actions");
@@ -768,7 +863,20 @@ groupControls({
   name: "hotkeys",
   keys: ["navigationHotkeysEnabled", "hotkeys"],
   render: renderSettings,
-  validate: () => hotkeyConflict(draft.hotkeys),
+  validateSave: validateShortcuts,
+});
+groupControls({
+  host: packHotkeySettings.host,
+  name: "pack openings",
+  keys: [
+    "packOpeningHotkeysEnabled",
+    "anyKeyDismissesFoundPack",
+    "autoSkipOpening",
+    "autoDismissFoundPack",
+    "packOpeningHotkeys",
+  ],
+  render: renderSettings,
+  validateSave: validateShortcuts,
 });
 groupControls({
   host: friendTooltipSettings.host,
@@ -780,14 +888,8 @@ groupControls({
 groupControls({
   host: socialSettings,
   name: "social reminder settings",
-  keys: ["socialRemindersEnabled", "socialRemindersPinned"],
-  render: renderSettings,
-});
-groupControls({
-  host: profileSettings,
-  name: "profile reminder settings",
-  keys: ["profileRemindersEnabled", "profileRemindersPinned"],
-  render: renderSettings,
+  keys: reminderControls.map(({ pinnedKey }) => pinnedKey),
+  render: renderReminderSettings,
 });
 groupControls({
   host: tradeSettings.host,
@@ -847,7 +949,8 @@ groupControls({
 groupControls({
   host: albumSettings,
   name: "album shortcuts",
-  keys: ["pinnedAlbumsEnabled", "pinnedAlbums"],
+  keys: ["pinnedAlbumsEnabled", "pinnedAlbums", "pinnedAlbumHotkeys"],
+  validateSave: validateShortcuts,
   render: () => {
     albumsEnabled.checked = draft.pinnedAlbumsEnabled;
     renderAlbums();
@@ -901,7 +1004,7 @@ const settingsGroups = [
     id: "family-impact-overlay",
     label: "Family Impact Overlay",
     host: familyImpact,
-    path: "M12 3 3 8l9 5 9-5-9-5Z M3 12l9 5 9-5 M3 16l9 5 9-5",
+    path: "M10.3 4.9a2 2 0 0 1 3.4 0l8.1 13.5a1.7 1.7 0 0 1-1.5 2.6H3.7a1.7 1.7 0 0 1-1.5-2.6Z M12 9v4 M12 17h.01",
   },
   {
     id: "friend-tooltip",
@@ -913,13 +1016,7 @@ const settingsGroups = [
     id: "social-reminders",
     label: "Social Reminders",
     host: socialSettings,
-    path: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-4 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
-  },
-  {
-    id: "profile-reminders",
-    label: "Profile Reminders",
-    host: profileSettings,
-    path: "M4 3h16v18H4Z M8 15h8 M8 18h5 M15 8a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z",
+    path: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z M10 21a2 2 0 0 0 4 0",
   },
   {
     id: "trade-reminders",
@@ -938,6 +1035,12 @@ const settingsGroups = [
     label: "Navigation Hotkeys",
     host: hotkeySettings.host,
     path: "M3 5h18v14H3Z M7 9h.01 M11 9h.01 M15 9h.01 M7 12h.01 M11 12h.01 M15 12h.01 M7 15h10",
+  },
+  {
+    id: "pack-opening-hotkeys",
+    label: "Pack Openings",
+    host: packHotkeySettings.host,
+    path: "M6.9 5.3 15.9 2a1.5 1.5 0 0 1 1.9.9l5.1 14a1.5 1.5 0 0 1-.9 1.9l-9 3.3a1.5 1.5 0 0 1-1.9-.9L6 7.2a1.5 1.5 0 0 1 .9-1.9Z M4.5 11.5 2 16.5a1.5 1.5 0 0 0 .7 2L7 20.6 M13.2 8.4l3.6 2.8-1.1 4.5-3.7-2.9Z",
   },
   {
     id: "backup-restore",
@@ -966,15 +1069,18 @@ app.append(
   ),
 );
 function renderSettings() {
-  socialEnabled.checked = draft.socialRemindersEnabled;
-  socialPinned.checked = draft.socialRemindersPinned;
+  socialRemindersMaster.checked = draft.socialRemindersMasterEnabled;
+  renderReminderSettings();
   tradeEnabled.checked = draft.tradeRemindersEnabled;
   tradeSettings.render(draft);
-  profileEnabled.checked = draft.profileRemindersEnabled;
-  profilePinned.checked = draft.profileRemindersPinned;
   friendTooltipEnabled.checked = draft.friendTooltipEnabled;
   friendTooltipSettings.render(draft);
   hotkeysEnabled.checked = draft.navigationHotkeysEnabled;
+  packHotkeysEnabled.checked = draft.packOpeningHotkeysEnabled;
+  anyKeyDismissesFoundPack.checked = draft.anyKeyDismissesFoundPack;
+  autoSkipOpening.checked = draft.autoSkipOpening;
+  autoDismissFoundPack.checked = draft.autoDismissFoundPack;
+  showRemainingPackCount.checked = draft.showRemainingPackCount;
   overlaysEnabled.checked = draft.cardOverlaysEnabled;
   familyImpactEnabled.checked = draft.familyImpactOverlaysEnabled;
   salesEnabled.checked = draft.salesOverlaysEnabled;
@@ -1011,11 +1117,11 @@ function renderSettings() {
   familyBlacklistSettings.render(draft);
   statSettings.render(draft.stats);
   hotkeySettings.render(draft.hotkeys);
+  packHotkeySettings.render(draft.packOpeningHotkeys);
   salesSettings.render(draft);
   for (const host of [
     general,
     friendTooltipSettings.host,
-    profileSettings,
     socialSettings,
     tradeSettings.host,
     albumSettings,
@@ -1024,6 +1130,7 @@ function renderSettings() {
     familyImpact,
     salesSettings.host,
     hotkeySettings.host,
+    packHotkeySettings.host,
   ])
     renderGroupState(host);
 }
@@ -1031,16 +1138,55 @@ function pinned() {
   return selected ? (draft.pinnedAlbums[selected.account.key] ?? []) : [];
 }
 function setPins(ids: string[]) {
-  if (selected) draft.pinnedAlbums[selected.account.key] = ids;
+  if (selected) {
+    const key = selected.account.key;
+    draft.pinnedAlbums = { ...draft.pinnedAlbums, [key]: ids };
+    for (const id of Object.keys(draft.pinnedAlbumHotkeys[key] ?? {}))
+      if (!ids.includes(id)) setAlbumShortcut(key, id, undefined);
+  }
   renderAlbums();
 }
+function setAlbumShortcut(
+  account: string,
+  id: string,
+  shortcut: Shortcut | undefined,
+) {
+  const bindings = { ...draft.pinnedAlbumHotkeys[account] };
+  if (shortcut) bindings[id] = shortcut;
+  else delete bindings[id];
+  draft.pinnedAlbumHotkeys = {
+    ...draft.pinnedAlbumHotkeys,
+    [account]: bindings,
+  };
+  if (!Object.keys(bindings).length) delete draft.pinnedAlbumHotkeys[account];
+}
+function validateShortcuts(next: Settings) {
+  return hotkeyConflict(
+    next.hotkeys,
+    next.packOpeningHotkeys,
+    next.pinnedAlbumHotkeys,
+    new Map(albums.map(({ id, name }) => [id, name])),
+  );
+}
+const ALBUM_ACCOUNT_SETTINGS = ["pinnedAlbums", "pinnedAlbumHotkeys"] as const;
+function changedAlbumAccounts() {
+  const accounts = new Set([
+    ...Object.keys(saved.pinnedAlbums),
+    ...Object.keys(draft.pinnedAlbums),
+  ]);
+  return [...accounts].filter((account) =>
+    ALBUM_ACCOUNT_SETTINGS.some(
+      (key) =>
+        JSON.stringify(draft[key][account]) !==
+        JSON.stringify(saved[key][account]),
+    ),
+  );
+}
 function renderAlbums() {
-  albumAccount.textContent = selected
-    ? `Albums for ${selected.account.handle}. Change the connected account below.`
-    : "Select a connected account below to choose its albums.";
   const ids = pinned();
   catalog.replaceChildren();
   pins.replaceChildren();
+  albumShortcutHint.textContent = "";
   if (!selected) {
     catalog.append(
       el("p", "empty", "Connect a signed-in Kosmora tab to see your albums."),
@@ -1083,9 +1229,10 @@ function renderAlbums() {
           : "No albums are available for this account.",
       ),
     );
+  const account = selected.account.key;
   ids.forEach((id, index) => {
     const album = albums.find((a) => a.id === id),
-      row = el("div", "album-row"),
+      row = el("div", "album-row pinned-album-row"),
       name = el("div", "album-name");
     name.append(
       el("span", "rank", String(index + 1).padStart(2, "0")),
@@ -1116,16 +1263,27 @@ function renderAlbums() {
       actions.append(b);
     }
     const remove = button(
-      "×",
+      "",
       () => setPins(ids.filter((x) => x !== id)),
       "small ghost",
     );
+    remove.append(headerIcon("close"));
     remove.setAttribute(
       "aria-label",
       `Unpin ${album?.name ?? "unavailable album"}`,
     );
     actions.append(remove);
-    row.append(name, actions);
+    row.append(
+      name,
+      actions,
+      shortcutControls(
+        id,
+        album?.name ?? "unavailable album",
+        draft.pinnedAlbumHotkeys[account]?.[id],
+        (shortcut) => setAlbumShortcut(account, id, shortcut),
+        albumShortcutHint,
+      ),
+    );
     pins.append(row);
   });
   if (!ids.length)
@@ -1242,15 +1400,40 @@ async function persist(
   const values = Object.fromEntries(
     group.keys.map((key) => [key, structuredClone(draft[key])]),
   );
+  const albumAccounts =
+    group.host === albumSettings ? changedAlbumAccounts() : undefined;
   try {
     const next = await queueSettingsWrite(async () => {
       const next = await readSettings();
+      if (albumAccounts) {
+        // Save the changed accounts' pins and bindings together while retaining other accounts.
+        for (const key of ALBUM_ACCOUNT_SETTINGS) {
+          const edited = values[key] as Record<string, unknown>;
+          const merged: Record<string, unknown> = { ...next[key] };
+          for (const account of albumAccounts) delete merged[account];
+          values[key] = {
+            ...merged,
+            ...Object.fromEntries(
+              albumAccounts
+                .filter((account) => Object.hasOwn(edited, account))
+                .map((account) => [account, edited[account]]),
+            ),
+          };
+        }
+      }
       Object.assign(next, values);
+      const conflict = group.validateSave?.(next);
+      if (conflict) throw new Error(conflict);
       await saveSettings(next);
       return next;
     });
     for (const key of group.keys)
       Object.assign(saved, { [key]: structuredClone(next[key]) });
+    if (albumAccounts) {
+      for (const key of ALBUM_ACCOUNT_SETTINGS)
+        Object.assign(draft, { [key]: structuredClone(next[key]) });
+      renderAlbums();
+    }
     status.className = "status success";
     status.textContent = "Saved. Changes apply to open Kosmora tabs.";
   } catch (error) {
@@ -1263,8 +1446,11 @@ async function persist(
     backupSettings.refreshControls();
   }
 }
-async function persistFeature(host: HTMLElement) {
-  const { key, input } = featureGroups.get(host)!;
+async function persistFeature(
+  host: HTMLElement,
+  key: FeatureKey,
+  input: HTMLInputElement,
+) {
   if (!settingsReady || savingGroups.has(host)) return;
   const value = input.checked;
   const status = host.querySelector<HTMLElement>(":scope > .savebar .status")!;
@@ -1318,6 +1504,18 @@ chrome.storage.onChanged.addListener((changes, area) => {
     input.checked = draft[key];
     renderGroupState(host);
   }
+  for (const [key, input] of [
+    ["anyKeyDismissesFoundPack", anyKeyDismissesFoundPack],
+    ["autoSkipOpening", autoSkipOpening],
+    ["autoDismissFoundPack", autoDismissFoundPack],
+    ["showRemainingPackCount", showRemainingPackCount],
+  ] as const) {
+    if (draft[key] === saved[key]) {
+      draft[key] = next[key];
+      input.checked = next[key];
+    }
+    saved[key] = next[key];
+  }
   for (const { field, input } of popupInputs) {
     if (field !== "popupWidth" && field !== "popupHeight") continue;
     if (draft[field] === saved[field]) {
@@ -1335,11 +1533,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
     saved[field] = next[field];
   }
-  for (const [field, input] of [
-    ...tradeSettings.inputs.map(({ field, input }) => [field, input] as const),
-    ["profileRemindersPinned", profilePinned],
-    ["socialRemindersPinned", socialPinned],
-  ] as const) {
+  for (const { enabledKey, pinnedKey } of reminderControls) {
+    for (const key of [enabledKey, pinnedKey]) {
+      if (draft[key] === saved[key]) draft[key] = next[key];
+      saved[key] = next[key];
+    }
+  }
+  for (const { field, input } of tradeSettings.inputs) {
     if (draft[field] === saved[field]) {
       draft[field] = next[field];
       input.checked = next[field];
@@ -1353,8 +1553,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
     saved[field] = next[field];
   }
-  renderGroupState(profileSettings);
-  renderGroupState(socialSettings);
+  renderReminderSettings();
   tradeSettings.render(draft);
   renderGroupState(tradeSettings.host);
   saved.friendTooltipPosition = next.friendTooltipPosition;

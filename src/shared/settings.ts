@@ -1,6 +1,10 @@
 import type { Settings } from "./types";
 import { defaultStats, parseStats } from "./stat-catalog";
-import { parseHotkeys } from "./hotkeys";
+import {
+  parseHotkeys,
+  parsePackOpeningHotkeys,
+  parsePinnedAlbumHotkeys,
+} from "./hotkeys";
 import { parsePopupPosition } from "./popup-layout";
 import { validSaleAdjustment } from "./sales-prices";
 import { normalizeFamilyTokens } from "./friend-reminders";
@@ -13,6 +17,7 @@ export const defaults = (): Settings => ({
   useOverlayButtonInsteadOfHover: false,
   outsideClickClosesTooltipOnly: false,
   fullScreenCenteredOnOpen: false,
+  socialRemindersMasterEnabled: true,
   profileRemindersEnabled: true,
   profileRemindersPinned: false,
   socialRemindersEnabled: true,
@@ -34,6 +39,11 @@ export const defaults = (): Settings => ({
   friendTooltipHeight: 560,
   friendTooltipPosition: null,
   navigationHotkeysEnabled: true,
+  packOpeningHotkeysEnabled: false,
+  anyKeyDismissesFoundPack: true,
+  autoSkipOpening: false,
+  autoDismissFoundPack: false,
+  showRemainingPackCount: true,
   cardOverlaysEnabled: true,
   disableCardOverlaysInPulsar: false,
   disableCardOverlaysInVortex: false,
@@ -72,7 +82,9 @@ export const defaults = (): Settings => ({
   showVortexFamilyOverlay: true,
   stats: defaultStats(),
   hotkeys: {},
+  packOpeningHotkeys: {},
   pinnedAlbums: {},
+  pinnedAlbumHotkeys: {},
 });
 export function parseSettings(value: unknown): Settings {
   const d = defaults();
@@ -81,6 +93,10 @@ export function parseSettings(value: unknown): Settings {
   if (v.schemaVersion !== 1) return d;
   d.stats = parseStats(v.stats);
   d.hotkeys = parseHotkeys(v.hotkeys);
+  d.packOpeningHotkeys = parsePackOpeningHotkeys(
+    v.packOpeningHotkeys,
+    d.hotkeys,
+  );
   d.popupPosition = parsePopupPosition(v.popupPosition);
   d.friendTooltipPosition = parsePopupPosition(v.friendTooltipPosition);
   if (
@@ -105,6 +121,7 @@ export function parseSettings(value: unknown): Settings {
     "useOverlayButtonInsteadOfHover",
     "outsideClickClosesTooltipOnly",
     "fullScreenCenteredOnOpen",
+    "socialRemindersMasterEnabled",
     "profileRemindersEnabled",
     "profileRemindersPinned",
     "socialRemindersEnabled",
@@ -122,6 +139,11 @@ export function parseSettings(value: unknown): Settings {
     "showSalesFamilyOverlay",
     "friendTooltipEnabled",
     "navigationHotkeysEnabled",
+    "packOpeningHotkeysEnabled",
+    "anyKeyDismissesFoundPack",
+    "autoSkipOpening",
+    "autoDismissFoundPack",
+    "showRemainingPackCount",
     "cardOverlaysEnabled",
     "salesOverlaysEnabled",
     "showSalesLastSale",
@@ -197,6 +219,12 @@ export function parseSettings(value: unknown): Settings {
           ].slice(0, 200),
         });
     }
+  d.pinnedAlbumHotkeys = parsePinnedAlbumHotkeys(
+    v.pinnedAlbumHotkeys,
+    d.pinnedAlbums,
+    d.hotkeys,
+    d.packOpeningHotkeys,
+  );
   return d;
 }
 export async function readSettings(): Promise<Settings> {

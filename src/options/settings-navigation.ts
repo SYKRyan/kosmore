@@ -29,6 +29,9 @@ export function settingsNavigation(
     const path = document.createElementNS(svg.namespaceURI, "path");
     path.setAttribute("d", group.path);
     svg.append(path);
+    const heading = group.host.querySelector("h2")!;
+    heading.classList.add("settings-group-title");
+    heading.prepend(svg.cloneNode(true));
     link.append(svg, el("span", "nav-label", group.label));
     nav.append(link);
     return link;
@@ -44,6 +47,10 @@ export function settingsNavigation(
     });
     if (bottom) current = groups.length - 1;
     links.forEach((link, index) => {
+      groups[index].host.classList.toggle(
+        "settings-group-current",
+        index === current,
+      );
       if (index === current) link.setAttribute("aria-current", "location");
       else link.removeAttribute("aria-current");
     });

@@ -15,6 +15,7 @@ import { launchTestBrowser } from "./browser";
 import { socialFixture } from "../fixtures/social";
 import { familyCatalog } from "../fixtures/families";
 import { NAVIGATION } from "../../src/shared/hotkeys";
+import { packOpeningFixture } from "../fixtures/pack-opening";
 import { vortexFixture } from "../fixtures/vortex";
 import {
   batchSellRow,
@@ -208,6 +209,13 @@ test.beforeAll(async () => {
       });
       return;
     }
+    if (path === "/packs/open" && url.searchParams.has("packHotkeys")) {
+      await route.fulfill({
+        contentType: "text/html",
+        body: packOpeningFixture(url.searchParams.get("revealHints") !== "off"),
+      });
+      return;
+    }
     await route.fulfill({
       contentType: "text/html",
       body: fixture(
@@ -347,14 +355,14 @@ test("Vortex exclusions: settings follow Pulsar controls and independently save,
     await overlayToggle.check();
     await overlayGroup
       .getByRole("button", {
-        name: "Cancel overlay settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
     await expect(overlayToggle).not.toBeChecked();
     await overlayToggle.check();
     await overlayGroup
-      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(overlay).toHaveCount(0);
     await expect(popup).toBeVisible();
@@ -362,15 +370,13 @@ test("Vortex exclusions: settings follow Pulsar controls and independently save,
     await hoverToggle.check();
     await hoverGroup
       .getByRole("button", {
-        name: "Cancel tooltip settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
     await expect(hoverToggle).not.toBeChecked();
     await hoverToggle.check();
-    await hoverGroup
-      .getByRole("button", { name: "Save tooltip settings", exact: true })
-      .click();
+    await hoverGroup.getByRole("button", { name: "Save", exact: true }).click();
     await expect(popup).toHaveCount(0);
     await options.reload();
     await expect(hoverToggle).toBeChecked();
@@ -465,22 +471,20 @@ test("Pulsar: independent options save, cancel and hide their feature in open ta
     await overlayToggle.check();
     await overlayGroup
       .getByRole("button", {
-        name: "Cancel overlay settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
     await expect(overlayToggle).not.toBeChecked();
     await overlayToggle.check();
     await overlayGroup
-      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(overlay).toHaveCount(0);
     await expect(popup).toBeVisible();
     await expect(popup.locator(".quest")).toHaveCount(0);
     await hoverToggle.check();
-    await hoverGroup
-      .getByRole("button", { name: "Save tooltip settings", exact: true })
-      .click();
+    await hoverGroup.getByRole("button", { name: "Save", exact: true }).click();
     await expect(popup).toHaveCount(0);
     await page.mouse.move(0, 0);
     await page.locator(".kc-article").hover();
@@ -701,15 +705,13 @@ test("overlay button: setting defaults off, cancels drafts, saves independently,
     await toggle.check();
     await group
       .getByRole("button", {
-        name: "Cancel tooltip settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
     await expect(toggle).not.toBeChecked();
     await toggle.check();
-    await group
-      .getByRole("button", { name: "Save tooltip settings", exact: true })
-      .click();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
     await expect(tooltipButton()).toBeVisible();
     await options.reload();
     await expect(toggle).toBeChecked();
@@ -723,9 +725,7 @@ test("overlay button: setting defaults off, cancels drafts, saves independently,
       .check();
     await expect(tooltipButton()).toBeVisible();
     await toggle.uncheck();
-    await group
-      .getByRole("button", { name: "Save tooltip settings", exact: true })
-      .click();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
     await expect(tooltipButtonLayer()).toHaveCount(0);
     await page.locator(".kc-article").hover();
     await expect(page.locator("#kosmore-root")).toBeVisible();
@@ -1025,15 +1025,13 @@ test("outside dismissal: preference defaults off, cancels, saves and applies to 
     await toggle.check();
     await group
       .getByRole("button", {
-        name: "Cancel tooltip settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
     await expect(toggle).not.toBeChecked();
     await toggle.check();
-    await group
-      .getByRole("button", { name: "Save tooltip settings", exact: true })
-      .click();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
     await expect(group.getByRole("status")).toContainText("Saved.");
     await options.reload();
     await expect(toggle).toBeChecked();
@@ -1241,7 +1239,7 @@ test("mobile friendly: subgroup contains all three opt-in settings and supports 
     ).toBeDisabled();
     await group
       .getByRole("button", {
-        name: "Cancel tooltip settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
@@ -1256,9 +1254,7 @@ test("mobile friendly: subgroup contains all three opt-in settings and supports 
       .getByLabel("Outside Click Closes Tooltip Only", { exact: true })
       .check();
     await full.check();
-    await group
-      .getByRole("button", { name: "Save tooltip settings", exact: true })
-      .click();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
     await expect(tooltipButton()).toBeVisible();
     await tooltipButton().click();
     await expect(page.locator("#kosmore-root")).toHaveAttribute(
@@ -1676,8 +1672,9 @@ test("the opt-in album setting saves, cancels and closes a pinned tooltip only a
     await expect(pinnedToggle).toBeEnabled();
     await pinnedToggle.check();
     await options
+      .locator("#hover-tooltip")
       .getByRole("button", {
-        name: "Cancel tooltip settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
@@ -1697,7 +1694,8 @@ test("the opt-in album setting saves, cancels and closes a pinned tooltip only a
     await toggle.check();
     await expect(pinnedToggle).toBeEnabled();
     await options
-      .getByRole("button", { name: "Save tooltip settings", exact: true })
+      .locator("#hover-tooltip")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(
       options
@@ -1947,6 +1945,692 @@ test("popup stays inside a narrow viewport and works above an open native dialog
   await expect(page.locator("dialog")).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1000 });
 });
+test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", async () => {
+  const options = await context.newPage();
+  try {
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#pack-opening-hotkeys`,
+    );
+    const pack = options.locator("#pack-opening-hotkeys");
+    const nav = options.locator("#navigation-hotkeys");
+    const record = pack.getByRole("button", {
+      name: "Set shortcut for Next Card",
+      exact: true,
+    });
+    const save = pack.getByRole("button", {
+      name: "Save",
+      exact: true,
+    });
+    const toggle = pack.getByRole("switch", {
+      name: "Enable pack opening hotkeys",
+    });
+    const anyKey = pack.getByRole("checkbox", {
+      name: "Any key dismisses found pack",
+    });
+    const autoSkip = pack.getByRole("checkbox", {
+      name: "Auto-skip on next pack",
+    });
+    const autoDismiss = pack.getByRole("checkbox", {
+      name: "Auto-dismiss found pack",
+    });
+    await expect(toggle).not.toBeChecked();
+    await expect(anyKey).toBeChecked();
+    await expect(autoSkip).not.toBeChecked();
+    await expect(autoDismiss).not.toBeChecked();
+    await expect(anyKey).toBeDisabled();
+    await toggle.check();
+    await expect(anyKey).toBeEnabled();
+    await anyKey.uncheck();
+    await autoSkip.check();
+    await autoDismiss.check();
+    await pack.getByRole("button", { name: "Cancel" }).click();
+    await expect(anyKey).toBeChecked();
+    await expect(autoSkip).not.toBeChecked();
+    await expect(autoDismiss).not.toBeChecked();
+    await anyKey.uncheck();
+    await autoSkip.check();
+    await autoDismiss.check();
+    await save.click();
+    await expect(pack.locator(".savebar .status")).toContainText("Saved");
+    await options.reload();
+    await expect(toggle).toBeChecked();
+    await expect(anyKey).not.toBeChecked();
+    await expect(autoSkip).toBeChecked();
+    await expect(autoDismiss).toBeChecked();
+    await expect(
+      pack.getByRole("button", {
+        name: "Set shortcut for Next Pack/Back to Packs",
+        exact: true,
+      }),
+    ).toHaveText("Not set");
+    await expect(record).toHaveText("Not set");
+    await record.click();
+    await record.press("ArrowRight");
+    await expect(record).toHaveText("Arrow Right");
+    await pack.getByRole("button", { name: "Cancel" }).click();
+    await expect(record).toHaveText("Not set");
+    const home = nav.getByRole("button", {
+      name: "Set shortcut for Home",
+      exact: true,
+    });
+    await home.click();
+    await home.press("h");
+    await nav.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(nav.getByRole("status")).toContainText("Saved");
+    await record.click();
+    await record.press("h");
+    await save.click();
+    await expect(pack.locator(".savebar .status")).toContainText("both use H");
+    await record.click();
+    await record.press("ArrowRight");
+    await save.click();
+    await expect(pack.locator(".savebar .status")).toContainText("Saved");
+    await toggle.uncheck();
+    await expect(record).toBeDisabled();
+    await expect(pack.locator(".savebar .status")).toContainText("Saved");
+    await options.reload();
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await expect(record).toBeEnabled();
+    await expect(record).toHaveText("Arrow Right");
+    await pack
+      .getByRole("button", { name: "Clear shortcut for Next Card" })
+      .click();
+    await save.click();
+    await expect(pack.locator(".savebar .status")).toContainText("Saved");
+    await options.reload();
+    await expect(record).toHaveText("Not set");
+  } finally {
+    await options.close();
+  }
+});
+
+test("Pack Openings shows the ready-pack count above the native Next Pack button", async () => {
+  const path = "**/api/packs/inventory";
+  const nextId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  await page.route(path, (route) =>
+    route.fulfill({
+      json: {
+        packs: [
+          { status: "ready", openingId: OPENING },
+          { status: "ready", openingId: nextId },
+          { status: "ready", openingId: nextId },
+          {
+            status: "ready",
+            openingId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+          },
+          {
+            status: "crafting",
+            openingId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          },
+        ],
+      },
+    }),
+  );
+  const options = await context.newPage();
+  try {
+    await page.goto(
+      `https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1`,
+    );
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator(".ko-beat-shown")).toBeVisible();
+    await page.keyboard.press("ArrowRight");
+    const count = page.locator(
+      ".op-actions-stack > .ko-mega-progress:has(+ button)",
+    );
+    await expect(count).toHaveText("2 packs remaining");
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#pack-opening-hotkeys`,
+    );
+    const pack = options.getByRole("region", {
+      name: "pack openings",
+      exact: true,
+    });
+    await expect(
+      pack.getByRole("switch", { name: "Enable pack opening hotkeys" }),
+    ).not.toBeChecked();
+    const setting = pack.getByRole("checkbox", {
+      name: "Show remaining pack count",
+    });
+    await expect(setting).toBeChecked();
+    await setting.uncheck();
+    await expect(count).toHaveCount(0);
+    await setting.check();
+    await expect(count).toHaveText("2 packs remaining");
+    await page.bringToFront();
+    const prompt = page.getByRole("button", { name: "Continue", exact: true });
+    await prompt.click();
+    await prompt.click();
+    await page
+      .getByRole("button", { name: "Open the next pack", exact: true })
+      .click();
+    await expect(
+      page.getByRole("link", { name: "Back to Packs", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator("[data-kosmore-remaining-packs]")).toHaveCount(0);
+  } finally {
+    await options.close();
+    await page.unroute(path);
+  }
+});
+
+test("pinned album hotkeys record in the album row and use the available tooltip button", async () => {
+  await page.goto("https://kosmora.io/collection");
+  const options = await context.newPage();
+  try {
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#pinned-albums`,
+    );
+    const pins = options.getByRole("region", {
+      name: "album shortcuts",
+      exact: true,
+    });
+    const album = pins.getByRole("button", {
+      name: "Set shortcut for Space & discovery",
+      exact: true,
+    });
+    const other = pins.getByRole("button", {
+      name: "Set shortcut for Favourites",
+      exact: true,
+    });
+    const save = pins.getByRole("button", { name: "Save", exact: true });
+    await expect(album).toHaveText("Not set");
+    await album.click();
+    await album.press("j");
+    await other.click();
+    await other.press("j");
+    await save.click();
+    await expect(pins.locator(".savebar .status")).toContainText("both use J");
+    await pins
+      .getByRole("button", {
+        name: "Clear shortcut for Favourites",
+        exact: true,
+      })
+      .click();
+    await save.click();
+    await expect(pins.locator(".savebar .status")).toContainText("Saved");
+    await options.reload();
+    await expect(album).toHaveText("J");
+    const nav = options.locator("#navigation-hotkeys");
+    const home = nav.getByRole("button", {
+      name: "Set shortcut for Home",
+      exact: true,
+    });
+    await home.click();
+    await home.press("j");
+    await nav.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(nav.locator(".savebar .status")).toContainText(
+      "Space & discovery both use J",
+    );
+
+    await page.bringToFront();
+    await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+    await page.keyboard.press("j");
+    expect(writeRequests).toBe(0);
+    await page.locator(".ko-grid-open").nth(1).hover();
+    const popup = page.locator("#kosmore-root");
+    await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_B);
+    await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+    await popup.getByRole("tab", { name: "Notes", exact: true }).click();
+    const notes = popup.getByRole("textbox", {
+      name: "Card notes",
+      exact: true,
+    });
+    await notes.click();
+    await page.keyboard.press("j");
+    await expect(notes).toHaveValue("j");
+    expect(writeRequests).toBe(0);
+    await notes.fill("");
+    await popup.getByRole("tab", { name: "Market", exact: true }).click();
+    await page.keyboard.press("j");
+    await expect(
+      popup.getByRole("button", { name: /Space & discovery.*Already added/ }),
+    ).toBeDisabled();
+    await page.keyboard.press("j");
+    expect(writeRequests).toBe(1);
+    await pins
+      .getByRole("button", {
+        name: "Clear shortcut for Space & discovery",
+        exact: true,
+      })
+      .click();
+    await save.click();
+    await expect(pins.locator(".savebar .status")).toContainText("Saved");
+    await options.reload();
+    await expect(album).toHaveText("Not set");
+  } finally {
+    await options.close();
+  }
+});
+
+test("auto-skip on next pack works by mouse and hotkey and leaves rare-pack warnings in place", async () => {
+  await worker.evaluate(async () => {
+    const key = "kosmore.settings";
+    const saved = (await chrome.storage.local.get(key))[key] as object;
+    await chrome.storage.local.set({
+      [key]: {
+        ...saved,
+        packOpeningHotkeysEnabled: true,
+        autoSkipOpening: true,
+        packOpeningHotkeys: {
+          nextPack: {
+            code: "KeyN",
+            ctrl: false,
+            alt: false,
+            shift: false,
+            meta: false,
+          },
+        },
+      },
+    });
+  });
+  const body = page.locator("body");
+  const ready = page.locator("#kosmore-pack-hotkeys-style");
+  const nextPack = page.getByRole("button", {
+    name: "Open the next pack",
+    exact: true,
+  });
+  const protectedId = "92f1841b-cd1e-439b-a309-6b9db2aa9c46";
+  const showSummary = async (
+    id: string,
+    nextSkipCase = "normal",
+    nextRevealHints = "on",
+  ) => {
+    await page.goto(
+      `https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1&autoSkipCase=normal&nextOpening=${id}&nextSkipCase=${nextSkipCase}&nextRevealHints=${nextRevealHints}`,
+    );
+    await expect(ready).toHaveCount(1);
+    await expect(page.locator(".ko-pack-ready")).toBeVisible();
+    await expect(body).not.toHaveAttribute("data-skip", "1");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator(".ko-beat-shown")).toBeVisible();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator(".ko-drop")).toBeVisible();
+    await page.keyboard.press("d");
+    await page.keyboard.press("d");
+    await expect(page.locator(".ko-drop")).toHaveCount(0);
+  };
+  await showSummary(protectedId, "protected");
+  await nextPack.click();
+  await expect(page.getByTestId("skip-note")).toBeVisible();
+  await expect(body).toHaveAttribute("data-skip", "1");
+
+  // The game can remove the warning and rerender the reveal. That must
+  // never cause a second automatic click for the same opening.
+  await page.evaluate(async () => {
+    document.querySelector("[data-testid='skip-note']")!.remove();
+    const scene = document.querySelector("main")!;
+    scene.replaceWith(scene.cloneNode(true));
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+  });
+  await expect(body).toHaveAttribute("data-skip", "1");
+  await expect(page.locator(".ko-summary")).toHaveCount(0);
+
+  await page.reload();
+  await expect(ready).toHaveCount(1);
+  await expect(body).not.toHaveAttribute("data-skip", "1");
+  await expect(page.getByTestId("skip-note")).toHaveCount(0);
+
+  await showSummary("a2f1841b-cd1e-439b-a309-6b9db2aa9c46");
+  await page.keyboard.press("n");
+  await expect(body).toHaveAttribute("data-skip", "1");
+  await expect(page.locator(".ko-summary")).toBeVisible();
+
+  await showSummary("32f1841b-cd1e-439b-a309-6b9db2aa9c46", "normal", "off");
+  await page.keyboard.press("n");
+  await expect(page.locator(".ko-pack-ready")).toBeVisible();
+  await expect(body).not.toHaveAttribute("data-skip", "1");
+});
+
+test("auto-dismiss closes both found-pack alerts while keeping both summary notices", async () => {
+  await worker.evaluate(async () => {
+    const key = "kosmore.settings";
+    const saved = (await chrome.storage.local.get(key))[key] as object;
+    await chrome.storage.local.set({
+      [key]: { ...saved, packOpeningHotkeysEnabled: true },
+    });
+  });
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1`);
+  await expect(page.locator("#kosmore-pack-hotkeys-style")).toHaveCount(1);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".ko-beat-shown")).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".ko-drop-rogue")).toBeVisible();
+  await expect(page.locator("body")).not.toHaveAttribute("data-dismiss", /.+/);
+
+  await worker.evaluate(async () => {
+    const key = "kosmore.settings";
+    const saved = (await chrome.storage.local.get(key))[key] as object;
+    await chrome.storage.local.set({
+      [key]: { ...saved, autoDismissFoundPack: true },
+    });
+  });
+  await expect(page.locator(".ko-drop")).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-dismiss", "2");
+  const notices = page.getByRole("list", { name: "Found packs" });
+  await expect(notices.getByText("Rogue Pack", { exact: true })).toBeVisible();
+  await expect(notices.getByText("Mega Pack", { exact: true })).toBeVisible();
+  await page.locator(".ko-grid-open").first().click();
+  await expect(page.locator("dialog")).toBeVisible();
+});
+
+test("pack hotkeys dismiss found packs with an unassigned key by default", async () => {
+  await worker.evaluate(async () => {
+    const key = "kosmore.settings";
+    const saved = (await chrome.storage.local.get(key))[key] as object;
+    await chrome.storage.local.set({
+      [key]: {
+        ...saved,
+        packOpeningHotkeysEnabled: true,
+        hotkeys: {
+          home: {
+            code: "KeyH",
+            ctrl: false,
+            alt: false,
+            shift: false,
+            meta: false,
+          },
+        },
+      },
+    });
+  });
+  const url = `https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1`;
+  await page.goto(url);
+  await expect(page.locator("#kosmore-pack-hotkeys-style")).toHaveCount(1);
+  for (let press = 0; press < 3; press++) {
+    await page.keyboard.press("ArrowRight");
+    if (press === 1) await expect(page.locator(".ko-beat-shown")).toBeVisible();
+  }
+  await expect(page.locator(".ko-drop")).toBeVisible();
+  await page.keyboard.press("Shift");
+  await expect(page.locator("body")).not.toHaveAttribute("data-dismiss", "1");
+  await page.keyboard.down("Escape");
+  await page.keyboard.down("Escape");
+  await page.keyboard.up("Escape");
+  await expect(page.locator("body")).toHaveAttribute("data-dismiss", "1");
+  await page.keyboard.press("h");
+  await expect(page.locator(".ko-drop")).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-dismiss", "2");
+  await expect(page).toHaveURL(url);
+});
+
+test("pack hotkeys use native controls and keep card inspection on keyboard focus", async () => {
+  await worker.evaluate(async () => {
+    const key = "kosmore.settings";
+    const saved = (await chrome.storage.local.get(key))[key] as object;
+    const codes = {
+      nextCard: "ArrowRight",
+      previousCard: "ArrowLeft",
+      focusFirstCard: "Home",
+      focusLastCard: "End",
+      dismissFoundPack: "KeyD",
+      skipOpening: "KeyS",
+      later: "KeyL",
+      nextPack: "KeyN",
+      share: "KeyH",
+      home: "KeyG",
+      seeCard: "KeyC",
+    };
+    await chrome.storage.local.set({
+      [key]: {
+        ...saved,
+        useOverlayButtonInsteadOfHover: true,
+        outsideClickClosesTooltipOnly: true,
+        packOpeningHotkeysEnabled: true,
+        anyKeyDismissesFoundPack: false,
+        packOpeningHotkeys: Object.fromEntries(
+          Object.entries(codes).map(([action, code]) => [
+            action,
+            { code, ctrl: false, alt: false, shift: false, meta: false },
+          ]),
+        ),
+      },
+    });
+  });
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1`);
+  await expect(page.locator("#kosmore-pack-hotkeys-style")).toHaveCount(1);
+  const body = page.locator("body");
+  const popup = page.locator("#kosmore-root");
+  const press = (key: string) => page.keyboard.press(key);
+  await press("s");
+  await press("l");
+  await expect(body).toHaveAttribute("data-skip", "1");
+  await expect(body).toHaveAttribute("data-later", "1");
+  await page.keyboard.down("ArrowRight");
+  await page.keyboard.down("ArrowRight");
+  await page.keyboard.up("ArrowRight");
+  await expect(body).toHaveAttribute("data-advances", "1");
+  await press("ArrowRight");
+  await expect(page.locator(".ko-card")).toBeFocused();
+  await expect(popup).toContainText("Northern Lights");
+  await press("ArrowRight");
+  await expect(page.locator(".ko-drop")).toBeVisible();
+  await expect(popup).toHaveCount(0);
+  await press("n");
+  await expect(body).not.toHaveAttribute("data-next", "1");
+  await press("d");
+  await expect(page.locator(".ko-drop")).toBeVisible();
+  await press("d");
+  await expect(page.locator(".ko-drop")).toHaveCount(0);
+  await expect(body).toHaveAttribute("data-dismiss", "2");
+  const cards = page.locator(".ko-grid-open");
+  await press("ArrowRight");
+  await expect(cards.nth(0)).toBeFocused();
+  await press("ArrowRight");
+  await expect(cards.nth(1)).toBeFocused();
+  await expect(popup).toContainText("Northern Lights");
+  await press("Enter");
+  await expect(body).toHaveAttribute("data-opens", "1");
+  await expect(page.locator("dialog")).toBeVisible();
+  await press("End");
+  await expect(page.locator("[data-kosmore-pack-focus]")).toHaveCount(0);
+  await press("Escape");
+  await press("End");
+  await expect(cards).toHaveCount(3);
+  await expect(cards.nth(2)).toBeFocused();
+  await press("ArrowRight");
+  await expect(cards.nth(2)).toBeFocused();
+  await press("ArrowLeft");
+  await expect(cards.nth(1)).toBeFocused();
+  await press("Home");
+  await press("ArrowLeft");
+  await expect(cards.nth(0)).toBeFocused();
+  await press("c");
+  await expect(body).toHaveAttribute("data-card", "1");
+  await press("h");
+  await press("g");
+  await expect(body).toHaveAttribute("data-share", "1");
+  await expect(body).toHaveAttribute("data-home", "1");
+  await page.locator("input").focus();
+  await press("n");
+  await expect(body).not.toHaveAttribute("data-next", "1");
+  await expect(popup).toHaveCount(0);
+  await page.locator("input").blur();
+  await press("n");
+  await expect(body).toHaveAttribute("data-next", "1");
+  await press("n");
+  await expect(body).toHaveAttribute("data-back", "1");
+  await expect(body).toHaveAttribute("data-next", "1");
+  await press("s");
+  await press("l");
+  await expect(body).toHaveAttribute("data-skip", "1");
+  await expect(body).toHaveAttribute("data-later", "1");
+  await worker.evaluate(async () => {
+    const key = "kosmore.settings";
+    const saved = (await chrome.storage.local.get(key))[key] as object;
+    await chrome.storage.local.set({ [key]: { ...saved, enabled: false } });
+  });
+  // Wait for the overlay mode to react to the live tooltip switch.
+  await expect(page.locator("[data-kosmore-tooltip-buttons]")).toHaveCount(0);
+  await press("End");
+  await expect(cards.nth(2)).toBeFocused();
+  await expect(popup).toHaveCount(0);
+  await press("c");
+  await expect(page).toHaveURL("https://kosmora.io/card/43");
+});
+
+test("a pinned tooltip focuses the first card on a new summary after the found-pack prompt", async () => {
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await expect(popup).toHaveAttribute("data-pinned", "");
+  await expect
+    .poll(() =>
+      worker.evaluate(async () =>
+        Object.entries(await chrome.storage.session.get(null)).some(
+          ([key, state]) =>
+            key.startsWith("kosmore.popup.") &&
+            (state as { pinned?: boolean }).pinned,
+        ),
+      ),
+    )
+    .toBe(true);
+
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1`);
+  await expect(
+    popup.getByText("No Card Selected", { exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".ko-beat-shown")).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  const prompt = page.getByRole("button", { name: "Continue", exact: true });
+  const cards = page.locator(".ko-grid-open");
+  await expect(prompt).toBeVisible();
+  await expect(cards.first()).not.toBeFocused();
+  await prompt.click();
+  await prompt.click();
+  await expect(cards.first()).toBeFocused();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  await expect(popup).toHaveAttribute("data-pinned", "");
+
+  // Kosmora can update the recap URL after rendering the summary.
+  await page.evaluate(() => {
+    const url = new URL(location.href);
+    url.searchParams.set("recap", "1");
+    history.replaceState(history.state, "", url);
+  });
+  await expect(cards.first()).toBeFocused();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  // Kosmora can announce a found pack after the summary has already appeared.
+  await page.locator(".ko-summary").evaluate((summary) => {
+    const drop = document.createElement("div");
+    drop.className = "ko-drop";
+    drop.setAttribute("aria-modal", "true");
+    const button = document.createElement("button");
+    button.textContent = "Continue";
+    button.addEventListener("click", () => drop.remove());
+    drop.append(button);
+    summary.prepend(drop);
+    button.focus();
+  });
+  await expect(prompt).toBeFocused();
+  await prompt.click();
+  await expect(cards.first()).toBeFocused();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+
+  await cards.nth(1).focus();
+  await page.locator(".ko-summary").evaluate(async (summary) => {
+    summary.append(document.createElement("span"));
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+  await expect(cards.nth(1)).toBeFocused();
+});
+
+test("pinning a keyboard-opened tooltip preserves card focus and uses the saved position", async () => {
+  await worker.evaluate(async () => {
+    const key = "kosmore.settings";
+    const saved = (await chrome.storage.local.get(key))[key] as object;
+    await chrome.storage.local.set({
+      [key]: {
+        ...saved,
+        popupPosition: { left: 900, top: 40 },
+        outsideClickClosesTooltipOnly: true,
+        packOpeningHotkeysEnabled: true,
+        packOpeningHotkeys: {
+          nextCard: {
+            code: "ArrowRight",
+            ctrl: false,
+            alt: false,
+            shift: false,
+            meta: false,
+          },
+        },
+      },
+    });
+  });
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await expect(page.locator("#kosmore-pack-hotkeys-style")).toHaveCount(1);
+  const cards = page.locator(".ko-grid-open");
+  const popup = page.locator("#kosmore-root");
+  const pin = popup.getByRole("button", { name: "Pin popup", exact: true });
+  const unpin = popup.getByRole("button", { name: "Unpin popup", exact: true });
+
+  await page.keyboard.press("ArrowRight");
+  await expect(cards.first()).toBeFocused();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  await expect(popup).not.toHaveCSS("left", "900px");
+  await pin.click();
+  await expect(unpin).toHaveAttribute("aria-pressed", "true");
+  await expect(popup).toHaveCSS("left", "900px");
+  await expect(popup).toHaveCSS("top", "40px");
+  await expect(cards.first()).toBeFocused();
+
+  const copyPicker = popup.getByLabel("Owned copy", { exact: true });
+  await expect(copyPicker).toHaveValue(COPY_A);
+  await copyPicker.dispatchEvent("mousedown", { button: 0, composed: true });
+  await copyPicker.focus();
+  await copyPicker.selectOption(COPY_B);
+  await expect(copyPicker).toHaveValue(COPY_B);
+  await expect(cards.first()).toBeFocused();
+
+  await popup
+    .getByRole("button", { name: "Space & discovery", exact: true })
+    .click();
+  await expect(
+    popup.getByRole("button", { name: /Space & discovery.*Already added/ }),
+  ).toBeDisabled();
+  await expect(cards.first()).toBeFocused();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  expect(writeRequests).toBe(1);
+  await popup
+    .getByRole("button", { name: "Remove from Space & discovery", exact: true })
+    .click();
+  await expect(
+    popup.getByRole("button", { name: "Space & discovery", exact: true }),
+  ).toBeEnabled();
+  await expect(cards.first()).toBeFocused();
+  const shiny = popup.getByRole("checkbox", { name: "Shiny", exact: true });
+  await expect(shiny).toBeChecked();
+  await popup.locator(".legend label").filter({ hasText: "Shiny" }).click();
+  await expect(shiny).not.toBeChecked();
+  await expect(cards.first()).toBeFocused();
+
+  await unpin.click();
+  await pin.focus();
+  await page.keyboard.press("Space");
+  await expect(unpin).toHaveAttribute("aria-pressed", "true");
+  await expect(cards.first()).toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(cards.nth(2)).toBeFocused();
+  await expect(popup.locator("h2")).toHaveText("Voyager 1");
+  await expect(popup).toHaveCSS("left", "900px");
+  await popup.getByRole("tab", { name: "Notes", exact: true }).click();
+  await expect(cards.nth(2)).toBeFocused();
+  const notes = popup.getByRole("textbox", { name: "Card notes", exact: true });
+  await notes.click();
+  await expect(notes).toBeFocused();
+});
+
 test("settings groups are ordered with separate account controls and a fixed anchor navigation", async () => {
   await mkdir("test-results/screenshots", { recursive: true });
   await page.goto("https://kosmora.io/collection");
@@ -1970,10 +2654,10 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Family Impact Overlay",
       "Friend Tooltip",
       "Social Reminders",
-      "Profile Reminders",
       "Trade Reminders",
       "Sales Overlay",
       "Navigation Hotkeys",
+      "Pack Openings",
       "Backup & Restore",
       "Connected Account",
     ]);
@@ -1988,10 +2672,10 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Family Impact Overlay",
       "Friend Tooltip",
       "Social Reminders",
-      "Profile Reminders",
       "Trade Reminders",
       "Sales Overlay",
       "Navigation Hotkeys",
+      "Pack Openings",
       "Backup & Restore",
       "Connected Account",
     ]);
@@ -2000,9 +2684,19 @@ test("settings groups are ordered with separate account controls and a fixed anc
       connection.locator(".album-list,.pin-list,.savebar"),
     ).toHaveCount(0);
     await expect(albums.getByLabel("Search albums")).toBeVisible();
-    await expect(albums.locator(".album-account")).toContainText(
-      "FixturePlayer",
-    );
+    await expect(albums.locator(".album-account")).toHaveCount(0);
+    for (const selector of [
+      "#navigation-hotkeys .sub + .rule + .hotkey-list",
+      "#backup-restore .sub + .rule + .notice",
+      "#connected-account .sub + .rule + .account-row",
+      "#trade-reminders .rule + .row:has(#tradeNotesHoverDelayMs)",
+      "#trade-reminders .rule + .row:has(#tradeNotesDismissDelayMs)",
+      "#trade-reminders .rule + .row:has(#tradeNotesWidth)",
+      "#trade-reminders .rule + .row:has(#tradeNotesHeight)",
+      "#pack-opening-hotkeys [data-shortcut='nextPack']",
+      "#pack-opening-hotkeys .hotkey-row:has([data-shortcut='nextPack']) + .hotkey-row [data-shortcut='dismissFoundPack']",
+    ])
+      await expect(options.locator(selector)).toHaveCount(1);
     for (const label of [
       "Enable navigation hotkey",
       "Enable card overlays",
@@ -2014,8 +2708,19 @@ test("settings groups are ordered with separate account controls and a fixed anc
     ])
       await expect(options.getByLabel(label, { exact: true })).toBeChecked();
     await expect(
+      options.getByRole("switch", { name: "Enable pack opening hotkeys" }),
+    ).not.toBeChecked();
+    await expect(
       options.locator(".settings-group-heading").getByRole("switch"),
     ).toHaveCount(11);
+    for (const [name, id] of [
+      ["Show on social page", "socialRemindersEnabled"],
+      ["Show on profile page", "profileRemindersEnabled"],
+    ]) {
+      const checkbox = options.getByRole("checkbox", { name, exact: true });
+      await expect(checkbox).toBeChecked();
+      await expect(checkbox).toHaveAttribute("id", id);
+    }
     for (const name of [
       "Show Last Sale price",
       "Show Lowest Listed price",
@@ -2046,7 +2751,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
           return {
             right: Math.abs(row.right - control.right),
             vertical: Math.abs(
-              row.y + row.height / 2 - (control.y + control.height / 2),
+              heading.y + heading.height / 2 - (control.y + control.height / 2),
             ),
             overlap: heading.right > control.left,
           };
@@ -2056,28 +2761,155 @@ test("settings groups are ordered with separate account controls and a fixed anc
         expect(alignment.overlap).toBe(false);
       }
     };
+    const checkContentAlignment = async () => {
+      const alignment = await options
+        .locator("#app > section")
+        .evaluateAll((sections) =>
+          sections.map((section) => {
+            const heading = section.querySelector("h2")!;
+            const content = section.querySelector(".settings-group-content")!;
+            const controls = content.querySelectorAll(
+              ":scope > :is(.sub, .notice, .row, .hotkey-list, .backup-actions, label, input, .account-row)",
+            );
+            const text = document.createRange();
+            text.selectNodeContents(heading.lastChild!);
+            const headingLeft = text.getBoundingClientRect().left;
+            const panel = section.getBoundingClientRect();
+            const body = content.getBoundingClientRect();
+            const save = section
+              .querySelector(".savebar")
+              ?.getBoundingClientRect();
+            const masterSwitch = section
+              .querySelector(".settings-group-heading > input")
+              ?.getBoundingClientRect();
+            const icon = heading.querySelector("svg")!.getBoundingClientRect();
+            return {
+              label: heading.textContent,
+              icon: { width: icon.width, height: icon.height },
+              offsets: [
+                body.left - headingLeft,
+                body.left - panel.left - (panel.right - body.right),
+                ...(save
+                  ? [save.left - body.left, save.right - body.right]
+                  : []),
+                ...(masterSwitch ? [masterSwitch.right - body.right] : []),
+                ...[...controls].map(
+                  (control) => control.getBoundingClientRect().left - body.left,
+                ),
+              ],
+            };
+          }),
+        );
+      const iconSize = options.viewportSize()!.width <= 480 ? 22 : 24;
+      for (const { label, icon, offsets } of alignment) {
+        expect(icon, label ?? undefined).toEqual({
+          width: iconSize,
+          height: iconSize,
+        });
+        for (const offset of offsets)
+          expect(Math.abs(offset), label ?? undefined).toBeLessThanOrEqual(1);
+      }
+      const packHintOffset = await options
+        .locator("#anyKeyDismissesFoundPack")
+        .evaluate((input) => {
+          const label = input.parentElement!;
+          const text = document.createRange();
+          text.selectNodeContents(label.lastChild!);
+          return Math.abs(
+            text.getBoundingClientRect().left -
+              label.nextElementSibling!.getBoundingClientRect().left -
+              parseFloat(
+                getComputedStyle(label.nextElementSibling!).paddingInlineStart,
+              ),
+          );
+        });
+      expect(packHintOffset).toBeLessThanOrEqual(1);
+      const salesOffsets = await options
+        .locator("#sales-overlay .settings-subsetting-text")
+        .evaluateAll((rows) =>
+          rows.map((row) => {
+            const label = row.previousElementSibling!.querySelector("label")!;
+            const text = document.createRange();
+            text.selectNodeContents(label.lastChild!);
+            return Math.abs(
+              text.getBoundingClientRect().left -
+                row.querySelector("label")!.getBoundingClientRect().left,
+            );
+          }),
+        );
+      expect(salesOffsets).toHaveLength(3);
+      for (const offset of salesOffsets) expect(offset).toBeLessThanOrEqual(1);
+    };
+    const checkActionSizes = async () => {
+      const sizes = await options
+        .locator(".save-actions > button")
+        .evaluateAll((buttons) =>
+          buttons.map((button) => {
+            const { width, height } = button.getBoundingClientRect();
+            return { width, height };
+          }),
+        );
+      expect(sizes.length).toBeGreaterThan(0);
+      expect(sizes[0].width).toBeLessThanOrEqual(112);
+      for (const size of sizes) expect(size).toEqual(sizes[0]);
+    };
     await checkSwitchLayout();
+    await checkContentAlignment();
+    await checkActionSizes();
+    const packIcon = options.locator("#pack-opening-hotkeys h2 svg path");
+    const navigationIcon = options.locator("#navigation-hotkeys h2 svg path");
+    await expect(packIcon).not.toHaveAttribute(
+      "d",
+      (await navigationIcon.getAttribute("d"))!,
+    );
     const initial = (await nav.boundingBox())!;
     for (const [label, id] of [
       ["Hover Tooltip", "hover-tooltip"],
       ["Pinned Albums", "pinned-albums"],
       ["Tooltip Stat Boxes", "stat-boxes"],
       ["Card Overlays", "card-overlays"],
+      ["Family Impact Overlay", "family-impact-overlay"],
       ["Friend Tooltip", "friend-tooltip"],
       ["Social Reminders", "social-reminders"],
-      ["Profile Reminders", "profile-reminders"],
       ["Trade Reminders", "trade-reminders"],
       ["Sales Overlay", "sales-overlay"],
       ["Navigation Hotkeys", "navigation-hotkeys"],
+      ["Pack Openings", "pack-opening-hotkeys"],
       ["Backup & Restore", "backup-restore"],
       ["Connected Account", "connected-account"],
     ]) {
-      await nav.getByRole("link", { name: label, exact: true }).click();
+      const link = nav.getByRole("link", { name: label, exact: true });
+      const heading = options.locator(`#${id} h2`).first();
+      const icon = heading.locator("svg");
+      await expect(icon).toHaveAttribute("aria-hidden", "true");
+      await expect(icon.locator("path")).toHaveAttribute(
+        "d",
+        (await link.locator("svg path").getAttribute("d"))!,
+      );
+      await link.click();
       await expect(options).toHaveURL(new RegExp(`#${id}$`));
-      await expect(options.locator(`#${id} h2`).first()).toBeInViewport();
+      await expect(heading).toBeInViewport();
       const now = (await nav.boundingBox())!;
       expect({ x: now.x, y: now.y }).toEqual({ x: initial.x, y: initial.y });
     }
+    const socialIcon = options.locator("#social-reminders h2 svg");
+    const socialLink = nav.getByRole("link", {
+      name: "Social Reminders",
+      exact: true,
+    });
+    await expect(socialIcon).toHaveCSS("color", "rgb(198, 179, 216)");
+    await socialLink.click();
+    await expect(socialLink).toHaveAttribute("aria-current", "location");
+    await expect(socialIcon).toHaveCSS("color", "rgb(255, 229, 167)");
+    await options
+      .getByRole("checkbox", { name: "Show on social page" })
+      .focus();
+    await options.evaluate(() => window.scrollTo(0, 0));
+    await expect(socialLink).not.toHaveAttribute("aria-current", "location");
+    await expect(socialIcon).toHaveCSS("color", "rgb(255, 229, 167)");
+    await nav
+      .getByRole("link", { name: "Connected Account", exact: true })
+      .click();
     await options.screenshot({
       path: "test-results/screenshots/settings-account-bottom.png",
     });
@@ -2085,13 +2917,25 @@ test("settings groups are ordered with separate account controls and a fixed anc
     await options.screenshot({
       path: "test-results/screenshots/settings-navigation-desktop.png",
     });
-    for (const width of [640, 390]) {
+    for (const width of [640, 390, 320]) {
       await options.setViewportSize({ width, height: 900 });
       await nav
         .getByRole("link", { name: "Navigation Hotkeys", exact: true })
         .click();
       await expect(options.locator("#navigation-hotkeys h2")).toBeInViewport();
+      await nav
+        .getByRole("link", { name: "Pack Openings", exact: true })
+        .click();
+      await expect(
+        options.locator("#pack-opening-hotkeys h2"),
+      ).toBeInViewport();
+      if (width === 390)
+        await options.screenshot({
+          path: "test-results/screenshots/settings-pack-opening-390.png",
+        });
       await checkSwitchLayout();
+      await checkContentAlignment();
+      await checkActionSizes();
       expect(
         await options.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,
@@ -2120,61 +2964,23 @@ test("feature switches save immediately and disabled settings groups are read-on
   await page.goto("https://kosmora.io/collection");
   const options = await context.newPage();
   const groups = [
-    [
-      "hover-tooltip",
-      "Enable card hover tooltips",
-      "tooltip settings",
-      "Hover delay",
-    ],
-    [
-      "pinned-albums",
-      "Enable pinned albums",
-      "album shortcuts",
-      "Search albums",
-    ],
-    ["stat-boxes", "Enable stat boxes", "stat layout", "Show Min Price"],
-    [
-      "friend-tooltip",
-      "Enable friend tooltip",
-      "friend tooltip settings",
-      "Friend hover delay",
-    ],
-    [
-      "social-reminders",
-      "Enable social reminders",
-      "social reminder settings",
-      "Keep reminders pinned on Social",
-    ],
-    [
-      "profile-reminders",
-      "Enable profile reminders",
-      "profile reminder settings",
-      "Keep reminders pinned on profiles",
-    ],
+    ["hover-tooltip", "Enable card hover tooltips", "Hover delay"],
+    ["pinned-albums", "Enable pinned albums", "Search albums"],
+    ["stat-boxes", "Enable stat boxes", "Show Min Price"],
+    ["friend-tooltip", "Enable friend tooltip", "Friend hover delay"],
+    ["social-reminders", "Enable social reminders", "Show on social page"],
     [
       "trade-reminders",
       "Enable trade reminders",
-      "trade reminder settings",
       "Show possible interest counts",
     ],
     [
       "card-overlays",
       "Enable card overlays",
-      "overlay settings",
       "Show sale history icon on cards",
     ],
-    [
-      "sales-overlay",
-      "Enable sales overlay",
-      "sales overlay settings",
-      "Show Last Sale price",
-    ],
-    [
-      "navigation-hotkeys",
-      "Enable navigation hotkey",
-      "hotkeys",
-      "Set shortcut for Home",
-    ],
+    ["sales-overlay", "Enable sales overlay", "Show Last Sale price"],
+    ["navigation-hotkeys", "Enable navigation hotkey", "Set shortcut for Home"],
   ];
   try {
     await options.goto(`chrome-extension://${extensionId}/options.html`);
@@ -2200,7 +3006,7 @@ test("feature switches save immediately and disabled settings groups are read-on
       for (const button of await group.locator(".savebar button").all())
         await expect(button).toBeDisabled();
     };
-    for (const [id, label, name, editable] of groups) {
+    for (const [id, label, editable] of groups) {
       const group = options.locator(`#${id}`);
       await group.getByRole("switch", { name: label, exact: true }).uncheck();
       await checkDisabled(id);
@@ -2208,9 +3014,7 @@ test("feature switches save immediately and disabled settings groups are read-on
       await group.getByRole("switch", { name: label, exact: true }).check();
       await expect(group.getByLabel(editable, { exact: true })).toBeEnabled();
       await expect(group.locator(".settings-group-state")).toBeHidden();
-      await group
-        .getByRole("button", { name: `Cancel ${name} changes`, exact: true })
-        .click();
+      await group.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(
         group.getByRole("switch", { name: label, exact: true }),
       ).toBeChecked();
@@ -2274,7 +3078,9 @@ test("feature switches preserve drafts, recover from storage failures, and stay 
       other.getByLabel("Enable card hover tooltips", { exact: true }),
     ).not.toBeChecked();
     await expect(
-      other.getByRole("button", { name: "Save tooltip settings", exact: true }),
+      other
+        .locator("#hover-tooltip")
+        .getByRole("button", { name: "Save", exact: true }),
     ).toBeDisabled();
     const stored = await worker.evaluate(
       async () =>
@@ -2299,7 +3105,7 @@ test("feature switches preserve drafts, recover from storage failures, and stay 
     ).toHaveValue("720");
     await group
       .getByRole("button", {
-        name: "Cancel tooltip settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
@@ -2329,7 +3135,7 @@ test("feature switches preserve drafts, recover from storage failures, and stay 
     await expect(toggle).toBeChecked();
     await expect(toggle).toBeEnabled();
     await expect(
-      group.getByRole("button", { name: "Save tooltip settings", exact: true }),
+      group.getByRole("button", { name: "Save", exact: true }),
     ).toBeEnabled();
     await toggle.uncheck();
     await expect(group.getByRole("status")).toContainText("Saved.");
@@ -2371,9 +3177,7 @@ test("queued feature switches and group saves retain every change", async () => 
     await sales
       .getByLabel("Last Sale price adjustment", { exact: true })
       .fill("5");
-    await sales
-      .getByRole("button", { name: "Save sales overlay settings", exact: true })
-      .click();
+    await sales.getByRole("button", { name: "Save", exact: true }).click();
     await expect(
       tooltip.getByRole("switch", {
         name: "Enable card hover tooltips",
@@ -2407,7 +3211,7 @@ test("queued feature switches and group saves retain every change", async () => 
     });
     await expect(
       tooltip.getByRole("button", {
-        name: "Save tooltip settings",
+        name: "Save",
         exact: true,
       }),
     ).toBeDisabled();
@@ -2493,7 +3297,8 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
     expect(disabled.pinnedAlbums).toEqual(original.pinnedAlbums);
     await options.getByLabel("Enable stat boxes", { exact: true }).check();
     await options
-      .getByRole("button", { name: "Cancel stat layout changes", exact: true })
+      .locator("#stat-boxes")
+      .getByRole("button", { name: "Cancel", exact: true })
       .click();
     await expect(
       options.getByLabel("Enable stat boxes", { exact: true }),
@@ -2542,7 +3347,8 @@ test("options discovers the real content-script session, saves ordered pins and 
     .getByRole("button", { name: "Move up Favourites", exact: true })
     .click();
   await options
-    .getByRole("button", { name: "Save album shortcuts", exact: true })
+    .locator("#pinned-albums")
+    .getByRole("button", { name: "Save", exact: true })
     .click();
   await expect(
     options
@@ -2560,8 +3366,9 @@ test("options discovers the real content-script session, saves ordered pins and 
   expect(pins).toEqual([ALBUM_B, ALBUM_A]);
   await options.getByLabel("Hover delay", { exact: true }).fill("900");
   await options
+    .locator("#hover-tooltip")
     .getByRole("button", {
-      name: "Cancel tooltip settings changes",
+      name: "Cancel",
       exact: true,
     })
     .click();
@@ -2735,7 +3542,8 @@ test("Active Auctions can be hidden and enabled in an open popup through stat se
     await options.goto(`chrome-extension://${extensionId}/options.html`);
     await options.getByLabel("Show Active Auctions", { exact: true }).check();
     await options
-      .getByRole("button", { name: "Save stat layout", exact: true })
+      .locator("#stat-boxes")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(metric.locator("strong")).toHaveText("2");
     await expect(popup.locator(".metric").first()).toHaveAttribute(
@@ -2744,7 +3552,8 @@ test("Active Auctions can be hidden and enabled in an open popup through stat se
     );
     await options.getByLabel("Show Active Auctions", { exact: true }).uncheck();
     await options
-      .getByRole("button", { name: "Save stat layout", exact: true })
+      .locator("#stat-boxes")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(metric).toHaveCount(0);
     expect(reads).toBe(1);
@@ -2883,7 +3692,8 @@ test("variant checkboxes persist across popups and options saves without closing
     options.getByText("Connected to FixturePlayer.", { exact: true }),
   ).toBeVisible();
   await options
-    .getByRole("button", { name: "Save tooltip settings", exact: true })
+    .locator("#hover-tooltip")
+    .getByRole("button", { name: "Save", exact: true })
     .click();
   await options.close();
   await page.locator(".ko-grid-open").nth(3).hover();
@@ -4015,7 +4825,8 @@ test("For Sale marks only your listed cards on the left, stays aligned and honor
     await expect(toggle).toBeChecked();
     await toggle.uncheck();
     await options
-      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .locator("#card-overlays")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(label).toHaveCount(0);
     await expect(
@@ -4023,7 +4834,8 @@ test("For Sale marks only your listed cards on the left, stays aligned and honor
     ).toBeVisible();
     await toggle.check();
     await options
-      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .locator("#card-overlays")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(label).toBeVisible();
     await options.getByLabel("Enable card overlays", { exact: true }).uncheck();
@@ -4143,8 +4955,8 @@ test("market overlays show sale and listing prices at top right and quest before
         name: "Show lowest listed price",
         exact: true,
       }),
-      save = options.getByRole("button", {
-        name: "Save overlay settings",
+      save = options.locator("#card-overlays").getByRole("button", {
+        name: "Save",
         exact: true,
       });
     await options
@@ -4195,8 +5007,9 @@ test("market overlays show sale and listing prices at top right and quest before
       .uncheck();
     await expect(listingPrice).toBeDisabled();
     await options
+      .locator("#card-overlays")
       .getByRole("button", {
-        name: "Cancel overlay settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
@@ -4254,7 +5067,8 @@ test("saved settings independently remove the four card overlays in existing tab
     .getByLabel("Show sale history icon on cards", { exact: true })
     .uncheck();
   await options
-    .getByRole("button", { name: "Save overlay settings", exact: true })
+    .locator("#card-overlays")
+    .getByRole("button", { name: "Save", exact: true })
     .click();
   await expect(page.locator("[data-kosmore-card-overlays] .sale")).toHaveCount(
     0,
@@ -4266,7 +5080,8 @@ test("saved settings independently remove the four card overlays in existing tab
     .getByLabel("Show active auctions icon on cards", { exact: true })
     .uncheck();
   await options
-    .getByRole("button", { name: "Save overlay settings", exact: true })
+    .locator("#card-overlays")
+    .getByRole("button", { name: "Save", exact: true })
     .click();
   await expect(
     page.locator("[data-kosmore-card-overlays] .auction"),
@@ -4278,7 +5093,8 @@ test("saved settings independently remove the four card overlays in existing tab
     .getByLabel("Show interested friends icon on cards", { exact: true })
     .uncheck();
   await options
-    .getByRole("button", { name: "Save overlay settings", exact: true })
+    .locator("#card-overlays")
+    .getByRole("button", { name: "Save", exact: true })
     .click();
   await expect(
     page.locator("[data-kosmore-card-overlays] .quest"),
@@ -4287,7 +5103,8 @@ test("saved settings independently remove the four card overlays in existing tab
     .getByLabel("Show quest icon on cards", { exact: true })
     .uncheck();
   await options
-    .getByRole("button", { name: "Save overlay settings", exact: true })
+    .locator("#card-overlays")
+    .getByRole("button", { name: "Save", exact: true })
     .click();
   await expect(page.locator("[data-kosmore-card-overlays]")).toHaveCount(0);
   await options.close();
@@ -4308,7 +5125,8 @@ test("popup dimensions and dismiss delay save, cancel and apply in an open tab",
     await expect(width).toHaveValue("440");
     await width.fill("100");
     await options
-      .getByRole("button", { name: "Save tooltip settings", exact: true })
+      .locator("#hover-tooltip")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(
       options
@@ -4319,7 +5137,8 @@ test("popup dimensions and dismiss delay save, cancel and apply in an open tab",
     await height.fill("760");
     await dismiss.fill("1200");
     await options
-      .getByRole("button", { name: "Save tooltip settings", exact: true })
+      .locator("#hover-tooltip")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(
       options
@@ -4335,8 +5154,9 @@ test("popup dimensions and dismiss delay save, cancel and apply in an open tab",
     await width.fill("600");
     await dismiss.fill("0");
     await options
+      .locator("#hover-tooltip")
       .getByRole("button", {
-        name: "Cancel tooltip settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
@@ -4652,15 +5472,13 @@ test("shortcut recording detects conflicts and group saves preserve other drafts
         name: `Set shortcut for ${label}`,
         exact: true,
       });
-    await expect(hotkeys.locator(".hotkey-row")).toHaveCount(15);
+    await expect(hotkeys.locator(".hotkey-row")).toHaveCount(NAVIGATION.length);
     await options.getByLabel("Tooltip width", { exact: true }).fill("600");
     await record("Home").click();
     await record("Home").press("Alt+Shift+H");
     await record("Collection").click();
     await record("Collection").press("Alt+Shift+H");
-    await hotkeys
-      .getByRole("button", { name: "Save hotkeys", exact: true })
-      .click();
+    await hotkeys.getByRole("button", { name: "Save", exact: true }).click();
     await expect(hotkeys.getByRole("status")).toContainText(
       "Home and Collection both use",
     );
@@ -4673,9 +5491,7 @@ test("shortcut recording detects conflicts and group saves preserve other drafts
     await record("Atlas").click();
     await record("Atlas").press("Escape");
     await expect(record("Atlas")).toHaveText("Not set");
-    await hotkeys
-      .getByRole("button", { name: "Save hotkeys", exact: true })
-      .click();
+    await hotkeys.getByRole("button", { name: "Save", exact: true }).click();
     await expect(hotkeys.getByRole("status")).toContainText("Saved.");
     const stored = await worker.evaluate(
       async () =>
@@ -4688,8 +5504,9 @@ test("shortcut recording detects conflicts and group saves preserve other drafts
     await record("Atlas").click();
     await record("Atlas").press("Alt+Shift+X");
     await options
+      .locator("#hover-tooltip")
       .getByRole("button", {
-        name: "Cancel tooltip settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
@@ -4701,20 +5518,20 @@ test("shortcut recording detects conflicts and group saves preserve other drafts
       .getByLabel("Show sale history icon on cards", { exact: true })
       .check();
     await options
-      .getByRole("button", { name: "Save overlay settings", exact: true })
+      .locator("#card-overlays")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(
       options
         .getByRole("region", { name: "overlay settings", exact: true })
         .getByRole("status"),
     ).toContainText("Saved.");
-    await hotkeys
-      .getByRole("button", { name: "Cancel hotkeys changes", exact: true })
-      .click();
+    await hotkeys.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(record("Atlas")).toHaveText("Not set");
     await options.getByLabel("Show Min Price", { exact: true }).uncheck();
     await options
-      .getByRole("button", { name: "Save stat layout", exact: true })
+      .locator("#stat-boxes")
+      .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(
       options
@@ -4733,9 +5550,7 @@ test("shortcut recording detects conflicts and group saves preserve other drafts
     await hotkeys
       .getByRole("button", { name: "Clear shortcut for Home", exact: true })
       .click();
-    await hotkeys
-      .getByRole("button", { name: "Save hotkeys", exact: true })
-      .click();
+    await hotkeys.getByRole("button", { name: "Save", exact: true }).click();
     await expect(hotkeys.getByRole("status")).toContainText("Saved.");
     await options.reload();
     await expect(record("Home")).toHaveText("Not set");
@@ -5063,8 +5878,9 @@ test("all popup edges resize and autosave dimensions while preserving dirty sett
     ).toHaveValue("555");
     const size = (await popup.boundingBox())!;
     await options
+      .locator("#hover-tooltip")
       .getByRole("button", {
-        name: "Cancel tooltip settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
@@ -5948,9 +6764,7 @@ test("sales badges fill only their own controlled batch price fields with indepe
     await settings
       .getByLabel("Lowest Listed price adjustment", { exact: true })
       .fill("2");
-    await settings
-      .getByRole("button", { name: "Save sales overlay settings", exact: true })
-      .click();
+    await settings.getByRole("button", { name: "Save", exact: true }).click();
     await expect(settings.getByRole("status")).toContainText("Saved.");
     await first.getByRole("button", { name: /^Last Sale \$12/ }).click();
     await expect(first.locator("input")).toHaveValue("11");
@@ -6051,9 +6865,7 @@ test("my last listing fills only its card, shares sale settings, and uses starti
       });
     await expect(adjust).toHaveValue("0");
     await adjust.fill("-0.123456");
-    await group
-      .getByRole("button", { name: "Save sales overlay settings", exact: true })
-      .click();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
     await first.getByRole("button", { name: /^My Last Listing: \$17/ }).click();
     await expect(first.locator("input")).toHaveValue("17");
     const click = group.getByRole("switch", {
@@ -6062,17 +6874,13 @@ test("my last listing fills only its card, shares sale settings, and uses starti
     });
     await click.uncheck();
     await expect(adjust).toBeDisabled();
-    await group
-      .getByRole("button", { name: "Save sales overlay settings", exact: true })
-      .click();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
     await expect(first.locator(".price-badge.history")).toHaveAttribute(
       "role",
       "img",
     );
     await click.check();
-    await group
-      .getByRole("button", { name: "Save sales overlay settings", exact: true })
-      .click();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
     await mkdir("test-results/screenshots", { recursive: true });
     await page.screenshot({
       path: "test-results/screenshots/my-last-listing-batch.png",
@@ -6097,9 +6905,7 @@ test("my last listing fills only its card, shares sale settings, and uses starti
     await group
       .getByLabel("Show My Last Listing price", { exact: true })
       .uncheck();
-    await group
-      .getByRole("button", { name: "Save sales overlay settings", exact: true })
-      .click();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.locator("[data-kosmore-sales-overlay]")).toHaveCount(0);
   } finally {
     await options.close();
@@ -6262,7 +7068,7 @@ test("single-sale badges share settings and respect click toggles, visibility, r
     await options.goto(`chrome-extension://${extensionId}/options.html`);
     const settings = options.locator("#sales-overlay"),
       save = settings.getByRole("button", {
-        name: "Save sales overlay settings",
+        name: "Save",
         exact: true,
       });
     await settings
@@ -6692,6 +7498,105 @@ test("sale screens show only badges for confirmed market history and active auct
     await page.unroute("**/api/auctions?**");
   }
 });
+test("pack summary star waits for offscreen overlays and the final card entrance", async () => {
+  await worker.evaluate(async () => {
+    const key = "kosmore.settings";
+    const saved = (await chrome.storage.local.get(key))[key] as object;
+    await chrome.storage.local.set({
+      [key]: { ...saved, showSaleHistoryOverlay: true },
+    });
+  });
+  const viewport = page.viewportSize()!;
+  let releaseFirst!: () => void, releaseSecond!: () => void;
+  const first = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  const second = new Promise<void>((resolve) => {
+    releaseSecond = resolve;
+  });
+  const priceRoute = "**/api/cards/*/prices?**";
+  let lastRequestStarted = false;
+  await page.route(priceRoute, async (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-2);
+    if (id === "42") await first;
+    if (id === "47") {
+      lastRequestStarted = true;
+      await second;
+    }
+    await route.fulfill({ json: prices(3) });
+  });
+  try {
+    await page.setViewportSize({ width: 1440, height: 335 });
+    await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+    const badge = page.locator(
+      ".ko-summary > [data-kosmore-pack-summary-status]:has(+ .ko-grid)",
+    );
+    const star = badge.locator(".kosmore-star");
+    const grid = page.locator(".ko-grid");
+    const cards = page.locator(".ko-grid > li");
+    await expect(badge.getByText("KosMore", { exact: true })).toBeVisible();
+    const gridTop = await grid.evaluate(
+      (element) => element.getBoundingClientRect().top,
+    );
+    await expect(badge.getByRole("status")).toContainText(
+      "Loading card overlays",
+    );
+    await expect(badge.getByRole("status")).toHaveCSS(
+      "clip-path",
+      "inset(50%)",
+    );
+    await expect(star).toHaveCSS("animation-name", "spin");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(star).toHaveCSS("animation-name", "none");
+    await expect(badge.getByRole("status")).toContainText(
+      "Loading card overlays",
+    );
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+
+    releaseFirst();
+    await expect(
+      cards.first().locator("[data-kosmore-card-overlays] .sale"),
+    ).toBeVisible();
+    const last = cards.nth(4);
+    await expect(last).not.toBeInViewport();
+    await expect.poll(() => lastRequestStarted).toBe(true);
+    await expect(star).toHaveCSS("animation-name", "spin");
+    await page.addStyleTag({
+      content: `@keyframes recap-card-entrance { from { opacity: 0 } to { opacity: 1 } }
+        .ko-grid > li:nth-child(5) { animation: recap-card-entrance 60s both; }`,
+    });
+    releaseSecond();
+    await expect(
+      grid.locator("[data-kosmore-card-overlays] .sale"),
+    ).toHaveCount(6);
+    await page.evaluate(async () => {
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+    });
+    await expect(star).toHaveCSS("animation-name", "spin");
+    await last.evaluate((element) => {
+      element.getAnimations().forEach((animation) => animation.finish());
+    });
+    await expect(star).toHaveCSS("animation-name", "none");
+    await expect(badge.getByRole("status")).toBeEmpty();
+    expect(
+      await grid.evaluate((element) => element.getBoundingClientRect().top),
+    ).toBe(gridTop);
+
+    await page.goto(`https://kosmora.io/packs/open?id=${OPENING}`);
+    await expect(
+      page.locator("[data-kosmore-pack-summary-status]"),
+    ).toHaveCount(0);
+  } finally {
+    releaseFirst();
+    releaseSecond();
+    await page.unroute(priceRoute);
+    await page.emulateMedia({ reducedMotion: null });
+    await page.setViewportSize(viewport);
+  }
+});
+
 test("performance: visible cards load concurrently without per-card pauses or full scans for unrelated updates", async () => {
   await worker.evaluate(async () => {
     const saved = (await chrome.storage.local.get("kosmore.settings"))[
@@ -7063,29 +7968,25 @@ test("Vortex family impact: marks stakes and picker cards, preserves native pick
       `chrome-extension://${extensionId}/options.html#family-impact-overlay`,
     );
     const group = options.locator("#family-impact-overlay");
-    const toggle = group.getByLabel("Show family impact on the Vortex page", {
+    const toggle = group.getByLabel("Show on Vortex page", {
       exact: true,
     });
     await expect(toggle).toBeChecked();
     await toggle.uncheck();
     await group
       .getByRole("button", {
-        name: "Cancel family impact settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();
     await expect(toggle).toBeChecked();
     await toggle.uncheck();
-    await group
-      .getByRole("button", { name: "Save family impact settings", exact: true })
-      .click();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.locator("[data-kosmore-fusion-family]")).toHaveCount(0);
     await options.reload();
     await expect(toggle).not.toBeChecked();
     await toggle.check();
-    await group
-      .getByRole("button", { name: "Save family impact settings", exact: true })
-      .click();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
     await tile("307").scrollIntoViewIfNeeded();
     await expect(badge("307")).toBeVisible();
     await options.setViewportSize({ width: 390, height: 900 });

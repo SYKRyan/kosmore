@@ -1,0 +1,17 @@
+.kosmore-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 0;
+  color: #dec17f;
+  font:
+    600 10px/1.5 system-ui,
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.kosmore-star {
+  font-size: 14px;
+  line-height: 1;
+}

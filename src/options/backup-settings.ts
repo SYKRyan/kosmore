@@ -40,7 +40,11 @@ export class BackupSettings {
     () => void this.importBackup(),
     "primary",
   );
-  private cancelButton = button("Cancel import", () => this.cancel(), "ghost");
+  private cancelButton = button(
+    "Cancel",
+    () => this.cancel(),
+    "ghost settings-action",
+  );
   private dirtyNotice = el("p", "notice");
   private status = el("p", "status");
   private backup?: KosMoreBackup;
@@ -54,13 +58,15 @@ export class BackupSettings {
     this.host.setAttribute("aria-label", "Backup & Restore");
     this.status.setAttribute("role", "status");
     this.status.setAttribute("aria-live", "polite");
-    this.host.append(
-      el("h2", "", "Backup & Restore"),
+    const content = el("div", "settings-group-content");
+    this.host.append(el("h2", "", "Backup & Restore"), content);
+    content.append(
       el(
         "p",
         "sub",
         "Move all saved KosMore preferences, pinned albums, friend families and notes, and card notes between browsers or computers. All saved accounts are included; no Kosmora tab is needed.",
       ),
+      el("div", "rule"),
       el(
         "p",
         "notice",
@@ -69,7 +75,7 @@ export class BackupSettings {
     );
     const exportActions = el("div", "backup-actions");
     exportActions.append(this.exportButton);
-    this.host.append(exportActions, el("div", "rule"));
+    content.append(exportActions, el("div", "rule"));
     const fileLabel = el("label", "", "Choose a backup JSON file");
     this.file.id = "backup-file";
     this.file.type = "file";
@@ -116,7 +122,7 @@ export class BackupSettings {
       importActions,
     );
     this.preview.hidden = true;
-    this.host.append(fileLabel, this.file, this.preview, this.status);
+    content.append(fileLabel, this.file, this.preview, this.status);
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local" || !Object.keys(changes).some(isBackupKey)) return;
       if (this.backup && !this.busy) {

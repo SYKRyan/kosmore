@@ -471,7 +471,7 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
     await options.goto(`chrome-extension://${extensionId}/options.html`);
     const group = options.locator("#friend-tooltip"),
       save = group.getByRole("button", {
-        name: "Save friend tooltip settings",
+        name: "Save",
         exact: true,
       });
     await options
@@ -502,7 +502,7 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
     await group.getByLabel("Enable friend tooltip", { exact: true }).check();
     await group
       .getByRole("button", {
-        name: "Cancel friend tooltip settings changes",
+        name: "Cancel",
         exact: true,
       })
       .click();

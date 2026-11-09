@@ -7,6 +7,7 @@ import { SocialReminders } from "./social";
 import type { FriendReminders } from "./friend-reminders";
 import { button, el } from "./ui";
 import { headerIcon } from "./icons";
+import labelCss from "./kosmore-label.css?inline";
 
 export class ProfileReminders {
   private profile?: ProfilePlayer & { anchor: HTMLElement };
@@ -117,9 +118,10 @@ export class ProfileReminders {
   private settings(raw: unknown) {
     const settings = parseSettings(raw);
     this.enabled =
-      this.kind === "social"
+      settings.socialRemindersMasterEnabled &&
+      (this.kind === "social"
         ? settings.socialRemindersEnabled
-        : settings.profileRemindersEnabled;
+        : settings.profileRemindersEnabled);
     this.pinned = settings[this.pinSetting];
     this.scan();
     this.layout();
@@ -170,7 +172,8 @@ export class ProfileReminders {
     const shadow = host.attachShadow({ mode: "open" }),
       style = el("style");
     style.textContent =
-      ":host{display:block;margin:0;grid-column:1 / -1}:host([hidden]){display:none}button{display:inline-flex;align-items:center;gap:5px;border:0;padding:3px 0;background:none;color:#dec17f;font:600 10px/1.5 system-ui,sans-serif;letter-spacing:.14em;text-transform:uppercase;cursor:pointer}button:hover{color:#fff0b5}button:focus-visible{outline:2px solid #f1ce81;outline-offset:4px;border-radius:3px}span{font-size:14px;line-height:1}";
+      labelCss +
+      ":host{display:block;margin:0;grid-column:1 / -1}:host([hidden]){display:none}button{border:0;background:none;cursor:pointer}button:hover{color:#fff0b5}button:focus-visible{outline:2px solid #f1ce81;outline-offset:4px;border-radius:3px}";
     const toggle = button("", () => {
       if (this.pinned) {
         this.view?.host.scrollIntoView({
@@ -188,7 +191,8 @@ export class ProfileReminders {
       this.layout();
       if (this.opened) this.pin.focus({ preventScroll: true });
     });
-    const icon = el("span", "", "✦");
+    toggle.classList.add("kosmore-label");
+    const icon = el("span", "kosmore-star", "✦");
     icon.setAttribute("aria-hidden", "true");
     toggle.append(icon, document.createTextNode("KosMore"));
     toggle.setAttribute(

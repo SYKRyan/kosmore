@@ -127,7 +127,7 @@ export class TradeSettings {
       label.htmlFor = field;
       info.append(label, el("p", "sub", help));
       row.append(info, input);
-      this.host.append(row);
+      this.host.append(el("div", "rule"), row);
       input.addEventListener("input", () =>
         change({ [field]: input.value === "" ? NaN : Number(input.value) }),
       );

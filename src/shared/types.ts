@@ -96,6 +96,7 @@ export interface Settings {
   useOverlayButtonInsteadOfHover: boolean;
   outsideClickClosesTooltipOnly: boolean;
   fullScreenCenteredOnOpen: boolean;
+  socialRemindersMasterEnabled: boolean;
   profileRemindersEnabled: boolean;
   profileRemindersPinned: boolean;
   socialRemindersEnabled: boolean;
@@ -117,6 +118,11 @@ export interface Settings {
   friendTooltipHeight: number;
   friendTooltipPosition: import("./popup-layout").PopupPosition | null;
   navigationHotkeysEnabled: boolean;
+  packOpeningHotkeysEnabled: boolean;
+  anyKeyDismissesFoundPack: boolean;
+  autoSkipOpening: boolean;
+  autoDismissFoundPack: boolean;
+  showRemainingPackCount: boolean;
   cardOverlaysEnabled: boolean;
   disableCardOverlaysInPulsar: boolean;
   disableCardOverlaysInVortex: boolean;
@@ -155,7 +161,11 @@ export interface Settings {
   showVortexFamilyOverlay: boolean;
   stats: import("./stat-catalog").StatPreference[];
   hotkeys: import("./hotkeys").Hotkeys;
+  packOpeningHotkeys: import("./hotkeys").Hotkeys<
+    import("./hotkeys").PackOpeningId
+  >;
   pinnedAlbums: Record<string, string[]>;
+  pinnedAlbumHotkeys: import("./hotkeys").PinnedAlbumHotkeys;
 }
 export interface KosmoraClient {
   cachedListings(
