@@ -18,7 +18,7 @@ function listingPrice(value: unknown): string | undefined {
   }
 }
 
-export function parseAuctionPage(value: unknown) {
+export function parseAuctionPage(value: unknown, includePrices = true) {
   const page = object(value);
   if (!Array.isArray(page.items))
     throw new Error("Active auctions are unavailable.");
@@ -36,7 +36,9 @@ export function parseAuctionPage(value: unknown) {
         }),
         state: text(item.state),
         endsAt: date(item.endsAt),
-        price: listingPrice(item.bestBid ?? item.startPrice),
+        price: includePrices
+          ? listingPrice(item.bestBid ?? item.startPrice)
+          : undefined,
       };
     }),
     nextOffset: page.nextOffset === null ? null : count(page.nextOffset),
@@ -51,6 +53,9 @@ export async function activeAuctionSummary(
   id: string,
   name: string,
   read: (path: string) => Promise<unknown>,
+  mode: "full" | "presence" | "observe" = "full",
+  onMatch?: () => void,
+  keepObserving: () => boolean = () => true,
 ): Promise<{
   count: number;
   lowestPrice?: string;
@@ -63,6 +68,11 @@ export async function activeAuctionSummary(
     ReturnType<typeof parseAuctionPage>["items"][number]
   >();
   let offset = 0;
+  let found = false;
+  const isActive = (item: AuctionListing, now: number) =>
+    item.subjectId === id &&
+    item.state === "open" &&
+    Date.parse(item.endsAt) > now;
   for (let pageNumber = 0; pageNumber < 50; pageNumber++) {
     // Match the native Find at Market search, then filter by ID: names and
     // keywords alone can match other cards, and total includes those matches.
@@ -71,16 +81,27 @@ export async function activeAuctionSummary(
       sort: "ending",
       offset: String(offset),
     });
-    const page = parseAuctionPage(await read(`/auctions?${query}`));
-    for (const item of page.items) listings.set(item.id, item);
+    const page = parseAuctionPage(
+      await read(`/auctions?${query}`),
+      mode === "full",
+    );
+    const now = Date.now();
+    if (!found && page.items.some((item) => isActive(item, now))) {
+      found = true;
+      onMatch?.();
+    }
+    if (
+      found &&
+      (mode === "presence" || (mode === "observe" && !keepObserving()))
+    )
+      return { count: 1, listings: [] };
+    if (mode !== "presence")
+      for (const item of page.items) listings.set(item.id, item);
     if (page.nextOffset === null) {
-      const now = Date.now();
-      const active = [...listings.values()].filter(
-        (item) =>
-          item.subjectId === id &&
-          item.state === "open" &&
-          Date.parse(item.endsAt) > now,
+      const active = [...listings.values()].filter((item) =>
+        isActive(item, now),
       );
+      if (mode !== "full") return { count: active.length, listings: active };
       // A hidden/malformed price must not turn a partial minimum into a claim
       // about the lowest price, or disable the independent auction count.
       const prices = active.map((item) => item.price);

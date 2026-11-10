@@ -20,9 +20,13 @@ export class SaleFamilySelection {
     private changed: () => void,
   ) {}
 
-  reset() {
+  clearPicker() {
     this.picker = undefined;
     this.picked.clear();
+  }
+
+  reset() {
+    this.clearPicker();
     this.batch = undefined;
     this.candidates.clear();
     this.removed.clear();
@@ -35,9 +39,10 @@ export class SaleFamilySelection {
     this.reset();
   }
 
-  start() {
+  start(enabled: () => boolean) {
     const message = (event: MessageEvent) => {
       if (
+        !enabled() ||
         event.source !== this.win ||
         event.origin !== this.win.location.origin ||
         !isSaleBatchMessage(event.data)
@@ -57,6 +62,8 @@ export class SaleFamilySelection {
       this.changed();
     };
     const click = (event: MouseEvent) => {
+      if (!enabled() || this.win.location.pathname !== "/market/sell/batch")
+        return;
       const target = event.target instanceof Element ? event.target : null;
       if (!target || target.closest(":disabled")) return;
       if (target.closest(".bsell-x")) {
@@ -67,7 +74,7 @@ export class SaleFamilySelection {
           const key = saleSelectionKey(sale.context);
           // Run after the native handler. Filtering is never treated as removal.
           queueMicrotask(() => {
-            if (row?.isConnected) return;
+            if (!enabled() || row?.isConnected) return;
             this.removed.add(key);
             this.batch?.delete(key);
             this.changed();
@@ -76,7 +83,7 @@ export class SaleFamilySelection {
       }
       if (target.closest('[data-testid="bsell-draft-clear-ok"]')) {
         queueMicrotask(() => {
-          if (event.defaultPrevented) return;
+          if (!enabled() || event.defaultPrevented) return;
           this.removed.clear();
           const keys = (
             new URL(this.win.location.href).searchParams.get("s") ?? ""

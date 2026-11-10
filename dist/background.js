@@ -27,44 +27,53 @@ function a(e) {
 	if (!Number.isFinite(Date.parse(n))) throw Error("Invalid sale date.");
 	return n;
 }
+// src/kosmora/listing-capture.ts
+function o(t) {
+	try {
+		let a = e(t);
+		return r(a.id) === a.id && n(a.subjectId) === a.subjectId && i(a.startPrice) === a.startPrice && typeof a.submittedAt == "number" && Number.isSafeInteger(a.submittedAt) && a.submittedAt > 0;
+	} catch {
+		return !1;
+	}
+}
 // src/shared/types.ts
-var o = [
+var s = [
 	"plain",
 	"veil",
 	"fullart"
-], s = {
+], c = {
 	plain: "Standard",
 	veil: "Shiny",
 	fullart: "Full art"
 };
-function c(e) {
+function l(e) {
 	return e instanceof Error ? e.message : "The request failed. Please try again.";
 }
 // src/shared/sale-observations.ts
-var l = (e, t) => ({
+var u = (e, t) => ({
 	sold: e,
 	total: t,
 	percent: t ? Math.round(e / t * 100) : null
 });
-function u(e, t) {
+function d(e, t) {
 	let n = 0, r = 0;
 	for (let i of t) n += e[i].sold, r += e[i].total;
-	return l(n, r);
+	return u(n, r);
 }
 // src/kosmora/my-listings.ts
-var d = [
+var f = [
 	"selling",
 	"sold",
 	"unsold"
-], f = () => ({
+], p = () => ({
 	selling: 50,
 	sold: 50,
 	unsold: 50
 });
-function p(o) {
+function m(o) {
 	try {
 		let s = e(o);
-		return r(s.id), n(s.subjectId), a(s.endsAt), i(s.startPrice), t(s.state), d.includes(s.group) && [
+		return r(s.id), n(s.subjectId), a(s.endsAt), i(s.startPrice), t(s.state), f.includes(s.group) && [
 			"plain",
 			"veil",
 			"fullart"
@@ -73,22 +82,19 @@ function p(o) {
 		return !1;
 	}
 }
-function m(e) {
+function h(e) {
 	if (!e || typeof e != "object") return !1;
 	let t = e;
-	return h(t.limits) && Array.isArray(t.listings) && t.listings.every(p) && [t.totals, t.counts].every((e) => e && d.every((t) => Number.isSafeInteger(e[t]) && e[t] >= 0)) && Number.isFinite(t.fetchedAt) && t.fetchedAt >= 0;
+	return g(t.limits) && Array.isArray(t.listings) && t.listings.every(m) && [t.totals, t.counts].every((e) => e && f.every((t) => Number.isSafeInteger(e[t]) && e[t] >= 0)) && (t.startedAt === void 0 || Number.isFinite(t.startedAt) && t.startedAt >= 0) && Number.isFinite(t.fetchedAt) && t.fetchedAt >= 0;
 }
-function h(e) {
-	return !e || typeof e != "object" ? !1 : d.every((t) => {
+function g(e) {
+	return !e || typeof e != "object" ? !1 : f.every((t) => {
 		let n = e[t];
 		return Number.isInteger(n) && n >= 1 && n <= 1e6;
 	});
 }
-var g = (e) => d.every((t) => e.counts[t] >= e.totals[t]);
-function _(e, t) {
-	return d.filter((n) => e.counts[n] < e.totals[n] && !e.listings.some((e) => e.subjectId === t && e.group === n));
-}
-function v(e, t = d) {
+var _ = (e) => f.every((t) => e.counts[t] >= e.totals[t]);
+function v(e, t = f) {
 	let n = { ...e.limits };
 	for (let r of t) if (e.counts[r] < e.totals[r] && (n[r] = Math.min(e.totals[r], Math.max(n[r] * 2, 50)), n[r] <= e.limits[r])) throw Error("Your listing history stopped before all auctions were returned.");
 	return n;
@@ -139,16 +145,12 @@ function E(e) {
 	let t = e;
 	return T(t.requestId) && ([
 		"listingCache",
-		"listingLatest",
+		"listingSavedPrice",
 		"listingInvalidate",
-		"listingHistory"
-	].includes(t.op) && "accountKey" in t && "subjectId" in t && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && typeof t.subjectId == "string" && /^\d+$/.test(t.subjectId) && (t.op !== "listingHistory" || [
-		"initial",
-		"more",
-		"refresh"
-	].includes(t.mode) && (t.limits === void 0 || h(t.limits))) || t.op === "listingCancel" && T(t.target) || [
+		"listingHistory",
+		"listingRecord"
+	].includes(t.op) && "accountKey" in t && "subjectId" in t && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && typeof t.subjectId == "string" && /^\d+$/.test(t.subjectId) && (t.op !== "listingRecord" || Array.isArray(t.records) && t.records.length <= 500 && t.records.every(o)) && (t.op !== "listingHistory" || ["more", "refresh"].includes(t.mode) && (t.limits === void 0 || g(t.limits))) || t.op === "listingCancel" && T(t.target) || t.op === "openOptions" && (t.section === void 0 || t.section === "stat-boxes") || [
 		"sessions",
-		"openOptions",
 		"popupState",
 		"friendPopupState"
 	].includes(t.op) || t.op === "popupLayout" && w(t.change) || t.op === "friendPopupLayout" && w(t.change, {
@@ -249,9 +251,9 @@ function O(e) {
 		value: "—",
 		title: "Loading card details…"
 	};
-	let t = u(e.saleRates, e.finishes), n = `${o.filter((t) => e.finishes.includes(t)).map((t) => {
+	let t = d(e.saleRates, e.finishes), n = `${s.filter((t) => e.finishes.includes(t)).map((t) => {
 		let n = e.saleRates[t];
-		return `${s[t]}: ${n.total ? `${n.sold} of ${n.total} sold` : "none observed"}`;
+		return `${c[t]}: ${n.total ? `${n.sold} of ${n.total} sold` : "none observed"}`;
 	}).join(" · ")}. Observed locally from listings KosMore saw on the Market, settled from sale histories. Listings ended in the last 30 days.`;
 	return t.percent === null ? {
 		value: "—",
@@ -412,25 +414,25 @@ function N(e, t = !1) {
 function P(e) {
 	return `${e.ctrl}-${e.alt}-${e.shift}-${e.meta}-${e.code}`;
 }
-function F(e, t, n, r) {
+function ee(e, t, n, r) {
 	if (!e || typeof e != "object") return {};
 	let i = e, a = [...Object.values(n), ...Object.values(r)].map(P);
 	return Object.fromEntries(Object.entries(t).flatMap(([e, t]) => {
 		if (!Object.hasOwn(i, e)) return [];
-		let n = R(i[e], t.map((e) => ({
+		let n = L(i[e], t.map((e) => ({
 			id: e,
 			label: e
 		})), new Set(a));
 		return Object.keys(n).length ? [[e, n]] : [];
 	}));
 }
-function I(e) {
-	return R(e, j);
+function F(e) {
+	return L(e, j);
 }
-function L(e, t) {
-	return R(e, M, new Set(Object.values(t).map(P)), !0);
+function I(e, t) {
+	return L(e, M, new Set(Object.values(t).map(P)), !0);
 }
-function R(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
+function L(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
 	let i = {};
 	if (!e || typeof e != "object") return i;
 	let a = e;
@@ -456,17 +458,17 @@ function R(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
 	return i;
 }
 // src/shared/sales-prices.ts
-function z(e) {
+function R(e) {
 	if (typeof e != "number" || !Number.isFinite(e)) return;
 	let t = String(e).match(/^(-?)(\d+)(?:\.(\d{1,6}))?$/);
 	if (!t) return;
 	let n = BigInt(t[2]) * 1000000n + BigInt((t[3] ?? "").padEnd(6, "0"));
 	if (!(n > BigInt(2 ** 53 - 1))) return t[1] ? -n : n;
 }
-function B(e) {
-	return z(e) !== void 0;
+function z(e) {
+	return R(e) !== void 0;
 }
-function V(e, t = "per friend") {
+function B(e, t = "per friend") {
 	let n = [];
 	for (let r of e) {
 		let e = r.trim().replace(/\s+/g, " ");
@@ -478,12 +480,13 @@ function V(e, t = "per friend") {
 	return n;
 }
 // src/shared/settings.ts
-var H = "kosmore.settings", U = () => ({
+var V = "kosmore.settings", H = () => ({
 	schemaVersion: 1,
 	enabled: !0,
 	disableHoverTooltipInPulsar: !1,
 	disableHoverTooltipInVortex: !1,
 	useOverlayButtonInsteadOfHover: !1,
+	tooltipTakesFocus: !1,
 	outsideClickClosesTooltipOnly: !1,
 	fullScreenCenteredOnOpen: !1,
 	socialRemindersMasterEnabled: !0,
@@ -527,6 +530,7 @@ var H = "kosmore.settings", U = () => ({
 	salesMyLastListingSetsPrice: !0,
 	salesMyLastListingAdjustment: 0,
 	statBoxesEnabled: !0,
+	collectSaleRateData: !0,
 	pinnedAlbumsEnabled: !0,
 	closeTooltipWhenAddedToAlbum: !1,
 	applyCloseBehaviorToPinnedTooltips: !1,
@@ -555,21 +559,21 @@ var H = "kosmore.settings", U = () => ({
 	pinnedAlbums: {},
 	pinnedAlbumHotkeys: {}
 });
-function W(e) {
-	let t = U();
+function U(e) {
+	let t = H();
 	if (!e || typeof e != "object") return t;
 	let n = e;
 	if (n.schemaVersion !== 1) return t;
-	if (t.stats = A(n.stats), t.hotkeys = I(n.hotkeys), t.packOpeningHotkeys = L(n.packOpeningHotkeys, t.hotkeys), t.popupPosition = S(n.popupPosition), t.friendTooltipPosition = S(n.friendTooltipPosition), Array.isArray(n.familyBlacklist) && n.familyBlacklist.every((e) => typeof e == "string")) try {
-		t.familyBlacklist = V(n.familyBlacklist, "in the family blacklist");
+	if (t.stats = A(n.stats), t.hotkeys = F(n.hotkeys), t.packOpeningHotkeys = I(n.packOpeningHotkeys, t.hotkeys), t.popupPosition = S(n.popupPosition), t.friendTooltipPosition = S(n.friendTooltipPosition), Array.isArray(n.familyBlacklist) && n.familyBlacklist.every((e) => typeof e == "string")) try {
+		t.familyBlacklist = B(n.familyBlacklist, "in the family blacklist");
 	} catch {}
 	typeof n.enabled == "boolean" && (t.enabled = n.enabled);
-	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.navigationHotkeysEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.cardOverlaysEnabled.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
+	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.tooltipTakesFocus.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.navigationHotkeysEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.cardOverlaysEnabled.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.statBoxesEnabled.collectSaleRateData.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
 	for (let e of [
 		"salesLastSaleAdjustment",
 		"salesLowestListingAdjustment",
 		"salesMyLastListingAdjustment"
-	]) B(n[e]) && (t[e] = n[e]);
+	]) z(n[e]) && (t[e] = n[e]);
 	typeof n.closeTooltipWhenAddedToAlbum == "boolean" && (t.closeTooltipWhenAddedToAlbum = n.closeTooltipWhenAddedToAlbum), typeof n.applyCloseBehaviorToPinnedTooltips == "boolean" && (t.applyCloseBehaviorToPinnedTooltips = n.applyCloseBehaviorToPinnedTooltips), typeof n.showSaleHistoryOverlay == "boolean" && (t.showSaleHistoryOverlay = n.showSaleHistoryOverlay), typeof n.showLastSalePriceOverlay == "boolean" && (t.showLastSalePriceOverlay = n.showLastSalePriceOverlay), typeof n.showActiveAuctionsOverlay == "boolean" && (t.showActiveAuctionsOverlay = n.showActiveAuctionsOverlay), typeof n.showLowestListingPriceOverlay == "boolean" && (t.showLowestListingPriceOverlay = n.showLowestListingPriceOverlay), typeof n.showOnSaleOverlay == "boolean" && (t.showOnSaleOverlay = n.showOnSaleOverlay), typeof n.showFriendInterestOverlay == "boolean" && (t.showFriendInterestOverlay = n.showFriendInterestOverlay), typeof n.showQuestOverlay == "boolean" && (t.showQuestOverlay = n.showQuestOverlay), typeof n.showFusionFamilyOverlay == "boolean" && (t.showFusionFamilyOverlay = n.showFusionFamilyOverlay), typeof n.hoverDelayMs == "number" && Number.isFinite(n.hoverDelayMs) && (t.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(n.hoverDelayMs))));
 	for (let [e, r, i] of [
 		[
@@ -637,21 +641,39 @@ function W(e) {
 		writable: !0,
 		value: [...new Set(r.filter((e) => typeof e == "string" && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(e)))].slice(0, 200)
 	});
-	return t.pinnedAlbumHotkeys = F(n.pinnedAlbumHotkeys, t.pinnedAlbums, t.hotkeys, t.packOpeningHotkeys), t;
+	return t.pinnedAlbumHotkeys = ee(n.pinnedAlbumHotkeys, t.pinnedAlbums, t.hotkeys, t.packOpeningHotkeys), t;
 }
-async function G() {
-	return W((await chrome.storage.local.get(H))[H]);
+async function W() {
+	return U((await chrome.storage.local.get(V))[V]);
 }
-async function K(e) {
-	await chrome.storage.local.set({ [H]: W(e) });
+async function G(e) {
+	await chrome.storage.local.set({ [V]: U(e) });
 }
 // src/shared/listing-cache.ts
-var q = "kosmore.myListingPrices", J = "kosmore.listingHistory.", Y = (e) => e > 0 && Date.now() - e < 3e5, X = (e, t) => d.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), Z = () => new DOMException("Listing lookup canceled.", "AbortError"), Q = class {
+var K = "kosmore.myListingPrices", q = "kosmore.listingHistory.", J = (e) => e > 0 && Date.now() - e < 3e5, Y = (e, t) => f.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), X = () => new DOMException("Listing lookup canceled.", "AbortError");
+function Z(e, t) {
+	let n = new Map(t.map((e) => [e.id, e])), r = new Map(e.map((e) => [e.id, e])), i = /* @__PURE__ */ new Map(), a = [];
+	for (let t of e) n.has(t.id) ? (i.set(t.id, a), a = []) : a.push(t);
+	if (!i.size) return [...e, ...t];
+	let o = [];
+	for (let e of t) {
+		for (let t of i.get(e.id) ?? []) o.push(t);
+		let t = r.get(e.id);
+		o.push({
+			...t,
+			...e,
+			startPrice: t?.startPrice ?? e.startPrice
+		});
+	}
+	return o.concat(a);
+}
+var Q = class {
 	local;
 	session;
 	writes = Promise.resolve();
 	pending = /* @__PURE__ */ new Map();
 	epochs = /* @__PURE__ */ new Map();
+	legacyIndex;
 	constructor(e, t) {
 		this.local = e, this.session = t;
 	}
@@ -659,32 +681,147 @@ var q = "kosmore.myListingPrices", J = "kosmore.listingHistory.", Y = (e) => e >
 		let t = this.writes.then(e);
 		return this.writes = t.catch(() => {}), t;
 	}
-	async index() {
-		let e = (await this.local.get(q))[q], t = {
-			v: 1,
-			entries: {}
-		};
-		if (e?.v === 1 && e.entries && typeof e.entries == "object") for (let [n, r] of Object.entries(e.entries)) !/^[a-z0-9_]{1,24}:\d+$/.test(n) || !r || !Number.isFinite(r.checkedAt) || r.checkedAt < 0 || !Number.isFinite(r.usedAt) || (r.listing === null || p(r.listing) && r.listing.subjectId === n.split(":")[1]) && (t.entries[n] = r);
-		return t;
+	key(e, t) {
+		return `kosmore.listingRecord.${e}.${t}`;
 	}
-	async cached(e, t, n = !0) {
-		return this.write(async () => {
-			let r = await this.index(), i = `${e}:${t}`, a = r.entries[i];
-			a && n && (a.usedAt = Date.now(), await this.local.set({ [q]: r }));
-			let o = (await this.session.get(J + e))[J + e];
-			return {
-				...m(o) ? { batch: o } : {},
-				...a ? { latest: {
-					listing: a.listing,
-					checkedAt: a.checkedAt
-				} } : {}
-			};
+	decode(e, t, n) {
+		let r = e;
+		if (r?.v === 2 && Array.isArray(r.listings)) return r;
+		let i = {
+			v: 2,
+			listings: [],
+			complete: !1,
+			pruned: !1,
+			hasMore: !0,
+			checkedAt: 0
+		};
+		if (r && o(r.latest) && r.latest.subjectId === n) {
+			let { id: e, startPrice: t, submittedAt: n } = r.latest;
+			i.listings.push({
+				id: e,
+				startPrice: t,
+				submittedAt: n
+			}), r.verifiedId && r.verifiedId !== e && r.verifiedPrice && i.listings.unshift({
+				id: r.verifiedId,
+				startPrice: r.verifiedPrice
+			}), i.checkedAt = r.reconciledAt ?? 0;
+		} else {
+			let e = t;
+			m(e?.listing) && e.listing.subjectId === n && i.listings.push(this.serverRow(e.listing));
+		}
+		return i;
+	}
+	async readTracked(e, t) {
+		let n = t.map((t) => this.key(e, t)), r = await this.local.get(n), i = n.some((e) => r[e] === void 0) ? await (this.legacyIndex ??= this.local.get(K).then((e) => e[K]).catch(() => {
+			this.legacyIndex = void 0;
+		})) : void 0;
+		return t.map((t, a) => this.decode(r[n[a]], i?.entries?.[`${e}:${t}`], t));
+	}
+	async tracked(e, t) {
+		await this.writes;
+		let [n] = await this.readTracked(e, [t]);
+		return {
+			listings: n.listings,
+			hasMore: n.hasMore
+		};
+	}
+	saveState(e, t, n = e.complete, r = e.checkedAt) {
+		let i = e.pruned || t.length > 100;
+		return {
+			v: 2,
+			listings: t.slice(0, 100),
+			complete: n,
+			pruned: i,
+			hasMore: !n || i,
+			checkedAt: r
+		};
+	}
+	serverRow({ id: e, startPrice: t, endsAt: n, finish: r, state: i }) {
+		return {
+			id: e,
+			startPrice: t,
+			endsAt: n,
+			finish: r,
+			state: i
+		};
+	}
+	async record(e, t) {
+		let n = /* @__PURE__ */ new Map();
+		for (let e of t) {
+			let t = n.get(e.subjectId) ?? [];
+			t.push(e), n.set(e.subjectId, t);
+		}
+		n.size && await this.write(async () => {
+			let t = [...n.keys()], r = await this.readTracked(e, t), i = {};
+			for (let [a, o] of t.entries()) {
+				let t = r[a], s = [...t.listings];
+				for (let { id: e, startPrice: r, submittedAt: i } of n.get(o)) {
+					let n = s.findIndex((t) => t.id === e);
+					if (n >= 0) {
+						s[n] = {
+							...s[n],
+							submittedAt: s[n].submittedAt ?? i
+						};
+						continue;
+					}
+					let a = i > (s[0]?.submittedAt ?? t.checkedAt), o = s.findIndex((e) => e.submittedAt !== void 0 && e.submittedAt < i);
+					s.splice(a ? 0 : o > 0 ? o : s.length, 0, {
+						id: e,
+						startPrice: r,
+						submittedAt: i
+					});
+				}
+				i[this.key(e, o)] = this.saveState(t, s);
+			}
+			await this.local.set(i);
+		});
+	}
+	async importRows(e, t, n, r, i) {
+		t.size && await this.write(async () => {
+			i.throwIfAborted();
+			let a = [...t.keys()], o = await this.readTracked(e, a), s = {};
+			for (let [i, c] of a.entries()) {
+				let a = o[i], l = t.get(c).map((e) => this.serverRow(e)), u = Z(a.listings, l), d = a.listings[0], f = !d || l.some((e) => e.id === d.id) && n >= (d.submittedAt ?? a.checkedAt), p = f ? l[0]?.id ?? d?.id : d.id, m = u.findIndex((e) => e.id === p);
+				m > 0 && u.unshift(...u.splice(m, 1)), s[this.key(e, c)] = this.saveState(a, u, r, f ? Math.max(n, a.checkedAt) : a.checkedAt);
+			}
+			i.throwIfAborted(), await this.local.set(s);
+		});
+	}
+	async history(e, t, n, r, i, a) {
+		let o = Date.now(), s = await this.batch(e);
+		i.throwIfAborted();
+		let c = n === "refresh", l = s && J(s.fetchedAt) ? s : void 0, u = c ? {
+			selling: 180,
+			sold: 180,
+			unsold: 180
+		} : a ?? (l ? v(l) : p()), d = await this.ensure(e, u, r, i, c || !!s && !l);
+		if (c && f.some((e) => d.counts[e] < Math.min(d.totals[e], 180))) throw Error("Your listing history stopped before the newest auctions were returned.");
+		let m = /* @__PURE__ */ new Map(), h = _(d) && (!c || d.listings.length <= 180);
+		m.set(t, []);
+		let g = c ? d.listings.slice(0, 180) : d.listings;
+		for (let e of g) {
+			if (!c && e.subjectId !== t) continue;
+			let n = m.get(e.subjectId) ?? [];
+			n.push(e), m.set(e.subjectId, n);
+		}
+		return await this.importRows(e, m, d.startedAt ?? Math.min(o, d.fetchedAt), h, i), c ? void 0 : {
+			...d,
+			listings: m.get(t)
+		};
+	}
+	async invalidate(e) {
+		this.epochs.set(e, (this.epochs.get(e) ?? 0) + 1), await this.write(async () => {
+			let t = q + e, n = await this.session.get(t);
+			h(n[t]) && await this.session.set({ [t]: {
+				...n[t],
+				fetchedAt: 0
+			} });
 		});
 	}
 	async saveBatch(e, t, n) {
 		await this.write(async () => {
 			if (this.epochs.get(e) !== n) return;
-			let r = await this.session.get(null), i = J + e, a = Object.keys(r).filter((e) => e.startsWith(J)), o = JSON.stringify(t).length * 2;
+			let r = await this.session.get(null), i = q + e, a = Object.keys(r).filter((e) => e.startsWith(q)), o = JSON.stringify(t).length * 2;
 			if (o > 6e6) return;
 			let s = a.filter((e) => e !== i).sort((e, t) => Number(r[e]?.fetchedAt ?? 0) - Number(r[t]?.fetchedAt ?? 0));
 			o += s.reduce((e, t) => e + JSON.stringify(r[t]).length * 2, 0);
@@ -698,68 +835,15 @@ var q = "kosmore.myListingPrices", J = "kosmore.listingHistory.", Y = (e) => e >
 	}
 	async batch(e) {
 		await this.writes;
-		let t = J + e, n = (await this.session.get(t))[t];
-		return m(n) ? n : void 0;
-	}
-	async savePrice(e, t, n, r) {
-		await this.write(async () => {
-			if (this.epochs.get(e) !== r) return;
-			let i = await this.index();
-			i.entries[`${e}:${t}`] = {
-				...n,
-				usedAt: Date.now()
-			};
-			let a = Object.keys(i.entries).sort((e, t) => i.entries[e].usedAt - i.entries[t].usedAt);
-			for (let e of a.slice(0, Math.max(0, a.length - 1e4))) delete i.entries[e];
-			await this.local.set({ [q]: i });
-		});
-	}
-	async invalidate(e) {
-		this.epochs.set(e, (this.epochs.get(e) ?? 0) + 1), this.pending.get(e)?.controller.abort(), this.pending.delete(e), await this.write(async () => {
-			let t = await this.index();
-			for (let [n, r] of Object.entries(t.entries)) n.startsWith(`${e}:`) && (r.checkedAt = 0);
-			await this.local.set({ [q]: t });
-			let n = J + e, r = await this.session.get(n);
-			m(r[n]) && await this.session.set({ [n]: {
-				...r[n],
-				fetchedAt: 0
-			} });
-		});
-	}
-	async history(e, t, n, r, i, a) {
-		let o = await this.cached(e, t);
-		i.throwIfAborted();
-		let s = o.batch;
-		if (n === "initial" && s && Y(s.fetchedAt) || n === "more" && s && g(s) && Y(s.fetchedAt)) return s;
-		let c = n === "more" && a ? a : n === "more" && s ? v(s) : f();
-		return this.ensure(e, c, r, i, n === "refresh" || !!s && !Y(s.fetchedAt));
-	}
-	async latest(e, t, n, r) {
-		let i = await this.cached(e, t);
-		if (r.throwIfAborted(), i.latest && Y(i.latest.checkedAt) && (!i.batch || i.batch.fetchedAt <= i.latest.checkedAt)) return i.latest;
-		let a = this.epochs.get(e) ?? 0;
-		this.epochs.set(e, a);
-		let o = i.batch;
-		for (o && Y(o.fetchedAt) || (o = await this.ensure(e, f(), n, r, !!o));;) {
-			if (r.throwIfAborted(), this.epochs.get(e) !== a) throw Z();
-			let i = _(o, t);
-			if (!i.length) {
-				let n = {
-					listing: o.listings.find((e) => e.subjectId === t) ?? null,
-					checkedAt: o.fetchedAt
-				};
-				if (await this.savePrice(e, t, n, a), r.aborted || this.epochs.get(e) !== a) throw Z();
-				return n;
-			}
-			o = await this.ensure(e, v(o, i), n, r);
-		}
+		let t = q + e, n = (await this.session.get(t))[t];
+		return h(n) ? n : void 0;
 	}
 	async ensure(e, t, n, r, i = !1) {
 		for (r.throwIfAborted(), this.epochs.has(e) || this.epochs.set(e, 0);;) {
 			let a = this.epochs.get(e);
 			if (!i) {
 				let n = await this.batch(e);
-				if (r.throwIfAborted(), n && Y(n.fetchedAt) && X(n, t)) return n;
+				if (r.throwIfAborted(), n && J(n.fetchedAt) && Y(n, t)) return n;
 			}
 			let o = this.pending.get(e);
 			if (!o || o.controller.signal.aborted) {
@@ -774,37 +858,39 @@ var q = "kosmore.myListingPrices", J = "kosmore.listingHistory.", Y = (e) => e >
 				let n = o;
 				this.pending.set(e, n), n.promise = Promise.resolve().then(async () => {
 					n.controller.signal.throwIfAborted(), n.started = !0;
-					let t = /* @__PURE__ */ new Set(), r;
+					let t = Date.now(), r = /* @__PURE__ */ new Set(), i;
 					for (;;) {
-						let e = [...n.readers.keys()].find((e) => !t.has(e));
+						let e = [...n.readers.keys()].find((e) => !r.has(e));
 						if (!e) throw Error("The game tab closed during the listing lookup. Try again.");
-						t.add(e);
+						r.add(e);
 						try {
-							r = await e(n.limits, n.controller.signal);
+							i = await e(n.limits, n.controller.signal);
 							break;
 						} catch (e) {
 							if (n.controller.signal.aborted || !/Receiving end|port closed|tab.*closed|No tab/i.test(String(e))) throw e;
 						}
 					}
-					if (!r || !m(r)) throw Error("Your listing history is unavailable.");
-					if (this.epochs.get(e) !== a || n.controller.signal.aborted) throw Z();
-					let i = await this.batch(e);
-					if (i && r.fetchedAt <= i.fetchedAt && (r = {
-						...r,
-						fetchedAt: i.fetchedAt + 1
-					}), i && Y(i.fetchedAt)) {
-						for (let e of d) if (n.limits[e] > i.limits[e] && r.counts[e] <= i.counts[e] && r.counts[e] < r.totals[e]) throw Error("Your listing history stopped before all auctions were returned.");
+					if (!i || !h(i)) throw Error("Your listing history is unavailable.");
+					n.controller.signal.throwIfAborted(), i = {
+						...i,
+						startedAt: t
+					};
+					let o = await this.batch(e);
+					if (o && i.fetchedAt <= o.fetchedAt && (i = {
+						...i,
+						fetchedAt: o.fetchedAt + 1
+					}), o && J(o.fetchedAt)) {
+						for (let e of f) if (n.limits[e] > o.limits[e] && i.counts[e] <= o.counts[e] && i.counts[e] < i.totals[e]) throw Error("Your listing history stopped before all auctions were returned.");
 					}
-					return await this.saveBatch(e, r, a), r;
+					return await this.saveBatch(e, i, a), i;
 				});
 				let r = () => {
 					this.pending.get(e) === n && this.pending.delete(e);
 				};
 				n.promise.then(r, r);
-			} else if (!o.started) for (let e of d) o.limits[e] = Math.max(o.limits[e], t[e]);
+			} else if (!o.started) for (let e of f) o.limits[e] = Math.max(o.limits[e], t[e]);
 			let s = await this.consume(o, n, r);
-			if (r.throwIfAborted(), this.epochs.get(e) !== a) throw Z();
-			if (X(s, t)) return s;
+			if (r.throwIfAborted(), Y(s, t)) return s;
 			i = !1;
 		}
 	}
@@ -816,7 +902,7 @@ var q = "kosmore.myListingPrices", J = "kosmore.listingHistory.", Y = (e) => e >
 				let r = e.readers.get(t) - 1;
 				return r ? e.readers.set(t, r) : e.readers.delete(t), e.users || e.controller.abort(), !0;
 			}, s = () => {
-				o() && i(Z());
+				o() && i(X());
 			};
 			n.addEventListener("abort", s, { once: !0 }), n.aborted ? s() : e.promise.then((e) => {
 				o() && r(e);
@@ -827,7 +913,7 @@ var q = "kosmore.myListingPrices", J = "kosmore.listingHistory.", Y = (e) => e >
 	}
 };
 // src/listing-background.ts
-function ee() {
+function te() {
 	let e = new Q(chrome.storage.local, chrome.storage.session), t = /* @__PURE__ */ new Map(), n = /* @__PURE__ */ new Set();
 	chrome.tabs.onRemoved.addListener((e) => {
 		for (let [n, r] of t) n.startsWith(`${e}:`) && (r.abort(), t.delete(n));
@@ -843,8 +929,8 @@ function ee() {
 			}), !1;
 		}
 		if (!("accountKey" in r) || !("subjectId" in r)) return !1;
-		let s = `${o}:${r.requestId}`, l = new AbortController();
-		t.set(s, l), n.delete(s) && l.abort();
+		let s = `${o}:${r.requestId}`, c = new AbortController();
+		t.set(s, c), n.delete(s) && c.abort();
 		let u = async (e, t) => {
 			t.throwIfAborted();
 			let n = crypto.randomUUID(), i = () => {
@@ -866,26 +952,27 @@ function ee() {
 					status: i?.status,
 					retryAt: i?.retryAt
 				});
-				if (!m(i.data)) throw Error("Your listing history is unavailable.");
+				if (!h(i.data)) throw Error("Your listing history is unavailable.");
 				return i.data;
 			} finally {
 				t.removeEventListener("abort", i);
 			}
+		}, d = async () => {
+			let e = await chrome.tabs.query({ url: "https://kosmora.io/*" });
+			await Promise.allSettled(e.filter((e) => e.id !== void 0).map((e) => chrome.tabs.sendMessage(e.id, {
+				requestId: crypto.randomUUID(),
+				op: "listingCacheChanged",
+				accountKey: r.accountKey
+			})));
 		};
 		return (async () => {
-			if (l.signal.throwIfAborted(), r.op === "listingCache") return e.cached(r.accountKey, r.subjectId);
-			if (r.op === "listingHistory") return e.history(r.accountKey, r.subjectId, r.mode, u, l.signal, r.limits);
-			if (r.op === "listingLatest") return e.latest(r.accountKey, r.subjectId, u, l.signal);
-			if (r.op === "listingInvalidate") {
-				await e.invalidate(r.accountKey);
-				let t = await chrome.tabs.query({ url: "https://kosmora.io/*" });
-				return await Promise.allSettled(t.filter((e) => e.id !== void 0).map((e) => chrome.tabs.sendMessage(e.id, {
-					requestId: crypto.randomUUID(),
-					op: "listingCacheChanged",
-					accountKey: r.accountKey
-				}))), null;
+			if (c.signal.throwIfAborted(), r.op === "listingCache") return e.tracked(r.accountKey, r.subjectId);
+			if (r.op === "listingSavedPrice") return (await e.tracked(r.accountKey, r.subjectId)).listings[0];
+			if (r.op === "listingHistory") {
+				let t = await e.history(r.accountKey, r.subjectId, r.mode, u, c.signal, r.limits);
+				return await d(), t;
 			}
-			return null;
+			return (r.op === "listingRecord" || r.op === "listingInvalidate") && (r.op === "listingRecord" && await e.record(r.accountKey, r.records), await e.invalidate(r.accountKey), await d()), null;
 		})().then((e) => a({
 			requestId: r.requestId,
 			ok: !0,
@@ -893,14 +980,14 @@ function ee() {
 		}), (e) => a({
 			requestId: r.requestId,
 			ok: !1,
-			error: c(e),
+			error: l(e),
 			status: e?.status,
 			retryAt: e?.retryAt
 		})).finally(() => t.delete(s)), !0;
 	});
 }
 // src/background.ts
-ee();
+te();
 var $ = Promise.resolve();
 chrome.tabs.onRemoved.addListener((e) => {
 	chrome.storage.session.remove([`${b}${e}`, `${x}${e}`]);
@@ -915,8 +1002,8 @@ chrome.tabs.onRemoved.addListener((e) => {
 			if (e.op === "popupState" || e.op === "friendPopupState") return t;
 			let n = e.change;
 			if (n.tab !== void 0 && (t.tab = n.tab), n.pinned !== void 0 && (t.pinned = n.pinned), n.position && (t.position = S(n.position)), await chrome.storage.session.set({ [i]: t }), n.position || n.width !== void 0 || n.height !== void 0) {
-				let e = await G();
-				n.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = S(n.position)), n.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(n.width)), n.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(n.height)), await K(e);
+				let e = await W();
+				n.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = S(n.position)), n.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(n.width)), n.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(n.height)), await G(e);
 			}
 			return t;
 		});
@@ -927,13 +1014,17 @@ chrome.tabs.onRemoved.addListener((e) => {
 		}), (t) => n({
 			requestId: e.requestId,
 			ok: !1,
-			error: c(t)
+			error: l(t)
 		})), !0;
 	}
-	return e.op === "openOptions" && i ? (chrome.runtime.openOptionsPage().then(() => n({
+	return e.op === "openOptions" && i ? ((e.section ? chrome.tabs.create({ url: chrome.runtime.getURL("options.html#stat-boxes") }) : chrome.runtime.openOptionsPage()).then(() => n({
 		requestId: e.requestId,
 		ok: !0,
 		data: null
+	}), (t) => n({
+		requestId: e.requestId,
+		ok: !1,
+		error: l(t)
 	})), !0) : r ? ((async () => {
 		if (e.op === "sessions") {
 			let t = await chrome.tabs.query({ url: "https://kosmora.io/*" });
@@ -967,7 +1058,7 @@ chrome.tabs.onRemoved.addListener((e) => {
 	}), (t) => n({
 		requestId: e.requestId,
 		ok: !1,
-		error: c(t)
+		error: l(t)
 	})), !0) : !1;
 });
 

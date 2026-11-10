@@ -1,3 +1,5 @@
+import { LISTING_REFRESH_LABEL } from "../kosmora/my-listings";
+import { setRequestPriority } from "../shared/request-scheduler";
 import { headerIcon, pinIcon, tooltipIcon } from "./icons";
 import css from "./popup.css?inline";
 import headerCss from "./tooltip-header-buttons.css?inline";
@@ -73,6 +75,8 @@ export class Popup {
   private tradeArea = el("section", "trade-panel");
   private listingArea = el("section", "listing-history-panel");
   private listingHistory?: ListingHistory;
+  private historyRefreshBusy = false;
+  private refreshButton!: HTMLButtonElement;
   private tradeFriends = new FriendList();
   private notesArea = el("section", "card-notes-panel");
   private notes?: CardNotes;
@@ -80,6 +84,7 @@ export class Popup {
   private headerPrices = el("div", "header-prices");
   private lastSold = el("p", "last-sold market-badge sale");
   private listedFor = el("a", "listed-for market-badge auction");
+  private listingPriceStale = false;
   private lowestListingPrice?: string | Error | null;
   private layoutStatus = el("p", "layout-status");
   private resizeBounds?: PopupBounds;
@@ -101,6 +106,7 @@ export class Popup {
   private sellButton = button("", () => void this.sell(), "sell-button");
   private status = el("p", "album-status");
   private histories: HistoryState = {};
+  private staleHistories = new Set<Finish>();
   private hidden = new Set<Finish>();
   private details?: CardInsights;
   private account?: Account;
@@ -111,6 +117,13 @@ export class Popup {
   private copiesResolved = false;
   private albumError?: string;
   private albumRequest?: AbortController;
+  private albumRefresh = false;
+  private albumVisible = false;
+  private albumVisibility = new IntersectionObserver(([record]) => {
+    this.albumVisible = !!record?.isIntersecting;
+    if (this.albumVisible) void this.loadAlbums();
+    else this.albumRequest?.abort();
+  });
   private showAllSales = false;
   private selling = false;
   private pending = false;
@@ -125,6 +138,7 @@ export class Popup {
       this.closed ||
       this.observationFrame ||
       !this.context ||
+      !this.settings.collectSaleRateData ||
       !subjects.has(this.context.subjectId)
     )
       return;
@@ -140,7 +154,7 @@ export class Popup {
     private client: KosmoraClient,
     onRefresh: () => void,
     private onClose: () => void,
-    private openSettings: () => void,
+    private openSettings: (section?: "stat-boxes") => void,
     finishes: Finish[] = FINISHES,
     private onFinishesChange: (
       finishes: Finish[],
@@ -160,6 +174,10 @@ export class Popup {
         this.listingArea,
         context.subjectId,
         client,
+        (busy) => {
+          this.historyRefreshBusy = busy;
+          this.updateRefreshButton();
+        },
       );
     this.hidden = new Set(FINISHES.filter((f) => !finishes.includes(f)));
     this.host.id = HOST_ID;
@@ -192,7 +210,8 @@ export class Popup {
       this.pinButton,
       button("", onClose, "icon"),
     );
-    const refreshButton = actions.firstElementChild as HTMLButtonElement;
+    const refreshButton = (this.refreshButton =
+      actions.firstElementChild as HTMLButtonElement);
     refreshButton.append(headerIcon("refresh"));
     refreshButton.setAttribute("aria-label", "Refresh");
     refreshButton.title = "Refresh";
@@ -307,7 +326,11 @@ export class Popup {
     tabWorkspace.append(tabs, tabContent);
     body.append(this.albumArea, this.statArea, tabWorkspace);
     const footer = el("footer", "footer");
-    const settingsButton = button("", openSettings, "icon settings-button");
+    const settingsButton = button(
+      "",
+      () => openSettings(),
+      "icon settings-button",
+    );
     settingsButton.setAttribute("aria-label", "Settings");
     settingsButton.title = "Settings";
     settingsButton.append(tooltipIcon("settings"));
@@ -332,6 +355,7 @@ export class Popup {
     }
     (topDialog() ?? document.body).append(this.host);
     this.host.showPopover();
+    if (context) this.albumVisibility.observe(this.albumArea);
     for (const event of [
       "pointerdown",
       "pointerup",
@@ -358,6 +382,7 @@ export class Popup {
     this.position();
   }
   dispose() {
+    this.albumVisibility.disconnect();
     this.friendTooltip?.ownerDisposed(this.host);
     cancelAnimationFrame(this.marketFrame);
     cancelAnimationFrame(this.observationFrame);
@@ -371,6 +396,39 @@ export class Popup {
     this.listingHistory?.dispose();
     this.reposition.disconnect();
     this.host.remove();
+  }
+  restoreCanceledWheel(event: WheelEvent) {
+    if (!event.deltaY || event.ctrlKey || event.shiftKey) return;
+    const scrollers = event
+      .composedPath()
+      .filter(
+        (node): node is HTMLElement =>
+          node instanceof HTMLElement &&
+          node.matches(".tab-content, .body, textarea") &&
+          this.shadow.contains(node),
+      );
+    if (!scrollers.length) return;
+    // Give native scrolling first refusal. The game's overlay can cancel the
+    // default action in a capture listener before the wheel reaches this popup.
+    requestAnimationFrame(() => {
+      if (!event.defaultPrevented || this.closed) return;
+      for (const scroller of scrollers) {
+        if (
+          !scroller.isConnected ||
+          scroller.scrollHeight <= scroller.clientHeight
+        )
+          continue;
+        const unit =
+          event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? scroller.clientHeight
+            : event.deltaMode === WheelEvent.DOM_DELTA_LINE
+              ? parseFloat(getComputedStyle(scroller).lineHeight) || 16
+              : 1;
+        const previous = scroller.scrollTop;
+        scroller.scrollTop += event.deltaY * unit;
+        if (scroller.scrollTop !== previous) break;
+      }
+    });
   }
   get isPinned() {
     return !!this.placement;
@@ -732,6 +790,8 @@ export class Popup {
     this.auctionRequest?.abort();
     const request = new AbortController();
     this.auctionRequest = request;
+    setRequestPriority(request.signal, "interactive");
+    this.showCachedAuction(this.details.name, fresh);
     try {
       const count = await this.client.activeAuctions(
         this.details.subjectId,
@@ -741,26 +801,36 @@ export class Popup {
       );
       if (this.closed || request.signal.aborted) return;
       this.activeAuctions = count;
-      if (count === 0) this.lowestListingPrice = null;
-      else {
+      if (count === 0) {
+        this.lowestListingPrice = null;
+        this.listingPriceStale = false;
+      } else {
         try {
           const price = await this.client.lowestListingPrice(
             this.details.subjectId,
             this.details.name,
             request.signal,
           );
-          if (!this.closed && !request.signal.aborted)
-            this.lowestListingPrice =
-              price ?? new Error("The lowest listing price is unavailable.");
+          if (!this.closed && !request.signal.aborted) {
+            if (price !== undefined || !this.listingPriceStale)
+              this.lowestListingPrice =
+                price ?? new Error("The lowest listing price is unavailable.");
+            if (price !== undefined) this.listingPriceStale = false;
+          }
         } catch (error) {
-          if (!this.closed && !request.signal.aborted)
+          if (
+            !this.closed &&
+            !request.signal.aborted &&
+            !this.listingPriceStale
+          )
             this.lowestListingPrice = new Error(messageOf(error));
         }
       }
     } catch (error) {
       if (!this.closed && !request.signal.aborted) {
         this.activeAuctions = new Error(messageOf(error));
-        this.lowestListingPrice = new Error(messageOf(error));
+        if (!this.listingPriceStale)
+          this.lowestListingPrice = new Error(messageOf(error));
       }
     } finally {
       if (this.auctionRequest === request) {
@@ -773,15 +843,40 @@ export class Popup {
       }
     }
   }
+  showCachedAuction(name: string, fresh = false) {
+    if (!this.context) return;
+    const hit = this.client.peekAuction?.(this.context.subjectId, name);
+    if (
+      hit &&
+      Date.now() - hit.until < 86_400_000 &&
+      hit.value.lowestPrice !== undefined
+    ) {
+      this.lowestListingPrice = hit.value.lowestPrice;
+      this.listingPriceStale = fresh || hit.stale;
+      this.renderHeaderPrices();
+    }
+  }
   insightsFailed(error: unknown) {
     this.insightError = messageOf(error);
-    this.lowestListingPrice = new Error(this.insightError);
+    if (this.lowestListingPrice === undefined)
+      this.lowestListingPrice = new Error(this.insightError);
     this.renderHeaderPrices();
     this.renderMetrics();
     if (!this.account) this.notes?.failed(error);
     this.renderTrade();
   }
-  setHistory(finish: Finish, result: MarketHistory | Error) {
+  setHistory(finish: Finish, result: MarketHistory | Error, stale = false) {
+    const previous = this.histories[finish];
+    if (
+      result instanceof Error &&
+      this.staleHistories.has(finish) &&
+      previous &&
+      !(previous instanceof Error) &&
+      previous.sales.length
+    )
+      return;
+    if (stale) this.staleHistories.add(finish);
+    else this.staleHistories.delete(finish);
     this.histories[finish] = result;
     this.renderMarket();
   }
@@ -789,13 +884,21 @@ export class Popup {
     this.hidden = new Set(FINISHES.filter((f) => !finishes.includes(f)));
     this.renderMarket();
   }
+  private updateRefreshButton() {
+    const history = this.selectedTab === "history";
+    const label = history ? LISTING_REFRESH_LABEL : "Refresh";
+    this.refreshButton.title = label;
+    this.refreshButton.setAttribute("aria-label", label);
+    this.refreshButton.disabled = history && this.historyRefreshBusy;
+  }
   setAccount(account: Account, pinned: string[], fresh = false) {
     this.account = account;
     this.notes?.setAccount(account);
     this.listingHistory?.setAccount(account);
     this.pinned = pinned;
     this.renderAlbums();
-    void this.loadAlbums(fresh);
+    this.albumRefresh = fresh;
+    void this.loadAlbums();
     this.refreshTrade();
   }
   refreshTrade(fresh = false) {
@@ -823,9 +926,11 @@ export class Popup {
       button.setAttribute("aria-selected", String(name === tab));
       button.tabIndex = name === tab ? 0 : -1;
     }
+    if (tab === "market") this.renderMarket();
     if (tab === "trade") void this.loadTrade();
     if (tab === "notes") this.notes?.activate();
     this.listingHistory?.setActive(tab === "history");
+    this.updateRefreshButton();
   }
   private async loadTrade(fresh = false) {
     this.renderTrade();
@@ -933,6 +1038,7 @@ export class Popup {
     this.copyProblem = problem;
     this.copiesResolved = true;
     this.renderAlbums();
+    void this.loadAlbums();
   }
   setAlbums(account: Account, albums: Album[], pinned: string[]) {
     this.account = account;
@@ -941,19 +1047,25 @@ export class Popup {
     this.albumError = undefined;
     this.renderAlbums();
   }
-  private async loadAlbums(fresh = false) {
+  private async loadAlbums() {
+    const fresh = this.albumRefresh;
     if (
       !this.context ||
       !this.account ||
       !this.settings.pinnedAlbumsEnabled ||
+      !this.albumVisible ||
+      !this.copiesResolved ||
+      !this.details?.copies.length ||
       !this.pinned.length ||
-      (!fresh && (this.albums || this.albumRequest))
+      this.albumRequest ||
+      (!fresh && this.albums)
     )
       return;
-    this.albumRequest?.abort();
+    this.albumRefresh = false;
     const request = new AbortController(),
       account = this.account;
     this.albumRequest = request;
+    setRequestPriority(request.signal, "interactive");
     try {
       const albums = await this.client.albums(
         this.context.subjectId,
@@ -965,7 +1077,11 @@ export class Popup {
     } catch (error) {
       if (!this.closed && !request.signal.aborted) this.albumsFailed(error);
     } finally {
-      if (this.albumRequest === request) this.albumRequest = undefined;
+      if (this.albumRequest === request) {
+        this.albumRequest = undefined;
+        if (request.signal.aborted && this.albumVisible && !this.closed)
+          void this.loadAlbums();
+      }
     }
   }
   albumsFailed(error: unknown) {
@@ -989,11 +1105,12 @@ export class Popup {
       return;
     }
     this.settings = settings;
+    if (!settings.pinnedAlbumsEnabled) this.albumRequest?.abort();
     this.renderPin();
     this.applySize();
     this.position();
     if (!this.context) return;
-    this.renderMetrics();
+    this.renderMarket();
     if (this.account)
       this.pinned = settings.pinnedAlbums[this.account.key] ?? [];
     this.renderAlbums();
@@ -1031,18 +1148,41 @@ export class Popup {
     const definitions = this.settings.statBoxesEnabled
       ? visibleStats(this.settings.stats)
       : [];
+    this.statArea.hidden = !definitions.length;
+    if (!definitions.length) {
+      this.metrics.replaceChildren();
+      return;
+    }
     const snapshot = statSnapshot(
       this.details,
-      this.histories,
+      definitions.some((d) => d.source === "prices" || d.source === "sales")
+        ? this.histories
+        : {},
       FINISHES.filter((f) => !this.hidden.has(f)),
       this.insightError,
       this.activeAuctions,
-      this.saleRates(),
+      definitions.some((d) => d.id === "saleRate")
+        ? this.saleRates()
+        : undefined,
     );
     this.metrics.replaceChildren(
-      ...definitions.map((d) => statBox(d, d.read(snapshot))),
+      ...definitions.map((d) => {
+        if (d.id !== "saleRate" || this.settings.collectSaleRateData)
+          return statBox(d, d.read(snapshot));
+        const tile = button(
+          "",
+          () => this.openSettings("stat-boxes"),
+          "metric metric-disabled",
+        );
+        tile.dataset.statId = d.id;
+        tile.setAttribute(
+          "aria-label",
+          "Sale Rate: Disabled. Open Tooltip Stat Boxes settings",
+        );
+        tile.append(el("strong", "", "Disabled"), el("span", "", d.label));
+        return tile;
+      }),
     );
-    this.statArea.hidden = !definitions.length;
     this.priceScope.textContent = definitions.some((d) => d.source === "prices")
       ? snapshot.priceNotice
       : "";
@@ -1058,7 +1198,8 @@ export class Popup {
       const restoreSalesFocus =
         this.shadow.activeElement?.matches(".sales-toggle");
       this.renderMetrics();
-      this.renderMarketNow();
+      this.renderHeaderPrices();
+      if (this.selectedTab === "market") this.renderMarketNow();
       if (restoreSalesFocus)
         this.market
           .querySelector<HTMLButtonElement>(".sales-toggle")
@@ -1066,7 +1207,6 @@ export class Popup {
     });
   }
   private renderMarketNow() {
-    this.renderHeaderPrices();
     const allEmpty = FINISHES.every((finish) => {
       const h = this.histories[finish];
       return h && !(h instanceof Error) && h.count === 0;
@@ -1146,7 +1286,12 @@ export class Popup {
       cardIcon("sale"),
       el("span", "market-badge-label", lastSale.label),
     );
-    this.lastSold.title = lastSale.title;
+    const saleStale = finishes.some((finish) =>
+      this.staleHistories.has(finish),
+    );
+    this.lastSold.toggleAttribute("data-stale-price", saleStale);
+    this.lastSold.title =
+      lastSale.title + (saleStale ? " Last known price." : "");
     const price = this.lowestListingPrice;
     this.listedFor.hidden = price === null;
     this.headerPrices.hidden = this.lastSold.hidden && this.listedFor.hidden;
@@ -1170,10 +1315,13 @@ export class Popup {
           : price === undefined
             ? "Loading the lowest listing price."
             : `Lowest current listing price across all finishes: ${formatKosmo(price)} Kosmo.`;
+    this.listedFor.toggleAttribute("data-stale-price", this.listingPriceStale);
+    if (this.listingPriceStale)
+      this.listedFor.title = "Last known lowest listing price.";
     if (marketName) this.listedFor.title += ` Find ${marketName} at Market.`;
   }
   private saleRates(): SaleRates | undefined {
-    return this.details
+    return this.settings.collectSaleRateData && this.details
       ? saleRates(saleObservations.observations, this.details.subjectId)
       : undefined;
   }
@@ -1224,11 +1372,17 @@ export class Popup {
       const sold = el(
         "td",
         "sale-rate",
-        rate?.percent == null ? "—" : `${rate.percent}% (${rate.total})`,
+        !this.settings.collectSaleRateData
+          ? "Disabled"
+          : rate?.percent == null
+            ? "—"
+            : `${rate.percent}% (${rate.total})`,
       );
-      sold.title = rate?.total
-        ? `${rate.sold} of ${rate.total} observed ${FINISH_LABEL[f]} listings of this card sold (last 30 days).`
-        : `No settled ${FINISH_LABEL[f]} listings of this card observed yet.`;
+      sold.title = !this.settings.collectSaleRateData
+        ? "Sale Rate collection is disabled."
+        : rate?.total
+          ? `${rate.sold} of ${rate.total} observed ${FINISH_LABEL[f]} listings of this card sold (last 30 days).`
+          : `No settled ${FINISH_LABEL[f]} listings of this card observed yet.`;
       row.append(sold);
       tbody.append(row);
     }
@@ -1434,7 +1588,7 @@ export class Popup {
     if (!this.pinned.length) {
       area.append(
         note("Pin the albums you use most for quick access."),
-        button("Choose pinned albums", this.openSettings, "link"),
+        button("Choose pinned albums", () => this.openSettings(), "link"),
       );
       return;
     }

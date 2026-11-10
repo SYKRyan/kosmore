@@ -44,6 +44,7 @@ type FeatureKey =
   | "familyImpactOverlaysEnabled"
   | "salesOverlaysEnabled"
   | "statBoxesEnabled"
+  | "collectSaleRateData"
   | "pinnedAlbumsEnabled";
 const featureGroups = new Map<
   HTMLElement,
@@ -115,6 +116,15 @@ function pageExclusionToggle(
   });
   return input;
 }
+const tooltipTakesFocus = checkboxSetting(
+  "tooltip-takes-focus",
+  "Tooltip takes focus",
+  "Clear focus from the active control when hovering a card opens or updates its tooltip, so album shortcuts work after typing.",
+  (checked) => {
+    draft.tooltipTakesFocus = checked;
+  },
+  general,
+);
 general.append(el("div", "rule"));
 const mobileFriendly = el("fieldset", "settings-subgroup");
 mobileFriendly.append(el("legend", "", "Mobile Friendly"));
@@ -696,13 +706,31 @@ const salesEnabled = sectionToggle(
 );
 const statSettings = new StatSettings((preferences) => {
   draft.stats = preferences;
-  statSettings.render(draft.stats);
+  statSettings.render(draft.stats, draft.collectSaleRateData);
 });
 const statsEnabled = sectionToggle(
   statSettings.host,
   "statBoxesEnabled",
   "Enable stat boxes",
 );
+const saleRateControls = el("div", "settings-group-independent");
+const collectSaleRate = checkboxSetting(
+  "collectSaleRateData",
+  "Collect Sale Rate data",
+  "Record listing outcomes for Sale Rate. Pause collection to reduce background work.",
+  async (checked) => {
+    draft.collectSaleRateData = checked;
+    statSettings.render(draft.stats, checked);
+    await persistFeature(
+      statSettings.host,
+      "collectSaleRateData",
+      collectSaleRate,
+    );
+    statSettings.render(draft.stats, draft.collectSaleRateData);
+  },
+  saleRateControls,
+);
+collectSaleRate.setAttribute("role", "switch");
 delay.addEventListener("input", () => {
   draft.hoverDelayMs = Number(delay.value);
 });
@@ -822,6 +850,7 @@ groupControls({
     "disableHoverTooltipInVortex",
     "enabled",
     "useOverlayButtonInsteadOfHover",
+    "tooltipTakesFocus",
     "outsideClickClosesTooltipOnly",
     "fullScreenCenteredOnOpen",
     "closeTooltipWhenAddedToAlbum",
@@ -939,6 +968,7 @@ groupControls({
   keys: ["statBoxesEnabled", "stats"],
   render: renderSettings,
 });
+statSettings.host.querySelector(":scope > .savebar")!.before(saleRateControls);
 groupControls({
   host: salesSettings.host,
   name: "sales overlay settings",
@@ -1085,6 +1115,7 @@ function renderSettings() {
   familyImpactEnabled.checked = draft.familyImpactOverlaysEnabled;
   salesEnabled.checked = draft.salesOverlaysEnabled;
   statsEnabled.checked = draft.statBoxesEnabled;
+  collectSaleRate.checked = draft.collectSaleRateData;
   albumsEnabled.checked = draft.pinnedAlbumsEnabled;
   enabled.checked = draft.enabled;
   disableHoverInPulsar.checked = draft.disableHoverTooltipInPulsar;
@@ -1092,6 +1123,7 @@ function renderSettings() {
   disableOverlaysInPulsar.checked = draft.disableCardOverlaysInPulsar;
   disableOverlaysInVortex.checked = draft.disableCardOverlaysInVortex;
   useOverlayButton.checked = draft.useOverlayButtonInsteadOfHover;
+  tooltipTakesFocus.checked = draft.tooltipTakesFocus;
   outsideClickOnly.checked = draft.outsideClickClosesTooltipOnly;
   fullScreenCentered.checked = draft.fullScreenCenteredOnOpen;
   syncTooltipSizing();
@@ -1115,7 +1147,7 @@ function renderSettings() {
   vortexFamilyOverlay.checked = draft.showVortexFamilyOverlay;
   salesFamilyOverlay.checked = draft.showSalesFamilyOverlay;
   familyBlacklistSettings.render(draft);
-  statSettings.render(draft.stats);
+  statSettings.render(draft.stats, draft.collectSaleRateData);
   hotkeySettings.render(draft.hotkeys);
   packHotkeySettings.render(draft.packOpeningHotkeys);
   salesSettings.render(draft);
@@ -1509,6 +1541,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     ["autoSkipOpening", autoSkipOpening],
     ["autoDismissFoundPack", autoDismissFoundPack],
     ["showRemainingPackCount", showRemainingPackCount],
+    ["collectSaleRateData", collectSaleRate],
   ] as const) {
     if (draft[key] === saved[key]) {
       draft[key] = next[key];
@@ -1516,6 +1549,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
     saved[key] = next[key];
   }
+  statSettings.render(draft.stats, draft.collectSaleRateData);
   for (const { field, input } of popupInputs) {
     if (field !== "popupWidth" && field !== "popupHeight") continue;
     if (draft[field] === saved[field]) {

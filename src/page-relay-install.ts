@@ -1,3 +1,5 @@
+import { parseOpening, parseReadyPackIds } from "./kosmora/contracts";
+import { listingConfirmations, saleSubjects } from "./kosmora/listing-capture";
 /**
  * KosMore page-world relay, installed by src/page-hook.ts (MAIN world, document_start).
  *
@@ -15,9 +17,13 @@
  */
 import {
   RELAY_BUFFER,
+  RELAY_PACK,
+  type PackRelayMessage,
   RELAY_DATA,
   RELAY_PATH,
   RELAY_READY,
+  RELAY_AUCTIONS,
+  type RelayPreferences,
   type RelayMessage,
   RELAY_LISTED,
   LISTING_WRITES,
@@ -39,15 +45,35 @@ export function installPageRelay(win: Window = window) {
   if (win.__kosmoreRelay) return;
   win.__kosmoreRelay = true;
   const original = win.fetch;
-  const buffer: (RelayMessage | ListingChangedMessage | SaleBatchMessage)[] =
-    [];
+  const buffer: (
+    | RelayMessage
+    | ListingChangedMessage
+    | SaleBatchMessage
+    | PackRelayMessage
+    | (() => void)
+  )[] = [];
   let revision = 0;
+  const subjects = new Map<string, string>();
+  const rememberSubjects = (value: unknown) => {
+    for (const [id, subject] of saleSubjects(value)) subjects.set(id, subject);
+    while (subjects.size > 1000) subjects.delete(subjects.keys().next().value!);
+  };
   let ready = false;
+  let preferences: RelayPreferences | undefined;
+  let observationEpoch = 0;
   const send = (
-    message: RelayMessage | ListingChangedMessage | SaleBatchMessage,
+    message:
+      | RelayMessage
+      | ListingChangedMessage
+      | SaleBatchMessage
+      | PackRelayMessage,
   ) => win.postMessage(message, win.location.origin);
   const relay = (
-    message: RelayMessage | ListingChangedMessage | SaleBatchMessage,
+    message:
+      | RelayMessage
+      | ListingChangedMessage
+      | SaleBatchMessage
+      | PackRelayMessage,
   ) => {
     if (ready) send(message);
     else {
@@ -55,23 +81,44 @@ export function installPageRelay(win: Window = window) {
       if (buffer.length > RELAY_BUFFER) buffer.shift();
     }
   };
-  // The content script loads at document_idle and announces itself; flush then.
   win.addEventListener("message", (event) => {
     if (
-      !ready &&
-      event.source === win &&
-      (event.data as { type?: unknown } | null)?.type === RELAY_READY
-    ) {
-      ready = true;
-      for (const message of buffer.splice(0)) send(message);
-    }
+      event.source !== win ||
+      event.origin !== win.location.origin ||
+      event.data?.type !== RELAY_READY
+    )
+      return;
+    const previous = preferences?.collectSaleRateData;
+    preferences = event.data.preferences;
+    if (previous !== undefined && previous !== preferences?.collectSaleRateData)
+      observationEpoch++;
+    if (ready) return;
+    ready = true;
+    for (const item of buffer.splice(0))
+      if (typeof item === "function") item();
+      else send(item);
   });
   win.fetch = function (this: unknown, ...args: Parameters<typeof fetch>) {
     // fetch consumes a Request body synchronously; clone the specific draft
     // request first, without ever consuming or replacing the original body.
     let draftRequest: Request | undefined;
+    let listingRequest: Request | undefined;
+    const submittedAt = Date.now();
     try {
       const [input, init] = args;
+      if (
+        input instanceof Request &&
+        init?.body === undefined &&
+        (init?.method ?? input.method).toUpperCase() === "POST"
+      ) {
+        const url = new URL(input.url);
+        if (
+          url.origin === win.location.origin &&
+          LISTING_WRITES.test(url.pathname) &&
+          preferences?.listingPrices !== false
+        )
+          listingRequest = input.clone();
+      }
       if (
         input instanceof Request &&
         init?.body === undefined &&
@@ -96,13 +143,67 @@ export function installPageRelay(win: Window = window) {
       const method = (
         init?.method ?? (input instanceof Request ? input.method : "GET")
       ).toUpperCase();
+      const packPath = /^\/api\/openings\/([a-f0-9-]{36})(\/open)?$/i.exec(
+        url.pathname,
+      );
+      if (
+        url.origin === win.location.origin &&
+        ((url.pathname === "/api/packs/inventory" &&
+          preferences?.packInventory !== false) ||
+          (packPath &&
+            (packPath[2]
+              ? preferences?.packInventory !== false
+              : preferences?.packOpenings !== false)))
+      ) {
+        void response
+          .then(async (res) => {
+            if (!res.ok) return;
+            if (method === "GET" && url.pathname === "/api/packs/inventory") {
+              relay({
+                type: RELAY_PACK,
+                kind: "inventory",
+                ids: parseReadyPackIds(await res.clone().json()),
+                requestedAt: submittedAt,
+              });
+            } else if (method === "GET" && packPath && !packPath[2]) {
+              const cards = parseOpening(await res.clone().json());
+              if (
+                cards.length &&
+                cards[0].openingId.toLowerCase() === packPath[1].toLowerCase()
+              )
+                relay({
+                  type: RELAY_PACK,
+                  kind: "opening",
+                  data: {
+                    id: cards[0].openingId,
+                    cards: cards.map((card) => ({
+                      slot: card.slot,
+                      subjectId: card.subjectId,
+                      instanceId: card.instanceId,
+                      rarity: card.rarity,
+                      veil: card.variant.veil,
+                      card: { fullArt: card.variant.fullArt },
+                    })),
+                  },
+                });
+            } else if (method === "POST" && packPath?.[2]) {
+              relay({ type: RELAY_PACK, kind: "opened", id: packPath[1] });
+            }
+          })
+          .catch(() => {});
+      }
       // Keep filtered-out sale entries in the impact calculation. Observe only
       // the game's own batch reads and draft writes; never request or save one.
       if (
         url.origin === win.location.origin &&
         win.location.pathname === "/market/sell/batch" &&
-        ((method === "GET" && url.pathname === "/api/market/listings/batch") ||
-          (method === "PUT" && url.pathname === "/api/market/sell-draft"))
+        ((method === "GET" &&
+          url.pathname === "/api/market/listings/batch" &&
+          (preferences?.saleFamily !== false ||
+            preferences?.listingPrices !== false)) ||
+          (method === "PUT" &&
+            url.pathname === "/api/market/sell-draft" &&
+            preferences?.saleFamily !== false))
       ) {
         const page = win.location.href,
           nextRevision = ++revision;
@@ -117,6 +218,13 @@ export function installPageRelay(win: Window = window) {
                 : Promise.resolve(undefined);
         void data
           .then((value: unknown) => {
+            if (
+              source === "batch" &&
+              value &&
+              preferences?.listingPrices !== false
+            )
+              rememberSubjects(value);
+            if (preferences?.saleFamily === false) return;
             const keys = saleSelectionKeys(value, source);
             if (keys)
               relay({
@@ -130,25 +238,65 @@ export function installPageRelay(win: Window = window) {
           .catch(() => {});
       }
       if (
-        method === "POST" &&
+        method === "GET" &&
         url.origin === win.location.origin &&
-        LISTING_WRITES.test(url.pathname)
+        win.location.pathname === "/market/sell" &&
+        preferences?.listingPrices !== false &&
+        /^\/api\/collection\/\d+$/.test(url.pathname)
       ) {
         void response
           .then(async (res) => {
             if (!res.ok) return;
-            const data = (await res.clone().json()) as {
-              auctionId?: unknown;
-              listed?: unknown;
-            };
-            const changed =
-              url.pathname === "/api/auctions"
-                ? typeof data.auctionId === "string" &&
-                  /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(
-                    data.auctionId,
-                  )
-                : typeof data.listed === "number" && data.listed > 0;
-            if (changed) relay({ type: RELAY_LISTED, path: url.pathname });
+            const data = await res.clone().json();
+            const subject = url.pathname.split("/").pop();
+            if (
+              String(data?.subjectId) !== subject ||
+              !Array.isArray(data.copies)
+            )
+              return;
+            for (const [id, card] of saleSubjects({
+              items: data.copies.map((copy: { id?: unknown }) => ({
+                instanceId: copy?.id,
+                subjectId: subject,
+              })),
+            }))
+              subjects.set(id, card);
+          })
+          .catch(() => {});
+      }
+      if (
+        method === "POST" &&
+        url.origin === win.location.origin &&
+        LISTING_WRITES.test(url.pathname) &&
+        preferences?.listingChanges !== false
+      ) {
+        const trackPrices = preferences?.listingPrices !== false;
+        const knownSubjects = trackPrices
+          ? new Map(subjects)
+          : new Map<string, string>();
+        const body = !trackPrices
+          ? undefined
+          : typeof init?.body === "string"
+            ? Promise.resolve()
+                .then(() => JSON.parse(init.body as string))
+                .catch(() => undefined)
+            : listingRequest?.json().catch(() => undefined);
+        void response
+          .then(async (res) => {
+            if (!res.ok) return;
+            const result = await res.clone().json();
+            const listings = listingConfirmations(
+              url.pathname,
+              await body,
+              result,
+              submittedAt,
+              knownSubjects,
+            );
+            if (
+              listings.length ||
+              (url.pathname.endsWith("/batch") && result?.listed > 0)
+            )
+              relay({ type: RELAY_LISTED, path: url.pathname, listings });
           })
           .catch(() => {});
       }
@@ -156,18 +304,47 @@ export function installPageRelay(win: Window = window) {
         method === "GET" &&
         url.origin === win.location.origin &&
         RELAY_PATH.test(url.pathname)
-      )
-        response
-          .then((res) => {
-            if (!res.ok) return;
-            return res
-              .clone()
-              .json()
-              .then((data: unknown) =>
-                relay({ type: RELAY_DATA, path: url.pathname, data }),
-              );
-          })
-          .catch(() => {});
+      ) {
+        const auction = RELAY_AUCTIONS.test(url.pathname);
+        const enabled = () =>
+          auction
+            ? preferences?.collectSaleRateData !== false
+            : url.pathname === "/api/families"
+              ? preferences?.familyMilestones !== false
+              : url.pathname === "/api/vortex/lobby"
+                ? preferences?.vortex !== false
+                : preferences?.fusion !== false;
+        const epoch = observationEpoch;
+        if (enabled())
+          void response
+            .then((res) => {
+              if (
+                !res.ok ||
+                !enabled() ||
+                (auction && epoch !== observationEpoch)
+              )
+                return;
+              const copy = res.clone();
+              const forward = () => {
+                if (!enabled() || (auction && epoch !== observationEpoch)) {
+                  void copy.body?.cancel().catch(() => {});
+                  return;
+                }
+                void copy
+                  .json()
+                  .then((data: unknown) => {
+                    if (enabled() && (!auction || epoch === observationEpoch))
+                      relay({ type: RELAY_DATA, path: url.pathname, data });
+                  })
+                  .catch(() => {});
+              };
+              if (auction && !ready) {
+                buffer.push(forward);
+                if (buffer.length > RELAY_BUFFER) buffer.shift();
+              } else forward();
+            })
+            .catch(() => {});
+      }
     } catch {
       // Relaying is best effort and must never affect the page's request.
     }

@@ -1,3 +1,4 @@
+import { setRequestPriority } from "../shared/request-scheduler";
 import { GameClient } from "../kosmora/client";
 import { contextKey, HOST_ID, resolveCard, topDialog } from "../kosmora/dom";
 import { isTabRequest, request } from "../shared/messages";
@@ -38,7 +39,12 @@ import { HistoryResolver, listenToPageRelay } from "./sale-rate-feed";
 import { saleObservations } from "./sale-observation-store";
 import { FusionFamilyImpact } from "./fusion-family";
 import { TooltipButtons } from "./tooltip-buttons";
-import { RELAY_LISTED, LISTING_WRITES } from "../shared/page-relay";
+import {
+  RELAY_LISTED,
+  RELAY_PACK,
+  RELAY_READY,
+  LISTING_WRITES,
+} from "../shared/page-relay";
 import { settingsForPage } from "../shared/page-settings";
 import { isTyping, shortcutFromEvent, shortcutKey } from "../shared/hotkeys";
 import { RemainingPacks } from "./remaining-packs";
@@ -65,41 +71,102 @@ const fusionFamily = new FusionFamilyImpact(client);
 fusionFamily.start();
 const tooltipButtons = new TooltipButtons(openFromButton);
 tooltipButtons.start();
-new MarketOutcomes(saleObservations).start();
-listenToPageRelay(saleObservations);
+const marketOutcomes = new MarketOutcomes(saleObservations);
+let stopSaleRate: (() => void) | undefined;
 const historyResolver = new HistoryResolver(saleObservations);
-let listingInvalidationTimer: ReturnType<typeof setTimeout> | undefined;
 window.addEventListener("message", (event) => {
   if (
     event.source !== window ||
     event.origin !== location.origin ||
-    event.data?.type !== RELAY_LISTED ||
-    typeof event.data.path !== "string" ||
-    !LISTING_WRITES.test(event.data.path)
+    !event.data
   )
     return;
-  clearTimeout(listingInvalidationTimer);
-  listingInvalidationTimer = setTimeout(() => {
-    void client.invalidateListings().catch(() => {});
-  }, 100);
+  void preferencesReady.then(() => {
+    if (event.data.type === RELAY_PACK) {
+      if (
+        event.data.kind === "opening"
+          ? pageSettings().enabled
+          : settings.showRemainingPackCount
+      )
+        void client.receivePackData(event.data).catch(() => {});
+      return;
+    }
+    if (
+      event.data.type !== RELAY_LISTED ||
+      typeof event.data.path !== "string" ||
+      !LISTING_WRITES.test(event.data.path)
+    )
+      return;
+    if (tracksListingPrices())
+      void client.captureListings(event.data.listings).catch(() => {});
+  });
 });
-client.onHistoryLoaded((subjectId, history, loadedAt) =>
-  historyResolver.receive(subjectId, history, loadedAt),
-);
-client.onAuctionListings((listings) =>
-  saleObservations.recordMany(
-    listings.map((listing) => [
-      listing.id,
-      {
-        subjectId: listing.subjectId,
-        finish: listing.finish,
-        outcome: "open",
-        endsAt: Date.parse(listing.endsAt),
-      },
-    ]),
-  ),
-);
 let settings = defaults();
+function tracksListingPrices() {
+  return (
+    settings.enabled ||
+    (settings.salesOverlaysEnabled && settings.showSalesMyLastListing)
+  );
+}
+function syncRelayPreferences() {
+  const family = settings.familyImpactOverlaysEnabled;
+  const saleFamily = family && settings.showSalesFamilyOverlay;
+  const listingPrices = tracksListingPrices();
+  window.postMessage(
+    {
+      type: RELAY_READY,
+      preferences: {
+        collectSaleRateData: settings.collectSaleRateData,
+        packInventory: settings.showRemainingPackCount,
+        packOpenings: pageSettings().enabled,
+        fusion: family && settings.showFusionFamilyOverlay,
+        vortex: family && settings.showVortexFamilyOverlay,
+        familyMilestones:
+          family &&
+          (settings.showFusionFamilyOverlay ||
+            settings.showVortexFamilyOverlay ||
+            settings.showTradeFamilyOverlay ||
+            settings.showSalesFamilyOverlay),
+        saleFamily,
+        listingPrices,
+        listingChanges: listingPrices || saleFamily,
+      },
+    },
+    location.origin,
+  );
+}
+function syncSaleRate() {
+  client.setSaleRateCollection(settings.collectSaleRateData);
+  if (settings.collectSaleRateData && !stopSaleRate) {
+    const stops = [
+      marketOutcomes.start(),
+      listenToPageRelay(saleObservations, window, false),
+      client.onHistoryLoaded((id, history, loadedAt) =>
+        historyResolver.receive(id, history, loadedAt),
+      ),
+      client.onAuctionListings((listings) =>
+        saleObservations.recordMany(
+          listings.map((listing) => [
+            listing.id,
+            {
+              subjectId: listing.subjectId,
+              finish: listing.finish,
+              outcome: "open",
+              endsAt: Date.parse(listing.endsAt),
+            },
+          ]),
+        ),
+      ),
+    ];
+    stopSaleRate = () => {
+      for (const stop of stops) stop();
+    };
+  } else if (!settings.collectSaleRateData) {
+    stopSaleRate?.();
+    stopSaleRate = undefined;
+  }
+  syncRelayPreferences();
+}
 const remainingPacks = new RemainingPacks(
   client,
   () => settings.showRemainingPackCount,
@@ -125,6 +192,7 @@ const packOpeningHotkeys = new PackOpeningHotkeys(
 );
 let marketFinishes: Finish[] = [...FINISHES];
 let pendingFilterWrites = 0;
+let updateTooltipHistory: ((finishes: Finish[]) => void) | undefined;
 const preferencesReady = Promise.all([
   readMarketFinishes().catch(() => marketFinishes),
   request<PopupState>({ op: "popupState" })
@@ -134,6 +202,7 @@ const preferencesReady = Promise.all([
 ]).then(([finishes, state, savedSettings]) => {
   marketFinishes = finishes;
   settings = savedSettings;
+  syncSaleRate();
   friendTooltip.setSettings(pageSettings());
   void friendTooltip.restore();
   navigationHotkeys.start();
@@ -153,6 +222,7 @@ let activeRequest: AbortController | undefined,
   openTimer: ReturnType<typeof setTimeout> | undefined,
   closeTimer: ReturnType<typeof setTimeout> | undefined;
 let headerSignalRequest = 0;
+let headerSignalsAbort: AbortController | undefined;
 let lastUrl = location.href,
   hovered = false,
   buttonOpened = false,
@@ -168,6 +238,7 @@ function hide() {
   cancelClose();
   activeRequest?.abort();
   activeRequest = undefined;
+  updateTooltipHistory = undefined;
   popup?.dispose();
   popup = undefined;
   current = null;
@@ -192,6 +263,7 @@ function checkUrl() {
   const previousUrl = new URL(lastUrl);
   const previous = settingsForPage(settings, previousUrl.pathname);
   lastUrl = location.href;
+  syncRelayPreferences();
   remainingPacks.refresh();
   if (packOpeningHotkeys.keepFocusOnRecap(previousUrl)) {
     const recap = current && resolveCard(current.anchor);
@@ -221,12 +293,15 @@ function laterHide() {
       hide();
   }, settings.dismissDelayMs);
 }
-function options() {
+function options(section?: "stat-boxes") {
   void chrome.runtime
-    .sendMessage({ requestId: crypto.randomUUID(), op: "openOptions" })
+    .sendMessage({ requestId: crypto.randomUUID(), op: "openOptions", section })
     .catch(() => {});
 }
-async function show(context: CardContext, fresh = false) {
+async function show(
+  context: CardContext,
+  { fresh = false, fromHover = false } = {},
+) {
   await preferencesReady;
   if (
     !pageSettings().enabled ||
@@ -239,14 +314,28 @@ async function show(context: CardContext, fresh = false) {
   popup?.dispose();
   current = context;
   const abort = new AbortController();
+  setRequestPriority(abort.signal, "interactive");
   activeRequest = abort;
+  updateTooltipHistory = undefined;
   const view = createView(context, placement);
+  if (
+    fromHover &&
+    settings.tooltipTakesFocus &&
+    context.anchor.matches(":hover")
+  ) {
+    let active = document.activeElement;
+    while (active?.shadowRoot?.activeElement)
+      active = active.shadowRoot.activeElement;
+    if (active instanceof HTMLElement || active instanceof SVGElement)
+      active.blur();
+  }
   const valid = () =>
     !abort.signal.aborted && popup === view && current === context;
   try {
     const account = await client.account(abort.signal, fresh);
     if (!valid()) return;
     view.setAccount(account, settings.pinnedAlbums[account.key] ?? [], fresh);
+    view.showCachedAuction(context.name, fresh);
     loadHeaderSignals(view, context, abort.signal);
     const detail = client.insights(context.subjectId, abort.signal, fresh);
     void detail.then(
@@ -270,15 +359,52 @@ async function show(context: CardContext, fresh = false) {
         if (valid()) view.insightsFailed(error);
       },
     );
-    for (const finish of FINISHES)
-      void client.history(context.subjectId, finish, abort.signal, fresh).then(
-        (h) => {
-          if (valid()) view.setHistory(finish, h);
-        },
-        (error) => {
-          if (valid()) view.setHistory(finish, new Error(messageOf(error)));
-        },
-      );
+    const historyJobs = new Map<Finish, AbortController>();
+    const settled = new Set<Finish>();
+    updateTooltipHistory = (finishes) => {
+      if (!valid()) return;
+      const needed = settings.collectSaleRateData
+        ? [
+            ...finishes,
+            ...FINISHES.filter((finish) => !finishes.includes(finish)),
+          ]
+        : finishes;
+      for (const [finish, job] of historyJobs) {
+        if (needed.includes(finish)) continue;
+        job.abort();
+        historyJobs.delete(finish);
+      }
+      for (const finish of needed) {
+        if (historyJobs.has(finish) || settled.has(finish)) continue;
+        const job = new AbortController();
+        historyJobs.set(finish, job);
+        const signal = AbortSignal.any([abort.signal, job.signal]);
+        setRequestPriority(
+          signal,
+          finishes.includes(finish) ? "interactive" : "background",
+        );
+        const hit = client.peekHistory(context.subjectId, finish);
+        if (hit && Date.now() - hit.until < 86_400_000)
+          view.setHistory(finish, hit.value, fresh || hit.stale);
+        void client
+          .history(context.subjectId, finish, signal, fresh)
+          .then(
+            (history) => {
+              if (signal.aborted || !valid()) return;
+              settled.add(finish);
+              view.setHistory(finish, history);
+            },
+            (error) => {
+              if (signal.aborted || !valid()) return;
+              view.setHistory(finish, new Error(messageOf(error)));
+            },
+          )
+          .finally(() => {
+            if (historyJobs.get(finish) === job) historyJobs.delete(finish);
+          });
+      }
+    };
+    updateTooltipHistory(marketFinishes);
   } catch (error) {
     if (valid()) {
       view.insightsFailed(error);
@@ -305,13 +431,14 @@ function createView(
     context,
     client,
     () => {
-      if (context) void show(context, true);
+      if (context) void show(context, { fresh: true });
     },
     dismiss,
     options,
     marketFinishes,
     async (finishes) => {
       marketFinishes = [...finishes];
+      updateTooltipHistory?.(marketFinishes);
       pendingFilterWrites++;
       try {
         await saveMarketFinishes(finishes);
@@ -410,6 +537,9 @@ function loadHeaderSignals(
   context: CardContext,
   signal: AbortSignal,
 ) {
+  headerSignalsAbort?.abort();
+  headerSignalsAbort = new AbortController();
+  const demand = AbortSignal.any([signal, headerSignalsAbort.signal]);
   const request = ++headerSignalRequest,
     requestedSettings = settings;
   view.setSignals();
@@ -423,11 +553,11 @@ function loadHeaderSignals(
       view.setSignals(signals);
   };
   void overlays
-    .signals(context, requestedSettings, receive)
+    .signals(context, requestedSettings, receive, demand)
     .then(receive)
     .catch(() => {});
 }
-function enter(target: Element) {
+function enter(target: Element, pointer?: PointerEvent) {
   if (!pageSettings().enabled) return;
   if (tooltipButtons.contains(target)) {
     clearTimeout(openTimer);
@@ -450,7 +580,7 @@ function enter(target: Element) {
     cancelClose();
     return;
   }
-  if (keyboardOpened || target.hasAttribute(PACK_FOCUS)) return;
+  if (!pointer && (keyboardOpened || target.hasAttribute(PACK_FOCUS))) return;
   const context = resolveCard(target);
   if (!context) {
     hovered = false;
@@ -471,9 +601,11 @@ function enter(target: Element) {
   if (popup?.isPinned || (settings.outsideClickClosesTooltipOnly && popup))
     clearTimeout(openTimer);
   else hide();
+  keyboardOpened = false;
   current = context;
+  const fromHover = !!pointer && pointer.pointerType !== "touch";
   openTimer = setTimeout(() => {
-    if (current === context) void show(context);
+    if (current === context) void show(context, { fromHover });
   }, settings.hoverDelayMs);
 }
 function openFromButton(context: CardContext) {
@@ -648,7 +780,7 @@ document.addEventListener(
       cancelClose();
       return;
     }
-    if (event.target instanceof Element) enter(event.target);
+    if (event.target instanceof Element) enter(event.target, event);
   },
   true,
 );
@@ -699,24 +831,29 @@ document.addEventListener(
   },
   true,
 );
-document.addEventListener(
+window.addEventListener(
   "keydown",
   (event) => {
     if (
-      !event.defaultPrevented &&
-      popup?.host.matches(":popover-open") &&
-      !isTyping(event) &&
-      !document.querySelector(".ko-summary .ko-drop")
-    ) {
-      const dialog = topDialog();
-      const shortcut =
-        (!dialog || dialog.contains(popup.host)) && shortcutFromEvent(event);
-      if (shortcut && popup.activateAlbumShortcut(shortcutKey(shortcut))) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
-      }
-    }
+      event.defaultPrevented ||
+      !popup?.host.matches(":popover-open") ||
+      isTyping(event) ||
+      (location.pathname === "/packs/open" &&
+        document.querySelector(".ko-summary .ko-drop"))
+    )
+      return;
+    const dialog = topDialog();
+    if (dialog && !dialog.contains(popup.host)) return;
+    const shortcut = shortcutFromEvent(event);
+    if (!shortcut || !popup.activateAlbumShortcut(shortcutKey(shortcut))) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  },
+  true,
+);
+document.addEventListener(
+  "keydown",
+  (event) => {
     if (
       event
         .composedPath()
@@ -734,6 +871,11 @@ document.addEventListener(
     }
   },
   true,
+);
+window.addEventListener(
+  "wheel",
+  (event) => popup?.restoreCanceledWheel(event),
+  { capture: true, passive: true },
 );
 window.addEventListener("scroll", () => popup?.position(), {
   passive: true,
@@ -802,14 +944,21 @@ client.onListingsChanged(() => {
   salesOverlays.invalidateListings();
 });
 const recheckAccount = () => {
-  void client.account().catch(() => {});
+  if (
+    popup ||
+    overlays.enabled() ||
+    salesOverlays.enabled() ||
+    fusionFamily.enabled()
+  )
+    void client.account().catch(() => {});
 };
 window.addEventListener("focus", recheckAccount);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) recheckAccount();
 });
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local") saleObservations.external(changes);
+  if (area === "local" && settings.collectSaleRateData)
+    saleObservations.external(changes);
   if (
     area === "local" &&
     Object.keys(changes).some((key) => key.startsWith("kosmore.friend."))
@@ -823,6 +972,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const previousOverlayMode = settings.useOverlayButtonInsteadOfHover;
     const previousPackHotkeys = settings.packOpeningHotkeysEnabled;
     settings = parseSettings(changes[SETTINGS_KEY].newValue);
+    syncSaleRate();
     if (previousOverlayMode !== settings.useOverlayButtonInsteadOfHover)
       navigationAway();
     friendTooltip.setSettings(pageSettings());
@@ -836,6 +986,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (!pageSettings().enabled) hide();
     else if (popup) {
       popup.setSettings(pageSettings());
+      updateTooltipHistory?.(marketFinishes);
       if (current && activeRequest)
         loadHeaderSignals(popup, current, activeRequest.signal);
     } else if (pinnedState.pinned) {
@@ -851,6 +1002,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   ) {
     marketFinishes = parseMarketFinishes(changes[MARKET_FINISHES_KEY].newValue);
     popup?.setFinishes(marketFinishes);
+    updateTooltipHistory?.(marketFinishes);
   }
 });
 chrome.runtime.onMessage.addListener((message, sender, respond) => {

@@ -86,12 +86,29 @@ export function installListingBackground() {
         signal.removeEventListener("abort", cancel);
       }
     };
+    const changed = async () => {
+      const tabs = await chrome.tabs.query({ url: "https://kosmora.io/*" });
+      await Promise.allSettled(
+        tabs
+          .filter((tab) => tab.id !== undefined)
+          .map((tab) =>
+            chrome.tabs.sendMessage(tab.id!, {
+              requestId: crypto.randomUUID(),
+              op: "listingCacheChanged",
+              accountKey: message.accountKey,
+            }),
+          ),
+      );
+    };
     void (async () => {
       controller.signal.throwIfAborted();
       if (message.op === "listingCache")
-        return service.cached(message.accountKey, message.subjectId);
-      if (message.op === "listingHistory")
-        return service.history(
+        return service.tracked(message.accountKey, message.subjectId);
+      if (message.op === "listingSavedPrice")
+        return (await service.tracked(message.accountKey, message.subjectId))
+          .listings[0];
+      if (message.op === "listingHistory") {
+        const result = await service.history(
           message.accountKey,
           message.subjectId,
           message.mode,
@@ -99,28 +116,17 @@ export function installListingBackground() {
           controller.signal,
           message.limits,
         );
-      if (message.op === "listingLatest")
-        return service.latest(
-          message.accountKey,
-          message.subjectId,
-          read,
-          controller.signal,
-        );
-      if (message.op === "listingInvalidate") {
+        await changed();
+        return result;
+      }
+      if (
+        message.op === "listingRecord" ||
+        message.op === "listingInvalidate"
+      ) {
+        if (message.op === "listingRecord")
+          await service.record(message.accountKey, message.records);
         await service.invalidate(message.accountKey);
-        const tabs = await chrome.tabs.query({ url: "https://kosmora.io/*" });
-        await Promise.allSettled(
-          tabs
-            .filter((tab) => tab.id !== undefined)
-            .map((tab) =>
-              chrome.tabs.sendMessage(tab.id!, {
-                requestId: crypto.randomUUID(),
-                op: "listingCacheChanged",
-                accountKey: message.accountKey,
-              }),
-            ),
-        );
-        return null;
+        await changed();
       }
       return null;
     })()

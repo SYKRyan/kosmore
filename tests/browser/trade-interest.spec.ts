@@ -223,7 +223,7 @@ for (const [name, width, symbols] of [
   ["phone", 390, true],
   ["phone with rarity names", 390, false],
 ] as const) {
-  test(`loading interest keeps the search stationary on both card steps at ${name} width`, async () => {
+  test(`loading keeps the search stationary and the second card step reuses totals at ${name} width`, async () => {
     await page.setViewportSize({ width, height: 900 });
     await worker.evaluate(
       (symbols) =>
@@ -234,6 +234,7 @@ for (const [name, width, symbols] of [
     );
     for (const step of ["theirs", "mine"] as const) {
       let release!: () => void, started!: () => void;
+      let requested = false;
       const held = new Promise<void>((resolve) => {
         release = resolve;
       });
@@ -241,6 +242,7 @@ for (const [name, width, symbols] of [
         started = resolve;
       });
       await page.route("**/api/collection?**", async (route) => {
+        requested = true;
         started();
         await held;
         await route.fulfill({
@@ -267,6 +269,9 @@ for (const [name, width, symbols] of [
             })
             .click();
           await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+          await expect(summary().locator(".rarity-count")).toHaveCount(6);
+          expect(requested).toBe(false);
+          continue;
         }
         await ready;
         await expect(summary().locator(".interest")).toHaveAttribute(

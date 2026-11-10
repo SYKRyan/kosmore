@@ -5,7 +5,10 @@ interface PendingRead {
   settled: boolean;
 }
 export class ReadCache {
-  private values = new Map<string, { until: number; value: unknown }>();
+  private values = new Map<
+    string,
+    { until: number; value: unknown; invalidated?: boolean }
+  >();
   private pending = new Map<string, PendingRead>();
   private epoch = 0;
   constructor(
@@ -16,6 +19,16 @@ export class ReadCache {
     this.epoch++;
     this.values.clear();
     this.pending.clear();
+  }
+  peek<T>(key: string) {
+    const hit = this.values.get(key);
+    return (
+      hit && {
+        until: hit.until,
+        value: hit.value as T,
+        stale: !!hit.invalidated || hit.until <= Date.now(),
+      }
+    );
   }
   hasPending(key: string) {
     return this.pending.has(key);
@@ -35,11 +48,12 @@ export class ReadCache {
   ): Promise<T> {
     signal?.throwIfAborted();
     if (fresh) {
-      this.values.delete(key);
+      const previous = this.values.get(key);
+      if (previous) previous.invalidated = true;
       this.pending.delete(key);
     }
     const hit = this.values.get(key);
-    if (hit && hit.until > Date.now()) {
+    if (hit && !hit.invalidated && hit.until > Date.now()) {
       this.values.delete(key);
       this.values.set(key, hit);
       return hit.value as T;

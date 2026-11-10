@@ -7,6 +7,7 @@ import { card, prices } from "../fixtures/data";
 import type { Finish } from "../../src/shared/types";
 const iconSettings = () => ({
   ...defaults(),
+  collectSaleRateData: false,
   showLastSalePriceOverlay: false,
   showLowestListingPriceOverlay: false,
 });
@@ -519,11 +520,49 @@ it("pauses on quest throttling and discards a canceled catalog after reset", asy
     },
     "plain",
   );
-  await Promise.resolve();
+  await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+  const canceled = expect(pending).rejects.toThrow();
   h.provider.reset();
   release(["42"]);
-  await expect(pending).rejects.toThrow();
+  await canceled;
   expect((await h.provider.get("42", iconSettings(), "plain")).quest).toBe(
     true,
   );
+});
+
+it("stops at the first positive finish even while collecting settlement evidence", async () => {
+  const h = harness();
+  const settings = { ...iconSettings(), collectSaleRateData: true };
+  await expect(h.provider.get("42", settings, "veil")).resolves.toMatchObject({
+    saleHistory: true,
+  });
+  expect(h.client.history.mock.calls.map(([, finish]) => finish)).toEqual([
+    "veil",
+  ]);
+});
+
+it("reuses overlay results through 59 seconds and refreshes at 60 seconds", async () => {
+  const h = harness();
+  const clock = vi.spyOn(Date, "now");
+  const started = Date.now();
+  const settings = {
+    ...iconSettings(),
+    showSaleHistoryOverlay: false,
+    showQuestOverlay: false,
+    showFriendInterestOverlay: false,
+    showActiveAuctionsOverlay: false,
+    showOnSaleOverlay: true,
+  };
+  try {
+    clock.mockReturnValue(started);
+    await h.provider.get("42", settings, "plain");
+    clock.mockReturnValue(started + 59_999);
+    await h.provider.get("42", settings, "plain");
+    expect(h.client.insights).toHaveBeenCalledOnce();
+    clock.mockReturnValue(started + 60_000);
+    await h.provider.get("42", settings, "plain");
+    expect(h.client.insights).toHaveBeenCalledTimes(2);
+  } finally {
+    clock.mockRestore();
+  }
 });

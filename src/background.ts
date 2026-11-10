@@ -82,11 +82,20 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
   if (message.op === "openOptions" && isGame) {
-    void chrome.runtime
-      .openOptionsPage()
-      .then(() =>
-        respond({ requestId: message.requestId, ok: true, data: null }),
-      );
+    const opened = message.section
+      ? chrome.tabs.create({
+          url: chrome.runtime.getURL("options.html#stat-boxes"),
+        })
+      : chrome.runtime.openOptionsPage();
+    void opened.then(
+      () => respond({ requestId: message.requestId, ok: true, data: null }),
+      (error) =>
+        respond({
+          requestId: message.requestId,
+          ok: false,
+          error: messageOf(error),
+        }),
+    );
     return true;
   }
   if (!isOptions) return false;

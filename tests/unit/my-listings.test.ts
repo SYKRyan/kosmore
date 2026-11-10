@@ -9,14 +9,15 @@ import {
 import {
   ListingCacheService,
   LISTING_PRICE_KEY,
-  LISTING_SESSION_PREFIX,
 } from "../../src/shared/listing-cache";
 import { myListing } from "../fixtures/my-listings";
 class MemoryStore {
   data: Record<string, unknown> = {};
-  async get(key: string | null) {
+  async get(key: string | string[] | null) {
     return structuredClone(
-      key === null ? this.data : { [key]: this.data[key] },
+      key === null
+        ? this.data
+        : Object.fromEntries([key].flat().map((k) => [k, this.data[k]])),
     );
   }
   async set(data: Record<string, unknown>) {
@@ -83,359 +84,224 @@ it("validates personal prices, sellers and finishes without losing group coverag
       ),
     ).toThrow();
 });
-it("loads one history batch, doubles only on demand and restores larger cached coverage", async () => {
-  const { service } = setup(),
-    limits: number[] = [];
-  const items = Array.from({ length: 150 }, (_, i) =>
-    myListing(i + 1, i === 100 ? "42" : "46"),
-  );
-  const read = async (next: ListingLimits) => {
-    limits.push(next.unsold);
-    return page(items, next);
+
+const account = "fixtureplayer";
+const id = "42";
+const capture = (n: number, submittedAt: number, startPrice = "10000000") => ({
+  id: myListing(n).id,
+  subjectId: id,
+  submittedAt,
+  startPrice,
+});
+const first = async (service: ListingCacheService) =>
+  (await service.tracked(account, id)).listings[0];
+
+it("extends history only on demand, saves 100 rows, and can reopen without the session cache", async () => {
+  const { service, local } = setup();
+  const all = Array.from({ length: 125 }, (_, i) => myListing(i + 1));
+  const calls: number[] = [];
+  const read = async (limits: ListingLimits) => {
+    calls.push(limits.unsold);
+    return page(all, limits);
   };
-  const first = await service.history(
-    "fixtureplayer",
-    "42",
-    "initial",
-    read,
-    signal(),
-  );
-  expect(first.listings.some((i) => i.subjectId === "42")).toBe(false);
-  expect(listingComplete(first)).toBe(false);
-  expect(limits).toEqual([50]);
-  await service.history("fixtureplayer", "42", "more", read, signal());
-  const last = await service.history(
-    "fixtureplayer",
-    "42",
-    "more",
-    read,
-    signal(),
-  );
-  expect(limits).toEqual([50, 100, 150]);
-  expect(listingComplete(last)).toBe(true);
-  expect(
-    (await service.history("fixtureplayer", "42", "initial", read, signal()))
-      .listings,
-  ).toHaveLength(150);
-  expect(limits).toHaveLength(3);
-});
-it("confirms the newest price across groups without scanning unrelated older listings", async () => {
-  const { service } = setup(),
-    sizes: number[] = [];
-  const items = [
-    ...Array.from({ length: 5000 }, (_, i) =>
-      myListing(i + 1, i === 75 ? "42" : "46", { startPrice: "23000000" }),
-    ),
-    myListing(6000, "42", { group: "sold", startPrice: "10000000" }),
-  ];
-  const result = await service.latest(
-    "fixtureplayer",
-    "42",
-    async (limits) => {
-      sizes.push(limits.unsold);
-      return page(items, limits);
-    },
-    signal(),
-  );
-  expect(result.listing?.startPrice).toBe("23000000");
-  expect(sizes).toEqual([50, 100]);
-});
-it("shares in-flight reads but publishes a resolved card before another card's older lookup", async () => {
-  const { service } = setup();
-  let reads = 0,
-    release!: () => void,
-    held = false;
-  const wait = new Promise<void>((resolve) => {
-    release = resolve;
+  expect(await service.tracked(account, id)).toEqual({
+    listings: [],
+    hasMore: true,
   });
-  const items = Array.from({ length: 150 }, (_, i) =>
-    myListing(i + 1, i === 100 ? "46" : "42"),
+  expect(calls).toEqual([]);
+  const more = () => service.history(account, id, "more", read, signal());
+  expect((await more())?.listings).toHaveLength(50);
+  expect((await more())?.listings).toHaveLength(100);
+  expect((await more())?.listings).toHaveLength(125);
+  expect(calls).toEqual([50, 100, 125]);
+  const restarted = new ListingCacheService(local, new MemoryStore());
+  const saved = await restarted.tracked(account, id);
+  expect(saved.listings.map((r) => r.id)).toEqual(
+    all.slice(0, 100).map((r) => r.id),
   );
+  expect(saved.hasMore).toBe(true);
+  expect((await restarted.tracked("other", id)).listings).toEqual([]);
+  expect(calls).toHaveLength(3);
+});
+
+it("coalesces explicit refreshes and imports the newest 180 across statuses and cards", async () => {
+  const { service } = setup();
+  const all = Array.from({ length: 241 }, (_, i) =>
+    myListing(i + 1, i === 179 ? "42" : i === 180 ? "43" : "44", {
+      group: i % 3 === 0 ? "selling" : i % 3 === 1 ? "sold" : "unsold",
+    }),
+  );
+  let reads = 0;
   const read = async (limits: ListingLimits) => {
     reads++;
-    if (limits.unsold > 50) {
-      held = true;
-      await wait;
-    }
-    return page(items, limits);
+    expect(limits).toEqual({ selling: 180, sold: 180, unsold: 180 });
+    return page(all, limits);
   };
-  const first = service.latest("fixtureplayer", "42", read, signal());
-  const second = service.latest("fixtureplayer", "46", read, signal());
-  expect((await first).listing?.subjectId).toBe("42");
-  await expect.poll(() => held).toBe(true);
-  expect(reads).toBe(2);
-  release();
-  expect((await second).listing?.subjectId).toBe("46");
-  expect(reads).toBe(3);
+  await Promise.all(
+    [id, "44"].map((subject) =>
+      service.history(account, subject, "refresh", read, signal()),
+    ),
+  );
+  expect(reads).toBe(1);
+  expect(await first(service)).toMatchObject({ id: all[179].id });
+  expect((await service.tracked(account, "43")).listings).toEqual([]);
+  expect((await service.tracked(account, "44")).listings).toHaveLength(100);
 });
-it("cancels the final consumer without canceling another tab's subscription", async () => {
-  const { service } = setup();
-  let release!: () => void, shared!: AbortSignal;
-  const waiting = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const read = async (limits: ListingLimits, input: AbortSignal) => {
-    shared = input;
-    await waiting;
-    input.throwIfAborted();
-    return page([myListing(1)], limits);
-  };
-  const a = new AbortController(),
-    b = new AbortController();
-  const first = service.history(
-    "fixtureplayer",
-    "42",
-    "initial",
-    read,
-    a.signal,
-  );
-  const rejected = expect(first).rejects.toThrow();
-  const second = service.history(
-    "fixtureplayer",
-    "42",
-    "initial",
-    read,
-    b.signal,
-  );
-  await expect.poll(() => !!shared).toBe(true);
-  a.abort();
-  await rejected;
-  expect(shared.aborted).toBe(false);
-  release();
-  expect((await second).listings).toHaveLength(1);
-  const c = new AbortController();
-  const pending = service.history(
-    "other",
-    "42",
-    "initial",
-    async (_, input) =>
-      new Promise((_, reject) =>
-        input.addEventListener("abort", () => reject(input.reason)),
-      ),
-    c.signal,
-  );
-  const cancel = expect(pending).rejects.toThrow();
-  c.abort();
-  await cancel;
-});
-it("persists confirmed prices across restarts, isolates accounts, expires and invalidates them", async () => {
-  const { local, session, service } = setup();
-  const read = async (limits: ListingLimits) => page([myListing(1)], limits);
-  await service.latest("fixtureplayer", "42", read, signal());
-  session.data = {};
-  const restarted = new ListingCacheService(local, session);
-  const saved = await restarted.cached("fixtureplayer", "42");
-  expect(saved.latest?.listing?.startPrice).toBe("17000000");
-  expect((await restarted.cached("other", "42")).latest).toBeUndefined();
-  expect(
-    (
-      await restarted.latest(
-        "fixtureplayer",
-        "42",
-        async () => {
-          throw Error("must use cache");
+
+it("retains captured and server-reconciled legacy prices and migrates on the next write", async () => {
+  const { service, local } = setup();
+  const captured = capture(1, 5000);
+  await local.set({
+    "kosmore.listingRecord.fixtureplayer.42": {
+      latest: captured,
+      seen: [captured.id],
+      verifiedId: myListing(2).id,
+      verifiedPrice: "20000000",
+      reconciledAt: 6000,
+    },
+    [LISTING_PRICE_KEY]: {
+      v: 1,
+      entries: {
+        "fixtureplayer:43": {
+          listing: page([myListing(4, "43")], initialListingLimits())
+            .listings[0],
         },
-        signal(),
-      )
-    ).listing,
-  ).toBeTruthy();
-  await restarted.invalidate("fixtureplayer");
-  expect(
-    (await restarted.cached("fixtureplayer", "42")).latest?.checkedAt,
-  ).toBe(0);
-  const updated = await restarted.latest(
-    "fixtureplayer",
-    "42",
-    async (limits) =>
-      page([myListing(2, "42", { startPrice: "19000000" })], limits),
-    signal(),
-  );
-  expect(updated.listing?.startPrice).toBe("19000000");
-  const index = local.data[LISTING_PRICE_KEY] as {
-    entries: Record<string, { checkedAt: number }>;
-  };
-  index.entries["fixtureplayer:42"].checkedAt = Date.now() - 300_001;
-  const batch = session.data[
-    LISTING_SESSION_PREFIX + "fixtureplayer"
-  ] as ListingBatch;
-  batch.fetchedAt = Date.now() - 300_001;
-  const empty = await restarted.latest(
-    "fixtureplayer",
-    "42",
-    async (limits) => page([], limits),
-    signal(),
-  );
-  expect(empty.listing).toBeNull();
-});
-it("retains cached history on errors and rejects non-advancing expanded pages", async () => {
-  const { service } = setup();
-  const read = async (limits: ListingLimits) => ({
-    ...page([myListing(1)], limits),
-    totals: { selling: 0, sold: 0, unsold: 100 },
+      },
+    },
   });
-  await service.history("fixtureplayer", "42", "initial", read, signal());
-  await expect(
-    service.history("fixtureplayer", "42", "more", read, signal()),
-  ).rejects.toThrow("stopped");
+  expect(await first(service)).toMatchObject({
+    id: myListing(2).id,
+    startPrice: "20000000",
+  });
+  expect((await service.tracked(account, "43")).listings[0]).toMatchObject({
+    id: myListing(4).id,
+  });
+  await service.record(account, [capture(3, 7000)]);
+  expect(
+    (await service.tracked(account, id)).listings.map((r) => r.id),
+  ).toEqual([myListing(3).id, myListing(2).id, captured.id]);
+});
+
+it("deduplicates confirmations, prunes old submissions, and keeps out-of-order replies from changing the latest", async () => {
+  const { service } = setup();
+  await service.record(
+    account,
+    Array.from({ length: 101 }, (_, i) => capture(i + 1, i + 1000)),
+  );
+  await service.record(account, [
+    capture(101, 3000, "99000000"),
+    capture(500, 990),
+  ]);
+  const saved = await service.tracked(account, id);
+  expect(saved.listings).toHaveLength(100);
+  expect(saved.listings[0]).toMatchObject({
+    id: myListing(101).id,
+    submittedAt: 1100,
+    startPrice: "10000000",
+  });
+  expect(saved.listings.at(-1)?.id).toBe(myListing(2).id);
+});
+
+it("requires shared server ordering for a different latest price and preserves the price on error", async () => {
+  const { service } = setup();
+  await service.record(account, [capture(1, Date.now() - 3000)]);
+  let rows = [myListing(2)];
+  const read = async (limits: ListingLimits) => page(rows, limits);
+  await service.history(account, id, "refresh", read, signal());
+  expect(await first(service)).toMatchObject({ id: myListing(1).id });
+  rows = [myListing(2), myListing(1)];
+  await service.history(account, id, "refresh", read, signal());
+  expect(await first(service)).toMatchObject({ id: myListing(2).id });
   await expect(
     service.history(
-      "fixtureplayer",
-      "42",
+      account,
+      id,
       "refresh",
       async () => {
-        throw Error("offline");
+        throw Error("unavailable");
       },
       signal(),
     ),
-  ).rejects.toThrow("offline");
-  expect(
-    (await service.cached("fixtureplayer", "42")).batch?.listings,
-  ).toHaveLength(1);
+  ).rejects.toThrow("unavailable");
+  expect(await first(service)).toMatchObject({ id: myListing(2).id });
 });
 
-it("uses a manually refreshed history rather than returning an older otherwise-fresh price", async () => {
+it("merges delayed history without overwriting a newer captured price", async () => {
   const { service } = setup();
-  await service.latest(
-    "fixtureplayer",
-    "42",
-    async (limits) => page([myListing(1)], limits),
-    signal(),
-  );
-  await service.history(
-    "fixtureplayer",
-    "42",
+  let release!: () => void, started!: () => void;
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  await service.record(account, [capture(1, Date.now() - 5000)]);
+  const pending = service.history(
+    account,
+    id,
     "refresh",
-    async (limits) =>
-      page([myListing(2, "42", { startPrice: "29000000" })], limits),
-    signal(),
-  );
-  const latest = await service.latest(
-    "fixtureplayer",
-    "42",
-    async () => {
-      throw Error("must use refreshed batch");
-    },
-    signal(),
-  );
-  expect(latest.listing?.startPrice).toBe("29000000");
-});
-it("bounds the persistent price index to 10,000 least-recently-used entries", async () => {
-  const { local, service } = setup();
-  local.data[LISTING_PRICE_KEY] = {
-    v: 1,
-    entries: Object.fromEntries(
-      Array.from({ length: 10_000 }, (_, i) => [
-        `fixtureplayer:${i}`,
-        { listing: null, checkedAt: 1, usedAt: i },
-      ]),
-    ),
-  };
-  await service.latest(
-    "fixtureplayer",
-    "20000",
-    async (limits) => page([], limits),
-    signal(),
-  );
-  const index = local.data[LISTING_PRICE_KEY] as {
-    entries: Record<string, unknown>;
-  };
-  expect(Object.keys(index.entries)).toHaveLength(10_000);
-  expect(index.entries["fixtureplayer:0"]).toBeUndefined();
-  expect(index.entries["fixtureplayer:20000"]).toBeTruthy();
-});
-
-it("discards an old in-flight response after a listing invalidation", async () => {
-  const { service } = setup();
-  let release!: () => void,
-    started = false;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const pending = service.latest(
-    "fixtureplayer",
-    "42",
     async (limits) => {
-      started = true;
-      await held;
-      return page([myListing(1)], limits);
+      started();
+      await hold;
+      return page([myListing(2), myListing(1)], limits);
     },
     signal(),
   );
-  const rejected = expect(pending).rejects.toThrow();
-  await expect.poll(() => started).toBe(true);
-  await service.invalidate("fixtureplayer");
+  await ready;
+  const latest = capture(3, Date.now() + 1);
+  await service.record(account, [latest]);
+  await service.invalidate(account);
   release();
-  await rejected;
-  const cached = await service.cached("fixtureplayer", "42");
-  expect(cached.latest).toBeUndefined();
-  expect(cached.batch).toBeUndefined();
+  await pending;
+  expect(await first(service)).toMatchObject({
+    id: latest.id,
+    submittedAt: latest.submittedAt,
+  });
+  expect((await service.tracked(account, id)).listings).toHaveLength(3);
 });
 
-it("continues a shared request through another game tab when its original reader closes", async () => {
+it("keeps a shared scan alive until its last consumer leaves", async () => {
   const { service } = setup();
-  let release!: () => void,
-    started = false,
-    fallback = 0;
-  const held = new Promise<void>((resolve) => {
+  let release!: () => void, started!: () => void;
+  const hold = new Promise<void>((resolve) => {
     release = resolve;
   });
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const read = async (limits: ListingLimits, sig: AbortSignal) => {
+    started();
+    await hold;
+    sig.throwIfAborted();
+    return page([myListing(1)], limits);
+  };
   const a = new AbortController();
-  const first = service.history(
-    "fixtureplayer",
-    "42",
-    "initial",
-    async () => {
-      started = true;
-      await held;
-      throw Error("Receiving end does not exist");
-    },
-    a.signal,
-  );
-  const rejected = expect(first).rejects.toThrow();
-  await expect.poll(() => started).toBe(true);
-  const second = service.history(
-    "fixtureplayer",
-    "42",
-    "initial",
-    async (limits) => {
-      fallback++;
-      return page([myListing(1)], limits);
-    },
-    signal(),
-  );
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  const b = new AbortController();
+  const one = service.history(account, id, "refresh", read, a.signal);
+  const two = service.history(account, id, "refresh", read, b.signal);
+  const rejected = expect(one).rejects.toThrow("canceled");
+  await ready;
   a.abort();
   await rejected;
   release();
-  expect((await second).listings).toHaveLength(1);
-  expect(fallback).toBe(1);
+  await two;
+  expect(await first(service)).toMatchObject({ id: myListing(1).id });
 });
-it.each([
-  [1000, 6, 2550],
-  [5000, 8, 11350],
-])(
-  "benchmarks complete cold misses over %i listings",
-  async (total, expectedRequests, expectedRows) => {
-    const { service } = setup();
-    const items = Array.from({ length: total }, (_, i) =>
-      myListing(i + 1, "46"),
-    );
-    let requests = 0,
-      rows = 0;
-    const result = await service.latest(
-      "fixtureplayer",
-      "42",
+
+it("rejects a truncated recent refresh before importing a partial window", async () => {
+  const { service } = setup();
+  await expect(
+    service.history(
+      account,
+      id,
+      "refresh",
       async (limits) => {
-        const batch = page(items, limits);
-        requests++;
-        rows += batch.counts.unsold;
+        const batch = page([myListing(1)], limits);
+        batch.totals.unsold = 200;
         return batch;
       },
       signal(),
-    );
-    expect(result.listing).toBeNull();
-    expect(requests).toBe(expectedRequests);
-    expect(rows).toBe(expectedRows);
-    console.log(JSON.stringify({ listings: total, requests, rows }));
-  },
-);
+    ),
+  ).rejects.toThrow("stopped");
+  expect(await first(service)).toBeUndefined();
+});

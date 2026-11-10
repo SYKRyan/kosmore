@@ -16,8 +16,9 @@ import type { SaleObservationStore } from "./sale-observation-store";
 export function listenToPageRelay(
   store: SaleObservationStore,
   win: Window = window,
+  announceReady = true,
 ) {
-  win.addEventListener("message", (event) => {
+  const receive = (event: MessageEvent) => {
     if (
       event.source !== win ||
       event.origin !== win.location.origin ||
@@ -36,9 +37,11 @@ export function listenToPageRelay(
         },
       ]),
     );
-  });
-  // Release anything the relay buffered before this script loaded.
-  win.postMessage({ type: RELAY_READY }, win.location.origin);
+  };
+  win.addEventListener("message", receive);
+  if (announceReady)
+    win.postMessage({ type: RELAY_READY }, win.location.origin);
+  return () => win.removeEventListener("message", receive);
 }
 
 /**

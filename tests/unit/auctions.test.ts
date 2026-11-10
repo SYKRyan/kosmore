@@ -137,7 +137,7 @@ it("rejects malformed results and pagination without returning a partial count",
     })),
   ).rejects.toThrow("result page");
 });
-it("caches auction reads for 30 seconds, refreshes explicitly, and isolates accounts", async () => {
+it("caches auction reads for 60 seconds, refreshes explicitly, and isolates accounts", async () => {
   let account = "FirstPlayer";
   const fetcher = vi.fn(async (input: RequestInfo | URL) =>
     Response.json(
@@ -153,7 +153,7 @@ it("caches auction reads for 30 seconds, refreshes explicitly, and isolates acco
   await client.activeAuctions("42", "Card", undefined, true);
   expect(fetcher).toHaveBeenCalledTimes(3);
   const now = Date.now();
-  const clock = vi.spyOn(Date, "now").mockReturnValue(now + 30_001);
+  const clock = vi.spyOn(Date, "now").mockReturnValue(now + 60_001);
   await client.activeAuctions("42", "Card");
   expect(fetcher).toHaveBeenCalledTimes(4);
   clock.mockRestore();

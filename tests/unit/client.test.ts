@@ -4,11 +4,14 @@ import {
   ALBUM_A,
   COPY_A,
   COPY_B,
+  OPENING,
   albums,
   card,
   me,
   opening,
+  prices,
 } from "../fixtures/data";
+import { auction } from "../fixtures/auctions";
 import type { CardContext } from "../../src/shared/types";
 it("honors server throttling without retrying or sending further requests during the cooldown", async () => {
   const fetcher = vi.fn(async () =>
@@ -388,4 +391,163 @@ it("shares one card read between callers once the account is known", async () =>
   expect(
     fetcher.mock.calls.filter(([u]) => String(u) === "/api/collection/42"),
   ).toHaveLength(1);
+});
+
+it("queries only the requested family IDs and falls back if one is missing", async () => {
+  const paths: URL[] = [];
+  let omit = false;
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), "https://kosmora.io");
+    paths.push(url);
+    if (url.pathname === "/api/me") return Response.json(me);
+    const rows = [
+      { id: "first", collected: 2 },
+      { id: "second", collected: 3 },
+    ];
+    const ids = url.searchParams.get("ids");
+    return Response.json({
+      families: ids
+        ? rows.filter((row) => !omit && ids.split(",").includes(row.id))
+        : rows,
+      total: rows.length,
+    });
+  });
+  const client = new GameClient(fetcher);
+  await client.account();
+  expect(await client.familyCountsFor(["second", "second"])).toEqual(
+    new Map([["second", 3]]),
+  );
+  expect(paths[1].searchParams.get("ids")).toBe("second");
+  expect(paths[1].searchParams.get("limit")).toBe("1");
+  omit = true;
+  expect((await client.familyCountsFor(["first"])).get("first")).toBe(2);
+  expect(paths[2].searchParams.get("ids")).toBe("first");
+  expect(paths[3].searchParams.has("ids")).toBe(false);
+});
+
+it("shares the pack inventory fallback and uses the game's newer ready snapshot", async () => {
+  const another = "abcdef12-0000-4000-8000-000000000001";
+  const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+    Response.json(
+      String(input) === "/api/me"
+        ? me
+        : {
+            packs: [{ status: "ready", openingId: OPENING }],
+          },
+    ),
+  );
+  const client = new GameClient(fetcher);
+  expect(
+    await Promise.all([client.readyPackIds(), client.readyPackIds()]),
+  ).toEqual([[OPENING], [OPENING]]);
+  await client.receivePackData({
+    kind: "inventory",
+    ids: [OPENING, another],
+    requestedAt: Date.now(),
+  });
+  await client.receivePackData({ kind: "opened", id: OPENING });
+  expect(await client.readyPackIds()).toEqual([another]);
+  expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
+    "/api/me",
+    "/api/packs/inventory",
+  ]);
+});
+
+it("uses count-only sale history for icons when collection is paused", async () => {
+  const fetcher = vi.fn(async () =>
+    Response.json({ prices: { days: 30, count: 1 } }),
+  );
+  const client = new GameClient(fetcher as typeof fetch);
+  const evidence = vi.fn();
+  client.onHistoryLoaded(evidence);
+  client.setSaleRateCollection(false);
+  await expect(client.hasSaleHistory("42", "plain")).resolves.toBe(true);
+  await expect(client.hasSaleHistory("42", "plain")).resolves.toBe(true);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  await expect(client.history("42", "plain")).rejects.toThrow();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(evidence).not.toHaveBeenCalled();
+});
+
+it("stops positive icon searches early when paused and keeps pagination when collecting", async () => {
+  const offsets: number[] = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const offset = Number(
+      new URL(String(input), "https://kosmora.io").searchParams.get("offset"),
+    );
+    offsets.push(offset);
+    return Response.json({
+      items: [
+        auction(offset + 1, offset ? "42" : "44", {
+          startPrice: offset === 2 ? "5000000" : "10000000",
+        }),
+      ],
+      nextOffset: offset === 2 ? null : offset + 1,
+    });
+  });
+  const client = new GameClient(fetcher as typeof fetch);
+  const evidence = vi.fn();
+  client.onAuctionListings(evidence);
+  client.setSaleRateCollection(false);
+  await expect(client.hasActiveAuctions("42", "fixture")).resolves.toBe(true);
+  expect(offsets.splice(0)).toEqual([0, 1]);
+  expect(evidence).not.toHaveBeenCalled();
+  await expect(client.hasActiveAuctions("43", "fixture")).resolves.toBe(false);
+  expect(offsets.splice(0)).toEqual([0, 1, 2]);
+  client.setSaleRateCollection(true);
+  await expect(client.hasActiveAuctions("42", "fixture")).resolves.toBe(true);
+  expect(offsets.splice(0)).toEqual([0, 1, 2]);
+  expect(evidence).toHaveBeenCalledWith(
+    expect.arrayContaining([
+      expect.objectContaining({ id: auction(2).id }),
+      expect.objectContaining({ id: auction(3).id }),
+    ]),
+  );
+  await expect(client.lowestListingPrice("42", "fixture")).resolves.toBe(
+    "5000000",
+  );
+  expect(offsets).toEqual([0, 1, 2]);
+});
+
+it("passes icon history to settlement only when it came from a network read", async () => {
+  const fetcher = vi.fn(async () => Response.json(prices(3)));
+  const client = new GameClient(fetcher as typeof fetch);
+  const evidence = vi.fn();
+  client.onHistoryLoaded(evidence);
+  await expect(client.hasSaleHistory("42", "plain")).resolves.toBe(true);
+  expect(evidence).toHaveBeenCalledWith(
+    "42",
+    expect.objectContaining({ count: 3 }),
+    expect.any(Number),
+  );
+  await expect(client.hasSaleHistory("42", "plain")).resolves.toBe(true);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(evidence).toHaveBeenCalledOnce();
+});
+
+it("reuses live auction price and presence for 60 seconds and permits an explicit refresh", async () => {
+  const clock = vi.spyOn(Date, "now");
+  const at = Date.now();
+  try {
+    clock.mockReturnValue(at);
+    const fetcher = vi.fn(async () =>
+      Response.json({ items: [auction(1)], nextOffset: null }),
+    );
+    const client = new GameClient(fetcher as typeof fetch);
+    client.setSaleRateCollection(false);
+    await client.hasActiveAuctions("42", "Presence");
+    await client.lowestListingPrice("42", "Price");
+    clock.mockReturnValue(at + 59_999);
+    await client.hasActiveAuctions("42", "Presence");
+    await client.lowestListingPrice("42", "Price");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    clock.mockReturnValue(at + 60_000);
+    await client.hasActiveAuctions("42", "Presence");
+    await client.lowestListingPrice("42", "Price");
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    await client.lowestListingPrice("42", "Price", undefined, true);
+    expect(fetcher).toHaveBeenCalledTimes(5);
+  } finally {
+    clock.mockRestore();
+  }
 });

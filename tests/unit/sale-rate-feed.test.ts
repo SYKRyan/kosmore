@@ -60,6 +60,7 @@ it("relays copies of the game's own auction GETs only, buffering until the conte
   dispatch({ type: RELAY_READY }, {}); // not from the page window: ignored
   expect(win.postMessage).not.toHaveBeenCalled();
   dispatch({ type: RELAY_READY });
+  await vi.waitFor(() => expect(win.postMessage).toHaveBeenCalledTimes(2));
   expect(win.postMessage.mock.calls.map(([m]) => m.path)).toEqual([
     "/api/auctions",
     `/api/auctions/${auction(2).id}`,
@@ -69,6 +70,30 @@ it("relays copies of the game's own auction GETs only, buffering until the conte
     ORIGIN,
   ]);
   expect(original).toHaveBeenCalledTimes(5);
+});
+
+it("pauses native auction relay without consuming the game's response", async () => {
+  const data = { items: [auction(1)], nextOffset: null };
+  const response = new Response(JSON.stringify(data));
+  const clone = vi.spyOn(response, "clone");
+  const original = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(data)))
+    .mockResolvedValueOnce(response)
+    .mockImplementation(() => json(data));
+  const { win, dispatch } = fakeWindow(original);
+  installPageRelay(win);
+  await win.fetch("/api/auctions?offset=0");
+  dispatch({ type: RELAY_READY, preferences: { collectSaleRateData: false } });
+  expect(await (await win.fetch("/api/auctions?offset=1")).json()).toEqual(
+    data,
+  );
+  await flush();
+  expect(clone).not.toHaveBeenCalled();
+  expect(win.postMessage).not.toHaveBeenCalled();
+  dispatch({ type: RELAY_READY, preferences: { collectSaleRateData: true } });
+  await win.fetch("/api/auctions?offset=2");
+  await vi.waitFor(() => expect(win.postMessage).toHaveBeenCalledOnce());
 });
 
 it("never relays failed responses and never breaks the page's request", async () => {
@@ -102,8 +127,12 @@ it("invalidates personal prices only after successful single or batch listings, 
   await win.fetch("https://evil.example/api/auctions", { method: "POST" });
   await flush();
   expect(win.postMessage.mock.calls.map(([message]) => message)).toEqual([
-    { type: RELAY_LISTED, path: "/api/auctions" },
-    { type: RELAY_LISTED, path: "/api/market/listings/batch" },
+    {
+      type: RELAY_LISTED,
+      path: "/api/auctions",
+      listings: [expect.objectContaining({ auctionId: auction(1).id })],
+    },
+    { type: RELAY_LISTED, path: "/api/market/listings/batch", listings: [] },
   ]);
   expect(original).toHaveBeenCalledTimes(5);
   const failed = fakeWindow(

@@ -133,3 +133,29 @@ it("serves an expedited read next without adding one", async () => {
   await Promise.all(tasks);
   expect(starts).toEqual(["a", "d", "b", "c"]);
 });
+
+it("serves the open tooltip before work already queued for other visible features", async () => {
+  const scheduler = new RequestScheduler(1);
+  const normal = new AbortController().signal;
+  const starts: string[] = [];
+  let release!: () => void;
+  const busy = scheduler.run(
+    "busy",
+    normal,
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const queued = scheduler.run("other", normal, async () => {
+    starts.push("other");
+  });
+  const shared = scheduler.run("tooltip", normal, async () => {
+    starts.push("tooltip");
+  });
+  scheduler.promote("tooltip", "interactive");
+  await Promise.resolve();
+  release();
+  await Promise.all([busy, queued, shared]);
+  expect(starts).toEqual(["tooltip", "other"]);
+});

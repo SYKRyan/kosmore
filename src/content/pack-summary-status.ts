@@ -13,6 +13,9 @@ export function packSummaryStatus(grid: HTMLElement) {
       `
     :host { display: block; margin: 0 0 6px; text-align: start; }
     .loading { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    :host(:not([data-loading])) .kosmore-label { color: #86efac; }
+    :host([data-cooldown="first"]) .kosmore-label { color: #fdba74; }
+    :host([data-cooldown="repeated"]) .kosmore-label { color: #fca5a5; }
     :host([data-loading]) .kosmore-star { animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     @media (prefers-reduced-motion: reduce) {
@@ -28,6 +31,7 @@ export function packSummaryStatus(grid: HTMLElement) {
   status.setAttribute("role", "status");
   host.attachShadow({ mode: "open" }).append(style, label, status);
   let settling: object | undefined;
+  let cooldownUntil = 0;
 
   async function settle(token: object) {
     // Wait for Kosmora's staggered entrance animations on the grid items.
@@ -48,6 +52,8 @@ export function packSummaryStatus(grid: HTMLElement) {
         if (settling !== token) return;
         settling = undefined;
         host.removeAttribute("data-loading");
+        host.removeAttribute("data-cooldown");
+        cooldownUntil = 0;
         status.textContent = "";
       }),
     );
@@ -56,6 +62,19 @@ export function packSummaryStatus(grid: HTMLElement) {
   return {
     grid,
     host,
+    rateLimited(retryAt: number, startedAt = 0) {
+      if (!host.hasAttribute("data-loading") || retryAt <= cooldownUntil)
+        return;
+      // Requests already in flight when the queue paused share the first cooldown.
+      const repeated =
+        (cooldownUntil > 0 && startedAt >= cooldownUntil) ||
+        host.dataset.cooldown === "repeated";
+      cooldownUntil = retryAt;
+      host.dataset.cooldown = repeated ? "repeated" : "first";
+      status.textContent = repeated
+        ? "Rate limited again. Waiting to retry card overlays…"
+        : "Rate limited. Waiting to retry card overlays…";
+    },
     setLoading(loading: boolean) {
       if (loading) {
         settling = undefined;

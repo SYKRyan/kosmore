@@ -5,11 +5,34 @@
  */
 export const RELAY_DATA = "kosmore.pageData";
 export const RELAY_READY = "kosmore.relayReady";
+export interface RelayPreferences {
+  collectSaleRateData: boolean;
+  packInventory: boolean;
+  packOpenings: boolean;
+  fusion: boolean;
+  vortex: boolean;
+  familyMilestones: boolean;
+  saleFamily: boolean;
+  listingChanges: boolean;
+  listingPrices: boolean;
+}
+export const RELAY_PACK = "kosmore.packData";
+export type PackRelayMessage =
+  | {
+      type: typeof RELAY_PACK;
+      kind: "inventory";
+      ids: string[];
+      requestedAt: number;
+    }
+  | { type: typeof RELAY_PACK; kind: "opened"; id: string }
+  | { type: typeof RELAY_PACK; kind: "opening"; data: unknown };
 export const RELAY_LISTED = "kosmore.listingChanged";
-export const LISTING_WRITES = /^\/api\/(?:auctions|market\/listings\/batch)$/;
+export const LISTING_WRITES =
+  /^\/api\/(?:auctions(?:\/[0-9a-f-]{36}\/relist)?|market\/listings\/batch)$/i;
 export interface ListingChangedMessage {
   type: typeof RELAY_LISTED;
   path: string;
+  listings?: import("../kosmora/listing-capture").ListingConfirmation[];
 }
 /** Auction list/search and single-auction reads (Sale Rate). */
 export const RELAY_AUCTIONS =
