@@ -64,7 +64,7 @@ Card overlays, Family Impact Overlay, Sales Overlay, profile reminders, trade re
 Hover a supported card, or press its overlay button when enabled, to open KosMore's card popup. It includes rarity, finish, family links, market indicators, album shortcuts, stat boxes, and four icon tabs. The last selected tab is remembered for the next tooltip in that browser tab.
 
 - **Market (chart):** completed-sale history, a price chart, and a per-finish summary for Standard, Shiny, and Full art. Toggle finishes to change the history and related statistics; expand recent sales with **Show All**. **Last Sale** and **Listed For** appear in the header when data exists; Listed For opens the card's Market search.
-- **My listing history (history):** your original starting prices for this card across finishes, newest listings first. Auction end dates/times appear on the left and prices on the right. Selecting the tab loads one batch; **Load more** retrieves older listings. Leaving the tab stops its loading, and returning restores cached results. Incomplete results are identified; the Market tab does not request personal history.
+- **My listing history (history):** saved starting prices across finishes. The tab opens from local storage. **Load more** scans older listings and saves matching results. The refresh icon checks your newest 180 auctions. Rows distinguish captured submission times from auction end times.
 - **Trade (friends):** current friends whose saved family preferences match the card. Expand a friend to see all saved families, highlighted matches, private notes, and **Social**/**Profile** links. One friend expands at a time; a single match opens automatically. This uses the same content and behavior as the companion friend tooltip.
 - **Notes:** private notes for the card, shared across its copies and finishes within your account. Save or cancel edits here; these notes are stored in the extension.
 
@@ -112,7 +112,7 @@ Show, hide, and reorder individual statistics above the tooltip tabs. Settings i
 
 Price calculations use the sale history returned by Kosmora. Sampled or incomplete data is identified in the tooltip. New stat boxes are enabled automatically without resetting your existing choices or ordering.
 
-Sale Rate uses listings this browser sees while you browse the Market and through KosMore's existing auction reads. Fresh sale histories resolve their outcomes. It is a local sample, so it does not represent every listing on Kosmora. A dash means no settled sample is available; **0%** means a settled sample exists with no sales. The Market tab's **Sold** column shows the rate and sample size separately for each finish. **Refresh** checks fresh histories but cannot recover listings this browser never saw.
+Sale Rate uses listings this browser sees while you browse the Market and through KosMore's existing auction reads. Fresh sale histories resolve their outcomes. It is a local sample, so it does not represent every listing on Kosmora. A dash means no settled sample is available; **0%** means a settled sample exists with no sales. The Market tab's **Sold** column shows the rate and sample size separately for each finish. **Refresh** checks fresh histories but cannot recover listings this browser never saw. **Collect Sale Rate data** at the bottom of Tooltip Stat Boxes is on by default. Turn it off to pause collection and settlement on open tabs. The Sale Rate box keeps its place and opens the setting when clicked while paused.
 
 Sale observations stay in this browser, are limited to 20,000 listings with 35-day retention, and are excluded from backups. Only listings ending within the last 30 days contribute to the displayed rate.
 
@@ -197,7 +197,7 @@ Show price helpers beneath the starting-price field on both the single sell scre
 
 The price visibility options are checkboxes; click-to-fill options are nested switches. Clicking a price fills only that card's starting price. Review and submit listings using Kosmora's usual sale controls.
 
-My Last Listing uses a small account-specific local cache that survives browser restarts. Saved prices appear immediately; prices older than five minutes are rechecked on sale screens or an active History tab. Lookups are shared across cards/tabs, resolve each card independently, and stop once its latest price is confirmed. Successful new listings invalidate the cache. A first lookup for an older or never-listed card can take longer; it does not require opening the full History tab.
+My Last Listing shows the saved starting price for the card. KosMore saves up to 100 listings per account and card. Use the refresh icon on either sale screen or in tooltip History to check your newest 180 auctions across all statuses. **Load more** in History searches older listings and saves the results for the next visit.
 
 ### Navigation hotkeys
 

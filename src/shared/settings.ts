@@ -15,6 +15,7 @@ export const defaults = (): Settings => ({
   disableHoverTooltipInPulsar: false,
   disableHoverTooltipInVortex: false,
   useOverlayButtonInsteadOfHover: false,
+  tooltipTakesFocus: false,
   outsideClickClosesTooltipOnly: false,
   fullScreenCenteredOnOpen: false,
   socialRemindersMasterEnabled: true,
@@ -58,6 +59,7 @@ export const defaults = (): Settings => ({
   salesMyLastListingSetsPrice: true,
   salesMyLastListingAdjustment: 0,
   statBoxesEnabled: true,
+  collectSaleRateData: true,
   pinnedAlbumsEnabled: true,
   closeTooltipWhenAddedToAlbum: false,
   applyCloseBehaviorToPinnedTooltips: false,
@@ -119,6 +121,7 @@ export function parseSettings(value: unknown): Settings {
     "disableHoverTooltipInVortex",
     "disableCardOverlaysInVortex",
     "useOverlayButtonInsteadOfHover",
+    "tooltipTakesFocus",
     "outsideClickClosesTooltipOnly",
     "fullScreenCenteredOnOpen",
     "socialRemindersMasterEnabled",
@@ -153,6 +156,7 @@ export function parseSettings(value: unknown): Settings {
     "showSalesMyLastListing",
     "salesMyLastListingSetsPrice",
     "statBoxesEnabled",
+    "collectSaleRateData",
     "pinnedAlbumsEnabled",
   ] as const)
     if (typeof v[key] === "boolean") d[key] = v[key];

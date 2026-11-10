@@ -38,6 +38,12 @@ interface Reads {
     signal?: AbortSignal,
     fresh?: boolean,
   ): Promise<Map<string, number>>;
+  invalidateFamilyCounts?(): void;
+  familyCountsFor?(
+    ids: string[],
+    signal?: AbortSignal,
+    fresh?: boolean,
+  ): Promise<Map<string, number>>;
   familyMilestones(signal?: AbortSignal): Promise<number[]>;
   insights(
     subjectId: string,
@@ -102,6 +108,7 @@ export class FusionFamilyImpact {
   private observed = new Set<Element>();
   private intersection?: IntersectionObserver;
   private frame = 0;
+  private work = new AbortController();
   private retry?: ReturnType<typeof setTimeout>;
   private sales: SaleFamilySelection;
 
@@ -138,7 +145,7 @@ export class FusionFamilyImpact {
       this.receive(event.data.path, event.data.data);
     };
     this.win.addEventListener("message", onMessage);
-    const stopSales = this.sales.start();
+    const stopSales = this.sales.start(() => this.salesEnabled());
     // Half a screen ahead, so badges are ready as cards scroll into view. Kept
     // small: every read shares the player's rate limit with the game itself.
     this.intersection = new IntersectionObserver(
@@ -150,11 +157,19 @@ export class FusionFamilyImpact {
       },
       { rootMargin: "50% 0px" },
     );
-    const unobserve = observePage(() => this.schedule());
+    const unobserve = observePage(() => {
+      if (
+        this.hosts.size ||
+        this.loading ||
+        this.reading.size ||
+        this.enabled()
+      )
+        this.schedule();
+    });
     // Cards can be gained or lost in another tab (packs, sales, gifts): re-read
     // counts when the player comes back to this one.
     const back = () => {
-      if (this.win.document.hidden) return;
+      if (this.win.document.hidden || !this.enabled()) return;
       this.invalidateOwnership();
       this.schedule();
     };
@@ -183,6 +198,7 @@ export class FusionFamilyImpact {
       this.intersection?.disconnect();
       this.visible.clear();
       this.observed.clear();
+      this.stopReads();
       this.win.cancelAnimationFrame(this.frame);
       this.frame = 0;
       clearTimeout(this.retry);
@@ -193,7 +209,10 @@ export class FusionFamilyImpact {
   stop() {}
 
   setSettings(settings: Settings) {
+    const salesEnabled = this.salesEnabled();
     this.settings = settings;
+    if (salesEnabled && !this.salesEnabled()) this.sales.reset();
+    if (!this.enabled()) this.stopReads();
     this.schedule();
   }
 
@@ -212,7 +231,7 @@ export class FusionFamilyImpact {
         }
         // Cards seen before mean a reload (as after a fusion), not the next
         // page of the grid: counts may have changed.
-        if (reload) this.countsStale = true;
+        if (reload) this.invalidateCounts();
       }
     } catch {
       return;
@@ -220,14 +239,14 @@ export class FusionFamilyImpact {
     this.schedule();
   }
 
-  private enabled() {
+  enabled() {
     return (
       !!this.settings?.familyImpactOverlaysEnabled &&
       ((this.settings.showFusionFamilyOverlay &&
         this.win.location.pathname === "/fusion") ||
         (this.settings.showTradeFamilyOverlay && this.trading()) ||
         (this.settings.showVortexFamilyOverlay && this.vortex()) ||
-        (this.settings.showSalesFamilyOverlay && this.selling()))
+        (this.salesEnabled() && this.selling()))
     );
   }
 
@@ -244,6 +263,13 @@ export class FusionFamilyImpact {
     return this.win.location.pathname === "/vortex";
   }
 
+  private salesEnabled() {
+    return (
+      !!this.settings?.familyImpactOverlaysEnabled &&
+      this.settings.showSalesFamilyOverlay
+    );
+  }
+
   private selling() {
     return (
       /^\/market\/sell(?:\/batch)?$/.test(this.win.location.pathname) ||
@@ -251,12 +277,32 @@ export class FusionFamilyImpact {
     );
   }
 
-  private invalidateOwnership() {
+  private invalidateCounts() {
     this.ownershipRevision++;
     this.countsStale = true;
+    this.client.invalidateFamilyCounts?.();
+  }
+
+  private invalidateOwnership() {
+    this.invalidateCounts();
     for (const id of [...this.owned.keys(), ...this.reading])
       this.freshOwned.add(id);
     this.owned.clear();
+  }
+
+  private stopReads() {
+    this.sales.clearPicker();
+    if (this.work.signal.aborted) return;
+    this.work.abort();
+    if (this.loading) this.countsStale = true;
+    this.loading = false;
+    this.reading.clear();
+    this.intersection?.disconnect();
+    this.observed.clear();
+    this.visible.clear();
+    this.accountCheck = undefined;
+    clearTimeout(this.retry);
+    this.retry = undefined;
   }
 
   private schedule() {
@@ -267,13 +313,45 @@ export class FusionFamilyImpact {
     });
   }
 
-  private load() {
-    const counts = !this.counts || this.countsStale,
+  private load(subjects?: Iterable<string>) {
+    if (this.client.familyCountsFor && !subjects) return;
+    const scope =
+      subjects && this.client.familyCountsFor
+        ? [
+            ...new Set(
+              [...subjects].flatMap((id) =>
+                (this.families.get(id) ?? []).map((family) => family.id),
+              ),
+            ),
+          ]
+        : undefined;
+    if (scope && !scope.length) {
+      if (!this.wanted.size) return;
+      if (
+        this.countsStale &&
+        [...this.wanted].every((id) => this.families.has(id))
+      ) {
+        this.counts = undefined;
+        this.countsStale = false;
+      }
+      this.counts ??= new Map();
+    }
+    const missing = scope?.filter(
+      (id) => this.countsStale || !this.counts?.has(id),
+    );
+    const counts = missing
+        ? missing.length > 0
+        : !this.counts || this.countsStale,
       milestones = !this.milestones;
     if (this.loading || (!counts && !milestones)) return;
     // Never skip a refresh, only delay it, so a quick fusion still gets one.
     const wait =
-      Math.max(this.failedAt, counts && this.counts ? this.countsAt : 0) +
+      Math.max(
+        this.failedAt,
+        counts && (this.countsStale || (!scope && this.counts))
+          ? this.countsAt
+          : 0,
+      ) +
       this.gap -
       this.now();
     if (wait > 0) {
@@ -285,38 +363,50 @@ export class FusionFamilyImpact {
       return;
     }
     this.loading = true;
+    const signal = this.work.signal;
     const generation = this.generation;
     const ownershipRevision = this.ownershipRevision;
-    const freshCounts = !!this.counts || this.countsStale;
+    const freshCounts = this.countsStale || (!scope && !!this.counts);
     // Cleared now, not on arrival: a fusion during the read marks it stale again.
-    if (counts) this.countsStale = false;
+    if (counts) {
+      if (scope && this.countsStale) this.counts = undefined;
+      this.countsStale = false;
+    }
     void Promise.all([
       counts
-        ? this.client.familyCounts(undefined, freshCounts).then(
+        ? (missing
+            ? this.client.familyCountsFor!(missing, signal, freshCounts)
+            : this.client.familyCounts(signal, freshCounts)
+          ).then(
             (next) => {
-              if (
-                generation !== this.generation ||
-                ownershipRevision !== this.ownershipRevision
-              )
-                return;
-              this.counts = next;
+              if (signal.aborted || generation !== this.generation) return;
               this.countsAt = this.now();
+              if (ownershipRevision !== this.ownershipRevision) return;
+              this.counts =
+                missing && this.counts
+                  ? new Map([...this.counts, ...next])
+                  : next;
+              if (missing?.some((id) => !next.has(id)))
+                this.failedAt = this.countsAt;
             },
             (error: unknown) => {
-              this.countsStale = true;
+              if (!signal.aborted) this.countsStale = true;
               throw error;
             },
           )
         : undefined,
       milestones
-        ? this.client.familyMilestones().then((m) => (this.milestones = m))
+        ? this.client.familyMilestones(signal).then((m) => {
+            if (!signal.aborted) this.milestones = m;
+          })
         : undefined,
     ])
       .catch(() => {
         // Wait before retrying rather than reading on every page change.
-        this.failedAt = this.now();
+        if (!signal.aborted) this.failedAt = this.now();
       })
       .finally(() => {
+        if (signal.aborted) return;
         this.loading = false;
         this.schedule();
       });
@@ -330,12 +420,15 @@ export class FusionFamilyImpact {
   private accountReady() {
     if (this.accountKnown || !this.client.account) return true;
     if (this.now() - this.accountFailedAt < this.gap) return false;
-    this.accountCheck ??= this.client.account(undefined, false).then(
+    const signal = this.work.signal;
+    this.accountCheck ??= this.client.account(signal, false).then(
       () => {
+        if (signal.aborted) return;
         this.accountKnown = true;
         this.schedule();
       },
       () => {
+        if (signal.aborted) return;
         this.accountCheck = undefined;
         this.accountFailedAt = this.now();
       },
@@ -356,15 +449,17 @@ export class FusionFamilyImpact {
         continue;
       if (this.now() - (this.failed.get(id) ?? 0) < this.gap) continue;
       this.reading.add(id);
+      const signal = this.work.signal;
       const generation = this.generation;
       const ownershipRevision = this.ownershipRevision;
-      const read = this.client.insights(id, undefined, this.freshOwned.has(id));
+      const read = this.client.insights(id, signal, this.freshOwned.has(id));
       // The card overlays queue several reads per card; a badge needs only this
       // one, so it goes first (shared with the overlays, never an extra request).
       this.client.expediteCard?.(id);
       void read
         .then((card) => {
           if (
+            signal.aborted ||
             generation !== this.generation ||
             ownershipRevision !== this.ownershipRevision
           )
@@ -386,8 +481,11 @@ export class FusionFamilyImpact {
             this.failed.set(id, this.now());
           }
         })
-        .catch(() => this.failed.set(id, this.now()))
+        .catch(() => {
+          if (!signal.aborted) this.failed.set(id, this.now());
+        })
         .finally(() => {
+          if (signal.aborted) return;
           this.reading.delete(id);
           this.schedule();
         });
@@ -410,19 +508,25 @@ export class FusionFamilyImpact {
   }
 
   private render() {
-    const salePicks = this.sales.pickerSelection();
-    if (!this.enabled()) return this.clear();
+    if (!this.enabled()) {
+      this.stopReads();
+      return this.clear();
+    }
+    if (this.work.signal.aborted) this.work = new AbortController();
     if (this.selling()) {
+      const salePicks = this.sales.pickerSelection();
       const ready = this.accountReady();
       if (ready) this.load();
       return this.renderSales(salePicks, ready);
     }
     if (!this.accountReady()) return this.clear();
-    this.load();
-    if (this.trading() || this.vortex()) return this.renderSingleCopy();
+    if (this.trading() || this.vortex()) {
+      this.load();
+      return this.renderSingleCopy();
+    }
     const chosen = this.chosen();
     // A fusion empties the tray: counts may have changed.
-    if (this.trayHadCards && !chosen.length) this.countsStale = true;
+    if (this.trayHadCards && !chosen.length) this.invalidateCounts();
     this.trayHadCards = chosen.length > 0;
     // The game fuses complete batches only, taking cards in the order chosen
     // (checked live): later cards wait for the batch to fill.
@@ -464,6 +568,7 @@ export class FusionFamilyImpact {
         .map(([, card]) => card.subjectId),
     ]);
     this.readFamilies();
+    this.load(this.wanted);
     if (!this.counts || !this.milestones) return this.clear();
     // Cards that leave the collection (every copy fused), per family: for the
     // batches Fuse would run now, and for everything in the tray.
@@ -596,7 +701,10 @@ export class FusionFamilyImpact {
         .filter((tile) => this.visible.has(tile.root))
         .map((tile) => tile.id),
     ]);
-    if (accountReady) this.readFamilies();
+    if (accountReady) {
+      this.readFamilies();
+      if (this.client.familyCountsFor) this.load(this.wanted);
+    }
     if (
       !accountReady ||
       !selected ||
@@ -699,6 +807,7 @@ export class FusionFamilyImpact {
         .map(([, id]) => id),
     );
     this.readFamilies();
+    if (this.client.familyCountsFor) this.load(this.wanted);
     const seen = new Set<HTMLElement>();
     if (
       this.counts &&

@@ -29,6 +29,9 @@ interface Active {
   families?: string[];
   counting: boolean;
   counted: boolean;
+  countedAt?: number;
+  visible?: boolean;
+  countRequest?: AbortController;
   fresh: boolean;
   notes?: TradeNotes;
 }
@@ -48,6 +51,29 @@ export class TradeInterest {
   private active?: Active;
   private settings = defaults();
   private ready = false;
+  private visibility = new IntersectionObserver((records) => {
+    const active = this.active;
+    if (!active) return;
+    for (const record of records) {
+      if (record.target !== active.summary) continue;
+      active.visible = record.isIntersecting;
+      if (!active.visible) active.countRequest?.abort();
+    }
+    this.maybeCount(active);
+  });
+
+  private maybeCount(active: Active) {
+    if (
+      active.visible &&
+      !document.hidden &&
+      active.surface.filters &&
+      this.settings.showTradePossibleInterest &&
+      active.families?.length &&
+      !active.counting &&
+      !active.counted
+    )
+      void this.count(active);
+  }
   constructor(
     private client: Pick<
       KosmoraClient,
@@ -55,12 +81,27 @@ export class TradeInterest {
     >,
   ) {}
   start() {
-    observePage(() => this.scan());
-    window.addEventListener("popstate", () => this.scan());
-    window.addEventListener("focus", () => this.refresh(true));
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) this.refresh(true);
+    observePage(() => {
+      if (
+        this.active ||
+        (this.settings.tradeRemindersEnabled &&
+          location.pathname === "/trades/new")
+      )
+        this.scan();
     });
+    window.addEventListener("popstate", () => this.scan());
+    const resume = () => {
+      if (document.hidden) {
+        this.active?.countRequest?.abort();
+        return;
+      }
+      const active = this.active;
+      if (active?.countedAt && Date.now() - active.countedAt >= 30_000)
+        this.refresh();
+      else this.scan();
+    };
+    window.addEventListener("focus", resume);
+    document.addEventListener("visibilitychange", resume);
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
       if (changes[SETTINGS_KEY]) {
@@ -83,6 +124,8 @@ export class TradeInterest {
     this.scan(fresh);
   }
   private clear() {
+    if (this.active) this.visibility.unobserve(this.active.summary);
+    this.active?.countRequest?.abort();
     this.active?.notes?.dispose();
     this.active?.abort.abort();
     this.active?.badges.remove();
@@ -118,6 +161,7 @@ export class TradeInterest {
         fresh,
       };
       this.active = active;
+      this.visibility.observe(active.summary);
       this.renderLoading(active);
       void this.load(active, badges.content);
     }
@@ -126,8 +170,7 @@ export class TradeInterest {
       if (this.settings.showTradePossibleInterest) {
         if (surface.filters.previousElementSibling !== active.summary)
           surface.filters.before(active.summary);
-        if (active.families?.length && !active.counting && !active.counted)
-          void this.count(active);
+        this.maybeCount(active);
       } else active.summary.remove();
       const anchor = this.settings.showTradePossibleInterest
         ? active.summary
@@ -206,10 +249,12 @@ export class TradeInterest {
     active.summary.hidden = false;
   }
   private async count(active: Active) {
+    const controller = new AbortController();
+    active.countRequest = controller;
     active.counting = true;
     this.renderLoading(active);
     try {
-      const choices = await this.client.families(active.abort.signal);
+      const choices = await this.client.families(controller.signal);
       const ids = active.families!.map((name) => {
         const family = matchFamily(choices, name);
         if (!family)
@@ -220,13 +265,14 @@ export class TradeInterest {
       });
       const counts = await this.client.possibleInterest(
         ids,
-        active.abort.signal,
+        controller.signal,
         active.fresh,
       );
-      if (this.active !== active) return;
+      if (this.active !== active || controller.signal.aborted) return;
+      active.countedAt = Date.now();
       this.renderCounts(active, counts);
     } catch (error) {
-      if (this.active !== active) return;
+      if (this.active !== active || controller.signal.aborted) return;
       active.content.classList.remove("loading");
       active.content.setAttribute("aria-busy", "false");
       active.content.removeAttribute("aria-label");
@@ -242,7 +288,10 @@ export class TradeInterest {
       active.summary.hidden = false;
     } finally {
       active.counting = false;
-      active.counted = true;
+      active.countRequest = undefined;
+      active.counted = !controller.signal.aborted;
+      if (controller.signal.aborted && this.active === active)
+        this.maybeCount(active);
     }
   }
   private renderCounts(active: Active, counts: InterestCounts) {

@@ -1,10 +1,14 @@
+import {
+  validRecordedListing,
+  type RecordedListing,
+} from "../kosmora/listing-capture";
 import type { Account } from "./types";
 import { validListingLimits, type ListingLimits } from "../kosmora/my-listings";
 import { isPopupLayoutChange, type PopupLayoutChange } from "./popup-layout";
 export type Request =
   | {
       requestId: string;
-      op: "listingCache" | "listingLatest" | "listingInvalidate";
+      op: "listingCache" | "listingInvalidate" | "listingSavedPrice";
       accountKey: string;
       subjectId: string;
     }
@@ -13,8 +17,15 @@ export type Request =
       op: "listingHistory";
       accountKey: string;
       subjectId: string;
-      mode: "initial" | "more" | "refresh";
+      mode: "more" | "refresh";
       limits?: ListingLimits;
+    }
+  | {
+      requestId: string;
+      op: "listingRecord";
+      accountKey: string;
+      subjectId: string;
+      records: RecordedListing[];
     }
   | { requestId: string; op: "listingCancel"; target: string }
   | { requestId: string; op: "popupState" }
@@ -28,7 +39,7 @@ export type Request =
       tabId: number;
       accountKey: string;
     }
-  | { requestId: string; op: "openOptions" };
+  | { requestId: string; op: "openOptions"; section?: "stat-boxes" };
 export type TabRequest =
   | {
       requestId: string;
@@ -60,22 +71,27 @@ export function isRequest(x: unknown): x is Request {
     validId(r.requestId) &&
     (([
       "listingCache",
-      "listingLatest",
+      "listingSavedPrice",
       "listingInvalidate",
       "listingHistory",
+      "listingRecord",
     ].includes(r.op) &&
       "accountKey" in r &&
       "subjectId" in r &&
       /^[a-z0-9_]{1,24}$/.test(r.accountKey) &&
       typeof r.subjectId === "string" &&
       /^\d+$/.test(r.subjectId) &&
+      (r.op !== "listingRecord" ||
+        (Array.isArray(r.records) &&
+          r.records.length <= 500 &&
+          r.records.every(validRecordedListing))) &&
       (r.op !== "listingHistory" ||
-        (["initial", "more", "refresh"].includes(r.mode) &&
+        (["more", "refresh"].includes(r.mode) &&
           (r.limits === undefined || validListingLimits(r.limits))))) ||
       (r.op === "listingCancel" && validId(r.target)) ||
-      ["sessions", "openOptions", "popupState", "friendPopupState"].includes(
-        r.op,
-      ) ||
+      (r.op === "openOptions" &&
+        (r.section === undefined || r.section === "stat-boxes")) ||
+      ["sessions", "popupState", "friendPopupState"].includes(r.op) ||
       (r.op === "popupLayout" && isPopupLayoutChange(r.change)) ||
       (r.op === "friendPopupLayout" &&
         isPopupLayoutChange(r.change, { minWidth: 240, minHeight: 160 })) ||

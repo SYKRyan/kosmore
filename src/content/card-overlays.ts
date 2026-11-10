@@ -19,11 +19,12 @@ interface Entry {
   key: string;
   visible: boolean;
   done: boolean;
-  loading?: boolean;
+  request?: AbortController;
   signals?: CardSignals;
   host?: HTMLElement;
   positioned?: { value: string; priority: string };
 }
+const OFFSCREEN_PAUSE_MS = 50;
 const STYLE = `
 :host{all:initial;position:absolute;inset:6px;container-type:inline-size;z-index:20;pointer-events:none;user-select:none;font:600 10px/1 system-ui,sans-serif}
 .top-row,.bottom-row{position:absolute;left:0;right:0;display:flex;align-items:center;gap:4px;min-width:0}
@@ -45,12 +46,14 @@ export class CardOverlays {
   private queue = new Set<Entry>();
   private intersection: IntersectionObserver;
   private running = 0;
+  private offscreenTimer?: ReturnType<typeof setTimeout>;
   private scheduled = false;
+  private refreshTimer?: ReturnType<typeof setInterval>;
   private generation = 0;
   private notBefore = 0;
   private timer?: ReturnType<typeof setTimeout>;
   private summaryStatus?: ReturnType<typeof packSummaryStatus>;
-  constructor(client: KosmoraClient) {
+  constructor(private client: KosmoraClient) {
     this.provider = new CardSignalProvider(client);
     this.intersection = new IntersectionObserver((records) => {
       for (const record of records) {
@@ -58,25 +61,45 @@ export class CardOverlays {
         if (!entry) continue;
         entry.visible = record.isIntersecting;
         if (this.shouldLoad(entry) && !entry.done) this.queue.add(entry);
-        else this.queue.delete(entry);
+        else {
+          this.queue.delete(entry);
+          if (!this.shouldLoad(entry)) entry.request?.abort();
+        }
       }
       this.pump();
       this.updateSummaryStatus();
     });
   }
   start() {
-    observePage((changes) => this.scan(changes));
-    window.addEventListener("resize", () => this.schedule());
-    window.addEventListener("popstate", () => this.invalidate());
-    window.addEventListener("focus", () => this.invalidate(false));
-    document.addEventListener("visibilitychange", () => {
-      if (!document.hidden) this.invalidate(false);
+    observePage((changes) => {
+      if (
+        this.enabled() ||
+        this.entries.size ||
+        this.summaryStatus ||
+        this.refreshTimer ||
+        location.pathname === "/packs/open"
+      )
+        this.scan(changes);
     });
-    const expire = () => {
-      if (!document.hidden) this.invalidate();
-      setTimeout(expire, 300_000);
+    window.addEventListener("resize", () => {
+      if (this.enabled() || this.summaryStatus) this.schedule();
+    });
+    window.addEventListener("popstate", () => this.invalidate());
+    const refresh = () => {
+      if (!document.hidden && this.enabled()) this.invalidate(false);
     };
-    setTimeout(expire, 300_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+  }
+  private syncRefreshTimer() {
+    if (this.enabled()) {
+      this.refreshTimer ??= setInterval(() => {
+        if (!document.hidden && this.enabled()) this.invalidate();
+      }, 300_000);
+    } else {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = undefined;
+    }
   }
   setSettings(settings: Settings) {
     const changed =
@@ -96,7 +119,8 @@ export class CardOverlays {
         settings.showLowestListingPriceOverlay ||
       this.settings?.showFriendInterestOverlay !==
         settings.showFriendInterestOverlay ||
-      this.settings?.showQuestOverlay !== settings.showQuestOverlay;
+      this.settings?.showQuestOverlay !== settings.showQuestOverlay ||
+      this.settings?.collectSaleRateData !== settings.collectSaleRateData;
     this.settings = settings;
     if (changed) this.invalidate();
   }
@@ -104,13 +128,15 @@ export class CardOverlays {
     this.generation++;
     this.notBefore = 0;
     clearTimeout(this.timer);
+    clearTimeout(this.offscreenTimer);
+    this.offscreenTimer = undefined;
     this.provider.reset();
     this.queue.clear();
     for (const entry of this.entries.values()) {
       if (clear) this.remove(entry);
       else {
         entry.done = false;
-        entry.loading = false;
+        entry.request = undefined;
         if (this.shouldLoad(entry)) this.queue.add(entry);
       }
     }
@@ -121,20 +147,29 @@ export class CardOverlays {
     context: CardContext,
     settings: Settings,
     onProgress?: (signals: CardSignals) => void,
+    signal?: AbortSignal,
   ) {
     return this.provider.get(
       context.subjectId,
-      settingsForPage(settings, location.pathname),
+      {
+        ...settingsForPage(settings, location.pathname),
+        showOnSaleOverlay: false,
+        showSaleHistoryOverlay: false,
+        showLastSalePriceOverlay: false,
+        showActiveAuctionsOverlay: false,
+        showLowestListingPriceOverlay: false,
+      },
       context.variant.fullArt
         ? "fullart"
         : context.variant.veil
           ? "veil"
           : "plain",
       onProgress,
-      "foreground",
+      "interactive",
+      signal,
     );
   }
-  private enabled() {
+  enabled() {
     return (
       this.settings &&
       settingsForPage(this.settings, location.pathname).cardOverlaysEnabled &&
@@ -154,6 +189,7 @@ export class CardOverlays {
     });
   }
   private scan(changes?: PageChanges) {
+    this.syncRefreshTimer();
     this.mountSummaryStatus();
     if (!this.enabled()) {
       for (const entry of this.entries.values()) this.remove(entry);
@@ -207,6 +243,8 @@ export class CardOverlays {
         ? document.querySelector<HTMLElement>(".ko-summary > .ko-grid")
         : null;
     if (grid !== this.summaryStatus?.grid) {
+      clearTimeout(this.offscreenTimer);
+      this.offscreenTimer = undefined;
       this.summaryStatus?.host.remove();
       this.summaryStatus = grid ? packSummaryStatus(grid) : undefined;
     }
@@ -223,9 +261,15 @@ export class CardOverlays {
       (entry) =>
         this.isSummaryEntry(entry) &&
         !entry.done &&
-        (entry.loading || this.notBefore !== Infinity),
+        (entry.request || this.notBefore !== Infinity),
     );
     status.setLoading(loading);
+    if (
+      loading &&
+      Number.isFinite(this.notBefore) &&
+      Date.now() < this.notBefore
+    )
+      status.rateLimited(this.notBefore);
   }
   private isSummaryEntry(entry: Entry) {
     return (
@@ -237,6 +281,7 @@ export class CardOverlays {
     return entry.visible || this.isSummaryEntry(entry);
   }
   private remove(entry: Entry) {
+    entry.request?.abort();
     this.intersection.unobserve(entry.root);
     this.queue.delete(entry);
     entry.host?.remove();
@@ -266,7 +311,7 @@ export class CardOverlays {
       contextKey(context) === entry.key
     );
   }
-  private pump() {
+  private pump(allowOffscreen = false) {
     if (
       this.running >= 2 ||
       !this.enabled() ||
@@ -281,11 +326,24 @@ export class CardOverlays {
       }
       return;
     }
-    const entry = this.queue.values().next().value!;
+    let entry = [...this.queue].find((candidate) => candidate.visible);
+    let offscreenGrid: HTMLElement | undefined;
+    if (!entry) {
+      if (this.running) return;
+      if (!allowOffscreen || this.client.hasInteractiveReads?.()) {
+        this.offscreenTimer ??= setTimeout(() => {
+          this.offscreenTimer = undefined;
+          this.pump(true);
+        }, OFFSCREEN_PAUSE_MS);
+        return;
+      }
+      entry = this.queue.values().next().value!;
+      offscreenGrid = this.summaryStatus?.grid;
+    }
     this.queue.delete(entry);
     if (
       !this.shouldLoad(entry) ||
-      entry.loading ||
+      entry.request ||
       !this.current(entry, this.generation)
     ) {
       this.pump();
@@ -294,36 +352,88 @@ export class CardOverlays {
     const generation = this.generation,
       settings = this.settings!;
     this.running++;
-    entry.loading = true;
+    const request = new AbortController();
+    entry.request = request;
+    const valid = () =>
+      !request.signal.aborted && this.current(entry, generation);
+    let slotReleased = false;
+    const releaseSlot = () => {
+      if (slotReleased) return false;
+      slotReleased = true;
+      this.running--;
+      return true;
+    };
+    const sameOffscreenRecap = () =>
+      !!offscreenGrid &&
+      offscreenGrid === this.summaryStatus?.grid &&
+      offscreenGrid.isConnected &&
+      offscreenGrid.contains(entry.root) &&
+      generation === this.generation &&
+      !request.signal.aborted;
+    const stagedRecap =
+      this.isSummaryEntry(entry) &&
+      ((settings.showSaleHistoryOverlay && settings.showLastSalePriceOverlay) ||
+        (settings.showActiveAuctionsOverlay &&
+          settings.showLowestListingPriceOverlay));
     const finish = entry.context.variant.fullArt
       ? "fullart"
       : entry.context.variant.veil
         ? "veil"
         : "plain";
     void this.provider
-      .get(entry.context.subjectId, settings, finish, (signals) => {
-        if (this.current(entry, generation)) this.render(entry, signals);
-      })
+      .get(
+        entry.context.subjectId,
+        settings,
+        finish,
+        (signals) => {
+          if (valid()) this.render(entry, signals);
+        },
+        entry.visible ? "foreground" : "background",
+        request.signal,
+        stagedRecap
+          ? () => {
+              if (valid() && releaseSlot()) this.pump(sameOffscreenRecap());
+            }
+          : undefined,
+      )
       .then(
         (signals) => {
-          if (this.current(entry, generation)) {
+          if (valid()) {
             entry.done = true;
             this.render(entry, signals);
           }
         },
         (error) => {
-          if (!this.current(entry, generation)) return;
+          if (!valid()) return;
           entry.done = true;
-          if (error instanceof ApiError && error.status === 429)
-            this.notBefore = error.retryAt || Date.now() + 30_000;
+          if (error instanceof ApiError && error.status === 429) {
+            const retryAt = error.retryAt || Date.now() + 30_000;
+            this.notBefore = Math.max(this.notBefore, retryAt);
+            if (this.isSummaryEntry(entry)) {
+              entry.done = false;
+              this.summaryStatus?.rateLimited(
+                retryAt,
+                error.rateLimitRequestStartedAt,
+              );
+            }
+          }
           if (error instanceof ApiError && error.status === 401)
             this.notBefore = Infinity;
         },
       )
       .finally(() => {
-        this.running--;
-        if (generation === this.generation) entry.loading = false;
-        this.pump();
+        const released = releaseSlot();
+        if (entry.request === request) {
+          entry.request = undefined;
+          if (
+            !entry.done &&
+            this.shouldLoad(entry) &&
+            this.current(entry, generation)
+          )
+            this.queue.add(entry);
+        }
+        // Continue this recap's offscreen queue without another idle pause.
+        this.pump(released && entry.done && sameOffscreenRecap());
         this.updateSummaryStatus();
       });
     this.pump();

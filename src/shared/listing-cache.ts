@@ -1,36 +1,41 @@
 import {
+  validRecordedListing,
+  type RecordedListing,
+} from "../kosmora/listing-capture";
+import {
   initialListingLimits,
   LISTING_FRESH_MS,
   LISTING_GROUPS,
+  LISTING_REFRESH_WINDOW,
+  SAVED_LISTING_LIMIT,
   listingComplete,
   nextListingLimits,
-  unresolvedListingGroups,
   validListingBatch,
   validPersonalListing,
   type ListingBatch,
-  type ListingCache,
   type ListingLimits,
-  type LatestListing,
+  type PersonalListing,
+  type TrackedListing,
+  type TrackedListingHistory,
 } from "../kosmora/my-listings";
 
 export const LISTING_PRICE_KEY = "kosmore.myListingPrices";
 export const LISTING_SESSION_PREFIX = "kosmore.listingHistory.";
-export type HistoryMode = "initial" | "more" | "refresh";
+export type HistoryMode = "more" | "refresh";
 export type ListingReader = (
   limits: ListingLimits,
   signal: AbortSignal,
 ) => Promise<ListingBatch>;
 interface Store {
-  get(key: string | null): Promise<Record<string, unknown>>;
+  get(key: string | string[] | null): Promise<Record<string, unknown>>;
   set(data: Record<string, unknown>): Promise<void>;
   remove(key: string | string[]): Promise<void>;
 }
-interface PriceEntry extends LatestListing {
-  usedAt: number;
-}
-interface Index {
-  v: 1;
-  entries: Record<string, PriceEntry>;
+interface Tracked extends TrackedListingHistory {
+  v: 2;
+  complete: boolean;
+  pruned: boolean;
+  checkedAt: number;
 }
 interface Pending {
   limits: ListingLimits;
@@ -51,11 +56,42 @@ const covers = (batch: ListingBatch, limits: ListingLimits) =>
 const abortError = () =>
   new DOMException("Listing lookup canceled.", "AbortError");
 
-/** Session history and a bounded, persistent latest-price index. Only explicit consumers start reads. */
+/** The list is stored in newest-known order, with the proven latest row first. */
+function mergeServerRows(
+  previous: TrackedListing[],
+  incoming: TrackedListing[],
+) {
+  const byId = new Map(incoming.map((row) => [row.id, row]));
+  const saved = new Map(previous.map((row) => [row.id, row]));
+  const before = new Map<string, TrackedListing[]>();
+  let tail: TrackedListing[] = [];
+  for (const row of previous) {
+    if (byId.has(row.id)) {
+      before.set(row.id, tail);
+      tail = [];
+    } else tail.push(row);
+  }
+  if (!before.size) return [...previous, ...incoming];
+  const merged: TrackedListing[] = [];
+  for (const row of incoming) {
+    for (const earlier of before.get(row.id) ?? []) merged.push(earlier);
+    const known = saved.get(row.id);
+    merged.push({
+      ...known,
+      ...row,
+      startPrice: known?.startPrice ?? row.startPrice,
+    });
+  }
+  return merged.concat(tail);
+}
+
 export class ListingCacheService {
   private writes: Promise<unknown> = Promise.resolve();
   private pending = new Map<string, Pending>();
   private epochs = new Map<string, number>();
+  private legacyIndex?: Promise<
+    { entries?: Record<string, unknown> } | undefined
+  >;
   constructor(
     private local: Store,
     private session: Store,
@@ -65,52 +101,260 @@ export class ListingCacheService {
     this.writes = result.catch(() => {});
     return result;
   }
-  private async index(): Promise<Index> {
-    const raw = (await this.local.get(LISTING_PRICE_KEY))[LISTING_PRICE_KEY] as
-      Index | undefined;
-    const index: Index = { v: 1, entries: {} };
-    if (raw?.v === 1 && raw.entries && typeof raw.entries === "object")
-      for (const [key, value] of Object.entries(raw.entries)) {
-        if (
-          !/^[a-z0-9_]{1,24}:\d+$/.test(key) ||
-          !value ||
-          !Number.isFinite(value.checkedAt) ||
-          value.checkedAt < 0 ||
-          !Number.isFinite(value.usedAt)
-        )
-          continue;
-        if (
-          value.listing !== null &&
-          (!validPersonalListing(value.listing) ||
-            value.listing.subjectId !== key.split(":")[1])
-        )
-          continue;
-        index.entries[key] = value;
-      }
-    return index;
+  private key(account: string, subject: string) {
+    return `kosmore.listingRecord.${account}.${subject}`;
   }
-  async cached(
+  private decode(raw: unknown, legacy: unknown, subject: string): Tracked {
+    const previous = raw as
+      | (Tracked & {
+          latest?: RecordedListing;
+          verifiedId?: string;
+          verifiedPrice?: string;
+          reconciledAt?: number;
+        })
+      | undefined;
+    if (previous?.v === 2 && Array.isArray(previous.listings)) return previous;
+    const state: Tracked = {
+      v: 2,
+      listings: [],
+      complete: false,
+      pruned: false,
+      hasMore: true,
+      checkedAt: 0,
+    };
+    if (
+      previous &&
+      validRecordedListing(previous.latest) &&
+      previous.latest.subjectId === subject
+    ) {
+      const { id, startPrice, submittedAt } = previous.latest;
+      state.listings.push({ id, startPrice, submittedAt });
+      if (
+        previous.verifiedId &&
+        previous.verifiedId !== id &&
+        previous.verifiedPrice
+      )
+        state.listings.unshift({
+          id: previous.verifiedId,
+          startPrice: previous.verifiedPrice,
+        });
+      state.checkedAt = previous.reconciledAt ?? 0;
+    } else {
+      const entry = legacy as { listing?: unknown } | undefined;
+      if (
+        validPersonalListing(entry?.listing) &&
+        entry.listing.subjectId === subject
+      )
+        state.listings.push(this.serverRow(entry.listing));
+    }
+    return state;
+  }
+  private async readTracked(account: string, subjects: string[]) {
+    const keys = subjects.map((subject) => this.key(account, subject));
+    const data = await this.local.get(keys);
+    const legacy = keys.some((key) => data[key] === undefined)
+      ? await (this.legacyIndex ??= this.local
+          .get(LISTING_PRICE_KEY)
+          .then(
+            (data) =>
+              data[LISTING_PRICE_KEY] as
+                { entries?: Record<string, unknown> } | undefined,
+          )
+          .catch(() => {
+            this.legacyIndex = undefined;
+            return undefined;
+          }))
+      : undefined;
+    return subjects.map((subject, i) =>
+      this.decode(
+        data[keys[i]],
+        legacy?.entries?.[`${account}:${subject}`],
+        subject,
+      ),
+    );
+  }
+  async tracked(
     account: string,
     subject: string,
-    touch = true,
-  ): Promise<ListingCache> {
-    return this.write(async () => {
-      const index = await this.index(),
-        key = `${account}:${subject}`,
-        latest = index.entries[key];
-      if (latest && touch) {
-        latest.usedAt = Date.now();
-        await this.local.set({ [LISTING_PRICE_KEY]: index });
+  ): Promise<TrackedListingHistory> {
+    await this.writes;
+    const [state] = await this.readTracked(account, [subject]);
+    return { listings: state.listings, hasMore: state.hasMore };
+  }
+  private saveState(
+    state: Tracked,
+    listings: TrackedListing[],
+    complete = state.complete,
+    checkedAt = state.checkedAt,
+  ): Tracked {
+    const pruned = state.pruned || listings.length > SAVED_LISTING_LIMIT;
+    return {
+      v: 2,
+      listings: listings.slice(0, SAVED_LISTING_LIMIT),
+      complete,
+      pruned,
+      hasMore: !complete || pruned,
+      checkedAt,
+    };
+  }
+  private serverRow({
+    id,
+    startPrice,
+    endsAt,
+    finish,
+    state,
+  }: PersonalListing): TrackedListing {
+    return { id, startPrice, endsAt, finish, state };
+  }
+  async record(account: string, records: RecordedListing[]) {
+    const groups = new Map<string, RecordedListing[]>();
+    for (const row of records) {
+      const group = groups.get(row.subjectId) ?? [];
+      group.push(row);
+      groups.set(row.subjectId, group);
+    }
+    if (!groups.size) return;
+    await this.write(async () => {
+      const subjects = [...groups.keys()];
+      const states = await this.readTracked(account, subjects);
+      const updates: Record<string, Tracked> = {};
+      for (const [i, subject] of subjects.entries()) {
+        const state = states[i],
+          rows = [...state.listings];
+        for (const { id, startPrice, submittedAt } of groups.get(subject)!) {
+          const existing = rows.findIndex((row) => row.id === id);
+          if (existing >= 0) {
+            rows[existing] = {
+              ...rows[existing],
+              submittedAt: rows[existing].submittedAt ?? submittedAt,
+            };
+            continue;
+          }
+          const newer = submittedAt > (rows[0]?.submittedAt ?? state.checkedAt);
+          const index = rows.findIndex(
+            (row) =>
+              row.submittedAt !== undefined && row.submittedAt < submittedAt,
+          );
+          rows.splice(newer ? 0 : index > 0 ? index : rows.length, 0, {
+            id,
+            startPrice,
+            submittedAt,
+          });
+        }
+        updates[this.key(account, subject)] = this.saveState(state, rows);
       }
-      const raw = (await this.session.get(LISTING_SESSION_PREFIX + account))[
-        LISTING_SESSION_PREFIX + account
-      ];
-      return {
-        ...(validListingBatch(raw) ? { batch: raw } : {}),
-        ...(latest
-          ? { latest: { listing: latest.listing, checkedAt: latest.checkedAt } }
-          : {}),
-      };
+      await this.local.set(updates);
+    });
+  }
+  private async importRows(
+    account: string,
+    groups: Map<string, PersonalListing[]>,
+    startedAt: number,
+    complete: boolean,
+    signal: AbortSignal,
+  ) {
+    if (!groups.size) return;
+    await this.write(async () => {
+      signal.throwIfAborted();
+      const subjects = [...groups.keys()];
+      const states = await this.readTracked(account, subjects);
+      const updates: Record<string, Tracked> = {};
+      for (const [i, subject] of subjects.entries()) {
+        const state = states[i];
+        const incoming = groups.get(subject)!.map((row) => this.serverRow(row));
+        const rows = mergeServerRows(state.listings, incoming);
+        const latest = state.listings[0];
+        // A shared ID proves the server's relative ordering. An older or
+        // unanchored scan can add rows but cannot replace a known latest row.
+        const promote =
+          !latest ||
+          (incoming.some((row) => row.id === latest.id) &&
+            startedAt >= (latest.submittedAt ?? state.checkedAt));
+        const latestId = promote ? (incoming[0]?.id ?? latest?.id) : latest.id;
+        const position = rows.findIndex((row) => row.id === latestId);
+        if (position > 0) rows.unshift(...rows.splice(position, 1));
+        updates[this.key(account, subject)] = this.saveState(
+          state,
+          rows,
+          complete,
+          promote ? Math.max(startedAt, state.checkedAt) : state.checkedAt,
+        );
+      }
+      signal.throwIfAborted();
+      await this.local.set(updates);
+    });
+  }
+  async history(
+    account: string,
+    subject: string,
+    mode: HistoryMode,
+    read: ListingReader,
+    signal: AbortSignal,
+    requested?: ListingLimits,
+  ) {
+    const startedAt = Date.now();
+    const previous = await this.batch(account);
+    signal.throwIfAborted();
+    const refresh = mode === "refresh";
+    const usable = previous && fresh(previous.fetchedAt) ? previous : undefined;
+    const limits = refresh
+      ? {
+          selling: LISTING_REFRESH_WINDOW,
+          sold: LISTING_REFRESH_WINDOW,
+          unsold: LISTING_REFRESH_WINDOW,
+        }
+      : (requested ??
+        (usable ? nextListingLimits(usable) : initialListingLimits()));
+    const batch = await this.ensure(
+      account,
+      limits,
+      read,
+      signal,
+      refresh || (!!previous && !usable),
+    );
+    if (
+      refresh &&
+      LISTING_GROUPS.some(
+        (group) =>
+          batch.counts[group] <
+          Math.min(batch.totals[group], LISTING_REFRESH_WINDOW),
+      )
+    )
+      throw new Error(
+        "Your listing history stopped before the newest auctions were returned.",
+      );
+    const groups = new Map<string, PersonalListing[]>();
+    const complete =
+      listingComplete(batch) &&
+      (!refresh || batch.listings.length <= LISTING_REFRESH_WINDOW);
+    groups.set(subject, []);
+    const window = refresh
+      ? batch.listings.slice(0, LISTING_REFRESH_WINDOW)
+      : batch.listings;
+    for (const row of window) {
+      if (!refresh && row.subjectId !== subject) continue;
+      const rows = groups.get(row.subjectId) ?? [];
+      rows.push(row);
+      groups.set(row.subjectId, rows);
+    }
+    await this.importRows(
+      account,
+      groups,
+      batch.startedAt ?? Math.min(startedAt, batch.fetchedAt),
+      complete,
+      signal,
+    );
+    return refresh ? undefined : { ...batch, listings: groups.get(subject)! };
+  }
+  async invalidate(account: string) {
+    // A new confirmation invalidates reusable scan coverage. In-flight
+    // scans can still merge with it using the serialized reconciliation.
+    this.epochs.set(account, (this.epochs.get(account) ?? 0) + 1);
+    await this.write(async () => {
+      const key = LISTING_SESSION_PREFIX + account;
+      const data = await this.session.get(key);
+      if (validListingBatch(data[key]))
+        await this.session.set({ [key]: { ...data[key], fetchedAt: 0 } });
     });
   }
   private async saveBatch(account: string, batch: ListingBatch, epoch: number) {
@@ -151,125 +395,6 @@ export class ListingCacheService {
     const raw = (await this.session.get(key))[key];
     return validListingBatch(raw) ? raw : undefined;
   }
-  private async savePrice(
-    account: string,
-    subject: string,
-    result: LatestListing,
-    epoch: number,
-  ) {
-    await this.write(async () => {
-      if (this.epochs.get(account) !== epoch) return;
-      const index = await this.index();
-      index.entries[`${account}:${subject}`] = {
-        ...result,
-        usedAt: Date.now(),
-      };
-      const keys = Object.keys(index.entries).sort(
-        (a, b) => index.entries[a].usedAt - index.entries[b].usedAt,
-      );
-      for (const key of keys.slice(0, Math.max(0, keys.length - 10_000)))
-        delete index.entries[key];
-      await this.local.set({ [LISTING_PRICE_KEY]: index });
-    });
-  }
-  async invalidate(account: string) {
-    this.epochs.set(account, (this.epochs.get(account) ?? 0) + 1);
-    this.pending.get(account)?.controller.abort();
-    this.pending.delete(account);
-    await this.write(async () => {
-      const index = await this.index();
-      for (const [key, value] of Object.entries(index.entries))
-        if (key.startsWith(`${account}:`)) value.checkedAt = 0;
-      await this.local.set({ [LISTING_PRICE_KEY]: index });
-      const key = LISTING_SESSION_PREFIX + account,
-        data = await this.session.get(key);
-      if (validListingBatch(data[key]))
-        await this.session.set({
-          [key]: { ...(data[key] as ListingBatch), fetchedAt: 0 },
-        });
-    });
-  }
-  async history(
-    account: string,
-    subject: string,
-    mode: HistoryMode,
-    read: ListingReader,
-    signal: AbortSignal,
-    requested?: ListingLimits,
-  ): Promise<ListingBatch> {
-    const cached = await this.cached(account, subject);
-    signal.throwIfAborted();
-    const batch = cached.batch;
-    if (mode === "initial" && batch && fresh(batch.fetchedAt)) return batch;
-    if (
-      mode === "more" &&
-      batch &&
-      listingComplete(batch) &&
-      fresh(batch.fetchedAt)
-    )
-      return batch;
-    const limits =
-      mode === "more" && requested
-        ? requested
-        : mode === "more" && batch
-          ? nextListingLimits(batch)
-          : initialListingLimits();
-    return this.ensure(
-      account,
-      limits,
-      read,
-      signal,
-      mode === "refresh" || (!!batch && !fresh(batch.fetchedAt)),
-    );
-  }
-  async latest(
-    account: string,
-    subject: string,
-    read: ListingReader,
-    signal: AbortSignal,
-  ): Promise<LatestListing> {
-    const cached = await this.cached(account, subject);
-    signal.throwIfAborted();
-    if (
-      cached.latest &&
-      fresh(cached.latest.checkedAt) &&
-      (!cached.batch || cached.batch.fetchedAt <= cached.latest.checkedAt)
-    )
-      return cached.latest;
-    const epoch = this.epochs.get(account) ?? 0;
-    this.epochs.set(account, epoch);
-    let batch = cached.batch;
-    if (!batch || !fresh(batch.fetchedAt))
-      batch = await this.ensure(
-        account,
-        initialListingLimits(),
-        read,
-        signal,
-        !!batch,
-      );
-    for (;;) {
-      signal.throwIfAborted();
-      if (this.epochs.get(account) !== epoch) throw abortError();
-      const groups = unresolvedListingGroups(batch, subject);
-      if (!groups.length) {
-        const result = {
-          listing:
-            batch.listings.find((item) => item.subjectId === subject) ?? null,
-          checkedAt: batch.fetchedAt,
-        };
-        await this.savePrice(account, subject, result, epoch);
-        if (signal.aborted || this.epochs.get(account) !== epoch)
-          throw abortError();
-        return result;
-      }
-      batch = await this.ensure(
-        account,
-        nextListingLimits(batch, groups),
-        read,
-        signal,
-      );
-    }
-  }
   private async ensure(
     account: string,
     limits: ListingLimits,
@@ -301,6 +426,7 @@ export class ListingCacheService {
         active.promise = Promise.resolve().then(async () => {
           active.controller.signal.throwIfAborted();
           active.started = true;
+          const startedAt = Date.now();
           const attempted = new Set<ListingReader>();
           let result: ListingBatch | undefined;
           for (;;) {
@@ -327,11 +453,8 @@ export class ListingCacheService {
           }
           if (!result || !validListingBatch(result))
             throw new Error("Your listing history is unavailable.");
-          if (
-            this.epochs.get(account) !== epoch ||
-            active.controller.signal.aborted
-          )
-            throw abortError();
+          active.controller.signal.throwIfAborted();
+          result = { ...result, startedAt };
           const previous = await this.batch(account);
           if (previous && result.fetchedAt <= previous.fetchedAt)
             result = { ...result, fetchedAt: previous.fetchedAt + 1 };
@@ -359,7 +482,6 @@ export class ListingCacheService {
           job.limits[group] = Math.max(job.limits[group], limits[group]);
       const result = await this.consume(job, read, signal);
       signal.throwIfAborted();
-      if (this.epochs.get(account) !== epoch) throw abortError();
       if (covers(result, limits)) return result;
       force = false;
     }

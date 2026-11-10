@@ -57,8 +57,9 @@ export class MarketOutcomes {
   ) {}
   start() {
     void this.store.load();
-    observePage((changes) => this.scan(changes));
+    const stop = observePage((changes) => this.scan(changes));
     this.scan({ roots: [], full: true });
+    return stop;
   }
   scan(changes: PageChanges) {
     if (!this.doc.location.pathname.startsWith("/market")) return;

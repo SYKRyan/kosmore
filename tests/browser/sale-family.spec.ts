@@ -12,7 +12,7 @@ import { launchTestBrowser } from "./browser";
 import { saleFamilyFixture, saleFamilyKeys } from "../fixtures/sale-family";
 import { singleSellFixture } from "../fixtures/sell-many";
 import { card, me, COPY_B, prices } from "../fixtures/data";
-import { myListingPage } from "../fixtures/my-listings";
+import { myListing, myListingPage } from "../fixtures/my-listings";
 import { familyCatalog } from "../fixtures/families";
 import {
   familyMilestones,
@@ -222,6 +222,13 @@ test("sale family impact combines finishes and fits sale rows with price overlay
       .locator("[data-kosmore-sales-overlay]")
       .boundingBox())!;
     const impactBox = (await row("304").locator(".verdict").boundingBox())!;
+    const spacing = await row("304")
+      .locator("[data-kosmore-sales-overlay]")
+      .evaluate((el) => ({
+        priceMargin: getComputedStyle(el).marginBottom,
+        familyMargin: getComputedStyle(el.nextElementSibling!).marginTop,
+      }));
+    expect(spacing).toEqual({ priceMargin: "2px", familyMargin: "2px" });
     expect(impactBox.y).toBeGreaterThanOrEqual(priceBox.y + priceBox.height);
     expect(impactBox.x + impactBox.width).toBeLessThanOrEqual(width);
     const hostBox = (await row("304")
@@ -321,7 +328,7 @@ for (const width of [1440, 390])
   });
 
 for (const history of ["empty", "missing", "failed"] as const)
-  test(`sale listing history stays quiet and hides the control when ${history}`, async () => {
+  test(`sale listing history reads only on refresh and handles ${history}`, async () => {
     let lookedUp = 0;
     await page.route("**/api/me/auctions?**", (route) => {
       lookedUp++;
@@ -350,16 +357,28 @@ for (const history of ["empty", "missing", "failed"] as const)
       });
     });
     try {
-      for (const path of [
+      for (const [i, path] of [
         "/market/sell/batch?s=301",
         "/market/sell?subject=301",
-      ]) {
+      ].entries()) {
         await page.goto("https://kosmora.io" + path);
-        await expect.poll(() => lookedUp).toBeGreaterThan(0);
         const overlay = page.locator("[data-kosmore-sales-overlay]");
-        await expect(overlay).toBeHidden();
-        await expect(overlay.locator(".price-badge.history")).toHaveCount(0);
-        await expect(overlay.locator(".status.error")).toHaveCount(0);
+        await expect(overlay.locator(".price-badge.history")).toContainText(
+          "—",
+        );
+        expect(lookedUp).toBe(i);
+        const refresh = overlay.getByRole("button", {
+          name: "Refresh my listing history",
+        });
+        await refresh.click();
+        await expect(refresh).toBeEnabled();
+        expect(lookedUp).toBe(i + 1);
+        if (history === "empty")
+          await expect(overlay.locator(".status.error")).toHaveCount(0);
+        else
+          await expect(overlay.locator(".status.error")).toContainText(
+            "Your listing history:",
+          );
         await expect(page.locator("input").first()).toHaveValue("12.00");
       }
     } finally {
@@ -622,5 +641,109 @@ test("family impact settings follow section order, preserve preferences and save
     ).toBe(true);
   } finally {
     await options.close();
+  }
+});
+
+test("Sell Many holds the row layout through a history refresh and a native repaint", async () => {
+  let refresh = false;
+  let startRefresh!: () => void;
+  let finishRefresh!: () => void;
+  const started = new Promise<void>((resolve) => {
+    startRefresh = resolve;
+  });
+  const wait = new Promise<void>((resolve) => {
+    finishRefresh = resolve;
+  });
+  await page.route("**/api/me/auctions?**", async (route) => {
+    if (refresh) {
+      startRefresh();
+      await wait;
+    }
+    return route.fulfill({
+      json: myListingPage(refresh ? [] : [myListing(10, "301")]),
+    });
+  });
+  try {
+    await page.setViewportSize({ width: 390, height: 1000 });
+    await worker.evaluate(async () => {
+      const key = "kosmore.settings";
+      const saved = (await chrome.storage.local.get(key))[key] as object;
+      await chrome.storage.local.set({
+        [key]: {
+          ...saved,
+          salesOverlaysEnabled: true,
+          showSalesLastSale: true,
+          showSalesLowestListing: false,
+          showSalesMyLastListing: true,
+        },
+      });
+    });
+    await page.goto("https://kosmora.io/market/sell/batch?s=301,302");
+    const first = row("301");
+    const prices = first.locator("[data-kosmore-sales-overlay]");
+    const nextInput = row("302").locator("input");
+    await expect(first.locator(".verdict")).toHaveText("✓ Safe");
+    await expect(prices.locator(".price-badge.history")).toBeVisible();
+    await expect(prices.locator(".price-badge.sale")).toBeVisible();
+    await expect(prices).toHaveAttribute("aria-busy", "false");
+    await prices.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+    );
+    const layout = () =>
+      page.evaluate(() => {
+        const selectors = [
+          '.bsell-row[data-key="301"]',
+          '.bsell-row[data-key="301"] [data-kosmore-fusion-family]',
+          '.bsell-row[data-key="302"] input',
+          '[data-testid="submit-sales"]',
+        ];
+        return selectors.map((selector) => {
+          const rect = document
+            .querySelector(selector)
+            ?.getBoundingClientRect();
+          return rect && [rect.top + scrollY, rect.height];
+        });
+      });
+    const check = first.getByRole("button", {
+      name: "Refresh my listing history",
+    });
+    await check.click();
+    await expect(prices.locator(".price-badge.history")).toContainText("$17");
+    await expect(prices).toHaveAttribute("aria-busy", "false");
+    const before = await layout();
+    refresh = true;
+    await check.click();
+    await started;
+    await expect(prices).toHaveAttribute("aria-busy", "true");
+    expect(await layout()).toEqual(before);
+    await nextInput.fill("24.50");
+    finishRefresh();
+    await expect(prices.locator(".price-badge.history")).toContainText("$17");
+    await expect(prices).toHaveAttribute("aria-busy", "false");
+    expect(await layout()).toEqual(before);
+    await expect(nextInput).toHaveValue("24.50");
+    await expect(nextInput).toBeFocused();
+
+    // Mimic a draft repaint that replaces the native row in place.
+    await first.evaluate((el) => {
+      const replacement = el.cloneNode(true) as HTMLElement;
+      for (const overlay of replacement.querySelectorAll(
+        "[data-kosmore-sales-overlay], [data-kosmore-fusion-family]",
+      ))
+        overlay.remove();
+      el.replaceWith(replacement);
+    });
+    await expect(first.locator(".verdict")).toHaveText("✓ Safe");
+    await expect(prices.locator(".price-badge.sale")).toBeVisible();
+    await expect(prices).toHaveAttribute("aria-busy", "false");
+    expect(await layout()).toEqual(before);
+    await expect(nextInput).toHaveValue("24.50");
+  } finally {
+    finishRefresh();
+    await page.unroute("**/api/me/auctions?**");
+    await page.setViewportSize({ width: 1440, height: 1000 });
   }
 });

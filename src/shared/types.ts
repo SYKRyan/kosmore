@@ -94,6 +94,7 @@ export interface Settings {
   disableHoverTooltipInPulsar: boolean;
   disableHoverTooltipInVortex: boolean;
   useOverlayButtonInsteadOfHover: boolean;
+  tooltipTakesFocus: boolean;
   outsideClickClosesTooltipOnly: boolean;
   fullScreenCenteredOnOpen: boolean;
   socialRemindersMasterEnabled: boolean;
@@ -137,6 +138,7 @@ export interface Settings {
   salesMyLastListingSetsPrice: boolean;
   salesMyLastListingAdjustment: number;
   statBoxesEnabled: boolean;
+  collectSaleRateData: boolean;
   pinnedAlbumsEnabled: boolean;
   closeTooltipWhenAddedToAlbum: boolean;
   applyCloseBehaviorToPinnedTooltips: boolean;
@@ -168,21 +170,46 @@ export interface Settings {
   pinnedAlbumHotkeys: import("./hotkeys").PinnedAlbumHotkeys;
 }
 export interface KosmoraClient {
-  cachedListings(
-    subjectId: string,
+  hasInteractiveReads?(): boolean;
+  hasActiveAuctions?(
+    id: string,
+    name: string,
     signal?: AbortSignal,
-  ): Promise<import("../kosmora/my-listings").ListingCache>;
+    onMatch?: () => void,
+  ): Promise<boolean>;
+  hasSaleHistory?(
+    id: string,
+    finish: Finish,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
+  peekAuction?(
+    id: string,
+    name: string,
+  ):
+    | {
+        until: number;
+        stale: boolean;
+        value: { count: number; lowestPrice?: string };
+      }
+    | undefined;
+  peekHistory?(
+    id: string,
+    finish: Finish,
+  ): { until: number; stale: boolean; value: MarketHistory } | undefined;
+  cachedListings(
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<import("../kosmora/my-listings").TrackedListingHistory>;
   listingHistory(
-    subjectId: string,
+    id: string,
     mode: import("./listing-cache").HistoryMode,
     signal?: AbortSignal,
     limits?: import("../kosmora/my-listings").ListingLimits,
-  ): Promise<import("../kosmora/my-listings").ListingBatch>;
+  ): Promise<import("../kosmora/my-listings").ListingBatch | undefined>;
   latestListing(
-    subjectId: string,
+    id: string,
     signal?: AbortSignal,
-    onCached?: (result: import("../kosmora/my-listings").LatestListing) => void,
-  ): Promise<import("../kosmora/my-listings").LatestListing>;
+  ): Promise<import("../kosmora/my-listings").TrackedListing | undefined>;
   possibleInterest(
     familyIds: string[],
     signal?: AbortSignal,
@@ -205,6 +232,7 @@ export interface KosmoraClient {
     name: string,
     signal?: AbortSignal,
     fresh?: boolean,
+    onMatch?: () => void,
   ): Promise<number>;
   lowestListingPrice(
     subjectId: string,

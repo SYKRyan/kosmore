@@ -9,6 +9,10 @@ import type { CardContext, Settings } from "../shared/types";
 import { observePage } from "./page-changes";
 
 export const PACK_FOCUS = "data-kosmore-pack-focus";
+const FOCUS_COLOR = "#f9e6b6";
+const FOCUS_STAR = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12"><path fill="${FOCUS_COLOR}" d="M6 0Q7 5 12 6Q7 7 6 12Q5 7 0 6Q5 5 6 0Z"/></svg>`,
+)}`;
 const MODAL = 'dialog[open], [aria-modal="true"]:not(dialog)';
 const SUMMARY = ".ko-summary";
 const FOUND_PACK_CONTINUE = "button.ko-drop-btn";
@@ -104,8 +108,38 @@ export class PackOpeningHotkeys {
   start() {
     const style = document.createElement("style");
     style.id = "kosmore-pack-hotkeys-style";
+    const focusedSummaryButton = `button.ko-grid-open:is([${PACK_FOCUS}], :focus-visible)`;
+    const focusedSummaryFace = `${SUMMARY} .ko-grid > li:has(> ${focusedSummaryButton}) .kc-article`;
+    const summaryButtonWithFace = `${SUMMARY} .ko-grid > li:has(.kc-article) > ${focusedSummaryButton}`;
+    const outlinedCard = `[${PACK_FOCUS}]:not(${summaryButtonWithFace}), ${focusedSummaryFace}`;
     style.textContent = `
-      [${PACK_FOCUS}] { outline: 3px solid #f9e6b6 !important; outline-offset: 3px; }
+      [${PACK_FOCUS}],
+      ${focusedSummaryFace} {
+        outline: 3px solid ${FOCUS_COLOR} !important;
+        outline-offset: 3px;
+      }
+      ${summaryButtonWithFace} {
+        outline: none !important;
+      }
+      /* Let Kosmora's card positioning take precedence. */
+      :where(${outlinedCard}) {
+        position: relative;
+      }
+      :is(${outlinedCard})::after {
+        content: "";
+        position: absolute;
+        z-index: 1;
+        left: 50%;
+        top: -4.5px;
+        transform: translate(-50%, -50%);
+        box-sizing: border-box;
+        width: 18px;
+        height: 18px;
+        border: 2px solid ${FOCUS_COLOR};
+        border-radius: 50%;
+        background: #211831 url("${FOCUS_STAR}") center / 12px 12px no-repeat;
+        pointer-events: none;
+      }
     `;
     document.head.append(style);
     // A found-pack prompt gets first refusal before navigation shortcuts.

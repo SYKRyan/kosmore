@@ -33,15 +33,23 @@ export interface ListingBatch {
   totals: ListingLimits;
   counts: ListingLimits;
   fetchedAt: number;
+  startedAt?: number;
 }
-export interface LatestListing {
-  listing: PersonalListing | null;
-  checkedAt: number;
+export const LISTING_REFRESH_WINDOW = 180;
+export const SAVED_LISTING_LIMIT = 100;
+export interface TrackedListing {
+  id: string;
+  startPrice: string;
+  submittedAt?: number;
+  endsAt?: string;
+  finish?: Finish;
+  state?: string;
 }
-export interface ListingCache {
-  batch?: ListingBatch;
-  latest?: LatestListing;
+export interface TrackedListingHistory {
+  listings: TrackedListing[];
+  hasMore: boolean;
 }
+export const LISTING_REFRESH_LABEL = "Refresh my listing history";
 export function validPersonalListing(value: unknown): value is PersonalListing {
   try {
     const v = object(value);
@@ -72,6 +80,8 @@ export function validListingBatch(value: unknown): value is ListingBatch {
           (group) => Number.isSafeInteger(counts[group]) && counts[group] >= 0,
         ),
     ) &&
+    (v.startedAt === undefined ||
+      (Number.isFinite(v.startedAt) && v.startedAt >= 0)) &&
     Number.isFinite(v.fetchedAt) &&
     v.fetchedAt >= 0
   );
@@ -144,15 +154,6 @@ export function parseListingBatch(
 }
 export const listingComplete = (batch: ListingBatch) =>
   LISTING_GROUPS.every((group) => batch.counts[group] >= batch.totals[group]);
-export function unresolvedListingGroups(batch: ListingBatch, subject: string) {
-  return LISTING_GROUPS.filter(
-    (group) =>
-      batch.counts[group] < batch.totals[group] &&
-      !batch.listings.some(
-        (item) => item.subjectId === subject && item.group === group,
-      ),
-  );
-}
 export function nextListingLimits(
   batch: ListingBatch,
   groups: readonly ListingGroup[] = LISTING_GROUPS,

@@ -152,6 +152,22 @@ export function parseAlbums(v: unknown): Album[] {
     };
   });
 }
+export function parseReadyPackIds(value: unknown): string[] {
+  const { packs } = object(value);
+  if (!Array.isArray(packs))
+    throw new Error("Kosmora returned an unfamiliar pack inventory.");
+  return [
+    ...new Set(
+      packs.flatMap((value) => {
+        const pack = object(value);
+        return pack.status === "ready" && pack.openingId
+          ? [uuid(pack.openingId).toLowerCase()]
+          : [];
+      }),
+    ),
+  ];
+}
+
 export function parseOpening(v: unknown): OpeningCard[] {
   const d = object(v),
     id = uuid(d.id);

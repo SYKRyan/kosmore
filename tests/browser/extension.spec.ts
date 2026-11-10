@@ -68,14 +68,16 @@ let variantFailure = false,
   membership = false,
   account = "FixturePlayer";
 const artwork = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="350"><defs><radialGradient id="g"><stop stop-color="#674b94"/><stop offset="1" stop-color="#16132e"/></radialGradient></defs><rect width="400" height="350" fill="url(#g)"/><g fill="#e8d4a2"><circle cx="75" cy="55" r="2"/><circle cx="330" cy="90" r="3"/><circle cx="125" cy="220" r="2"/><circle cx="270" cy="290" r="2"/><path d="M200 90 212 155 280 175 212 194 200 255 184 194 120 175 184 155Z"/></g></svg>`;
-function fixture(mode: "summary" | "reveal" | "page" = "summary") {
+function fixture(mode: "summary" | "reveal" | "page" = "summary", count = 6) {
   const cards = Array.from(
-    { length: 6 },
+    { length: count },
     (_, i) =>
-      `<li>${face(i < 2 ? "42" : String(43 + i), ["Northern Lights", "Northern Lights", "Voyager 1", "Andromeda", "Orion Nebula", "Cassini"][i])}<button class="ko-grid-open" aria-label="See card up close" onclick="document.body.dataset.opens=String(Number(document.body.dataset.opens||0)+1)"></button><span class="new">✦ NEW FOR YOU ✦</span></li>`,
+      `<li>${count === 6 ? face(i < 2 ? "42" : String(43 + i), ["Northern Lights", "Northern Lights", "Voyager 1", "Andromeda", "Orion Nebula", "Cassini"][i]) : face(String(60 + i), `Card ${i + 1}`)}<button class="ko-grid-open" aria-label="See card up close" onclick="document.body.dataset.opens=String(Number(document.body.dataset.opens||0)+1)"></button><span class="new">✦ NEW FOR YOU ✦</span></li>`,
   ).join("");
   return `<!doctype html><html><head><title>Kosmora fixture · KosMore verification</title><style>body{background:radial-gradient(ellipse at top,#2f2050,#0c081d 65%);color:#f9e6b6;font:14px system-ui;margin:0;padding:40px 24px;min-height:100vh}h1{font:36px Georgia;text-align:center;margin:0 0 25px}.ko-summary{max-width:1150px;margin:auto}.ko-grid{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;max-width:790px;margin:auto}.ko-grid>li{position:relative}.kc-article{border:2px solid #a8b1cd;border-radius:12px;background:#243147;padding:8px;box-shadow:0 0 0 4px #b8d0e21c;color:#f4f0dd}.kc-name{font:600 16px Georgia;margin:8px}.kc-img{width:100%;height:190px;object-fit:cover;border-radius:6px}.kc footer{font-size:10px;color:#c4b6d5;margin:10px}.ko-grid-open{position:absolute;inset:0;border:0;background:transparent;cursor:pointer}.new{display:block;text-align:center;color:#d8b574;font-size:10px;margin-top:14px}.op-actions{text-align:center;margin:35px}.op-actions button{background:linear-gradient(#fff0b5,#d5ac60);border:0;border-radius:10px;color:#261a24;padding:18px 35px;font-weight:650}.ko-card{width:300px;margin:40px auto;cursor:pointer}.ko-tray{display:flex;justify-content:center;list-style:none;gap:10px}.ko-tray li{width:8px;height:8px;border-radius:50%;background:#55466d}.ko-tray li.on{background:#f3dda8}.ko-viewer-sheet{background:#110d23;color:white}.ko-viewer-sheet::backdrop{background:#100a23bb}</style></head><body data-advances="0" data-opens="0"><main id="main">${mode === "summary" ? `<div class="ko-summary"><h1>Nice pull</h1><ul class="ko-grid">${cards}</ul><div class="op-actions"><button onclick="document.body.dataset.advances='1'">OPEN THE NEXT PACK</button></div></div>` : mode === "reveal" ? `<h1>Your pack</h1><div class="ko-card ko-beat-shown" role="button" tabindex="0" onclick="document.body.dataset.advances=String(Number(document.body.dataset.advances)+1)"><div class="ko-face-front">${face()}</div><div class="ko-face-back" hidden><div class="kc kc-back" aria-hidden="true"></div></div></div><ol class="ko-tray"><li class="on"></li><li></li></ol>` : `<h1>Collection</h1><a href="/card/42" style="display:block;width:270px;margin:30px">${face()}</a>`}</main></body></html>`;
 }
+const bundle = resolve(process.env.KOSMORE_TEST_BUNDLE ?? "dist");
+
 test.beforeAll(async () => {
   profile = await mkdtemp(resolve(tmpdir(), "kosmore-test-"));
   context = await launchTestBrowser(profile, {
@@ -83,8 +85,8 @@ test.beforeAll(async () => {
     headless: true,
     viewport: { width: 1440, height: 1000 },
     args: [
-      `--disable-extensions-except=${resolve("dist")}`,
-      `--load-extension=${resolve("dist")}`,
+      `--disable-extensions-except=${bundle}`,
+      `--load-extension=${bundle}`,
     ],
   });
   worker =
@@ -246,7 +248,11 @@ test.beforeEach(async () => {
       await chrome.storage.local.remove("kosmore.myListingPrices");
       const all = await chrome.storage.local.get(null);
       await chrome.storage.local.remove(
-        Object.keys(all).filter((key) => key.startsWith("kosmore.friend.")),
+        Object.keys(all).filter(
+          (key) =>
+            key.startsWith("kosmore.friend.") ||
+            key.startsWith("kosmore.listingRecord."),
+        ),
       );
       await chrome.storage.local.set({
         "kosmore.marketFinishes": ["plain", "veil", "fullart"],
@@ -2079,7 +2085,8 @@ test("Pack Openings shows the ready-pack count above the native Next Pack button
     const count = page.locator(
       ".op-actions-stack > .ko-mega-progress:has(+ button)",
     );
-    await expect(count).toHaveText("2 packs remaining");
+    await expect(count).toHaveText("2 packs ready");
+    await expect(count).toHaveCSS("margin-block-start", "-4px");
     await options.goto(
       `chrome-extension://${extensionId}/options.html#pack-opening-hotkeys`,
     );
@@ -2097,7 +2104,7 @@ test("Pack Openings shows the ready-pack count above the native Next Pack button
     await setting.uncheck();
     await expect(count).toHaveCount(0);
     await setting.check();
-    await expect(count).toHaveText("2 packs remaining");
+    await expect(count).toHaveText("2 packs ready");
     await page.bringToFront();
     const prompt = page.getByRole("button", { name: "Continue", exact: true });
     await prompt.click();
@@ -2202,6 +2209,172 @@ test("pinned album hotkeys record in the album row and use the available tooltip
   } finally {
     await options.close();
   }
+});
+
+test("album hotkeys work on collection tooltips before the page handles the key", async () => {
+  await pulsarSettings({
+    pinnedAlbumHotkeys: {
+      fixtureplayer: {
+        [ALBUM_A]: {
+          code: "KeyJ",
+          ctrl: false,
+          alt: false,
+          shift: false,
+          meta: false,
+        },
+      },
+    },
+  });
+  await page.route("https://kosmora.io/collection?albumHotkeys=1", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: fixture("page").replace(
+        "</head>",
+        `<script>document.addEventListener("keydown", (event) => {
+          if (event.code === "KeyJ") event.stopImmediatePropagation();
+        }, true);</script></head>`,
+      ),
+    }),
+  );
+  await page.goto("https://kosmora.io/collection?albumHotkeys=1");
+  await page.locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await popup.getByLabel("Owned copy").selectOption(COPY_A);
+  await popup.getByRole("tab", { name: "Market", exact: true }).focus();
+  await expect(
+    popup.getByRole("button", { name: "Space & discovery", exact: true }),
+  ).toBeEnabled();
+  await page.keyboard.press("j");
+  await expect(
+    popup.getByRole("button", { name: /Space & discovery.*Already added/ }),
+  ).toBeDisabled();
+  expect(writeRequests).toBe(1);
+});
+
+test("Tooltip takes focus clears the active control on hover, including pinned updates", async () => {
+  await pulsarSettings({
+    popupPosition: { left: 900, top: 40 },
+    pinnedAlbumHotkeys: {
+      fixtureplayer: {
+        [ALBUM_A]: {
+          code: "KeyJ",
+          ctrl: false,
+          alt: false,
+          shift: false,
+          meta: false,
+        },
+      },
+    },
+  });
+  await page.goto("https://kosmora.io/collection");
+  await page.evaluate(
+    ({ firstCopy, secondCopy }) => {
+      const first = document.querySelector<HTMLAnchorElement>("main a")!;
+      first.href = `/card/42?copy=${firstCopy}`;
+      const second = first.cloneNode(true) as HTMLAnchorElement;
+      second.href = `/card/42?copy=${secondCopy}`;
+      first.after(second);
+      const input = document.createElement("input");
+      input.setAttribute("aria-label", "Search collection");
+      first.before(input);
+    },
+    { firstCopy: COPY_A, secondCopy: COPY_B },
+  );
+
+  const editor = page.getByRole("textbox", { name: "Search collection" });
+  const cards = page.locator("main .kc-article");
+  const popup = page.locator("#kosmore-root");
+  await editor.fill("keep this text");
+  await cards.first().hover();
+  await expect(popup).toBeVisible();
+  await expect(editor).toBeFocused();
+  await page.keyboard.press("j");
+  await expect(editor).toHaveValue("keep this textj");
+  expect(writeRequests).toBe(0);
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+
+  const options = await context.newPage();
+  try {
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#hover-tooltip`,
+    );
+    const group = options.locator("#hover-tooltip");
+    const toggle = group.getByRole("checkbox", { name: "Tooltip takes focus" });
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await group.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(group.getByRole("status")).toContainText("Saved.");
+    await options.reload();
+    await expect(toggle).toBeChecked();
+  } finally {
+    await options.close();
+  }
+
+  await editor.hover();
+  await editor.fill("keep this text");
+  await cards.first().hover();
+  await expect(page.locator("body")).toBeFocused();
+  await expect(
+    popup.getByRole("button", { name: "Space & discovery", exact: true }),
+  ).toBeEnabled();
+  await page.keyboard.press("j");
+  await expect(
+    popup.getByRole("button", { name: /Space & discovery.*Already added/ }),
+  ).toBeDisabled();
+  await expect(editor).toHaveValue("keep this text");
+  expect(writeRequests).toBe(1);
+
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  await editor.focus();
+  await cards.nth(1).hover();
+  await expect(page.locator("body")).toBeFocused();
+  await expect(popup).toHaveAttribute("data-pinned", "");
+  await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_B);
+});
+
+test("tooltip content scrolls over fusion results when the page locks the wheel", async () => {
+  await pulsarSettings({ popupWidth: 320, popupHeight: 480 });
+  await page.route("https://kosmora.io/fusion?result=fixture", (route) =>
+    route.fulfill({ contentType: "text/html", body: fixture("page") }),
+  );
+  await page.goto("https://kosmora.io/fusion?result=fixture");
+  await page.evaluate(() => {
+    const result = document.createElement("dialog");
+    result.dataset.testid = "fusion-summary";
+    result.setAttribute("aria-label", "Fusion results");
+    result.innerHTML =
+      "<h2>Fusion complete</h2>" + document.querySelector("main a")!.outerHTML;
+    document.body.append(result);
+    result.showModal();
+    document.addEventListener(
+      "wheel",
+      (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      },
+      { capture: true, passive: false },
+    );
+  });
+  await page.getByTestId("fusion-summary").locator(".kc-article").hover();
+  const popup = page.locator("#kosmore-root");
+  await expect(popup.locator(".sales li")).toHaveCount(5);
+  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+  const content = popup.locator(".tab-content");
+  await expect
+    .poll(() => content.evaluate((el) => el.scrollHeight - el.clientHeight))
+    .toBeGreaterThan(0);
+  await content.hover({ position: { x: 24, y: 15 } });
+  await page.mouse.wheel(0, 200);
+  await expect
+    .poll(() => content.evaluate((el) => el.scrollTop))
+    .toBeGreaterThan(0);
+  await page.mouse.wheel(0, -200);
+  await expect.poll(() => content.evaluate((el) => el.scrollTop)).toBe(0);
+  await expect(page.getByTestId("fusion-summary")).toBeVisible();
 });
 
 test("auto-skip on next pack works by mouse and hotkey and leaves rare-pack warnings in place", async () => {
@@ -2397,6 +2570,17 @@ test("pack hotkeys use native controls and keep card inspection on keyboard focu
   const body = page.locator("body");
   const popup = page.locator("#kosmore-root");
   const press = (key: string) => page.keyboard.press(key);
+  const focusMarker = (card: Locator) =>
+    card.evaluate((element) => {
+      const marker = getComputedStyle(element, "::after");
+      return {
+        hasStar: marker.backgroundImage.includes("data:image/svg+xml"),
+        centered: marker.backgroundPosition === "50% 50%",
+        matchesOutline:
+          marker.borderTopStyle === "solid" &&
+          marker.borderTopColor === getComputedStyle(element).outlineColor,
+      };
+    });
   await press("s");
   await press("l");
   await expect(body).toHaveAttribute("data-skip", "1");
@@ -2406,7 +2590,15 @@ test("pack hotkeys use native controls and keep card inspection on keyboard focu
   await page.keyboard.up("ArrowRight");
   await expect(body).toHaveAttribute("data-advances", "1");
   await press("ArrowRight");
-  await expect(page.locator(".ko-card")).toBeFocused();
+  const revealedCard = page.locator(".ko-card");
+  await expect(revealedCard).toBeFocused();
+  await expect
+    .poll(() => focusMarker(revealedCard))
+    .toEqual({
+      hasStar: true,
+      centered: true,
+      matchesOutline: true,
+    });
   await expect(popup).toContainText("Northern Lights");
   await press("ArrowRight");
   await expect(page.locator(".ko-drop")).toBeVisible();
@@ -2419,10 +2611,32 @@ test("pack hotkeys use native controls and keep card inspection on keyboard focu
   await expect(page.locator(".ko-drop")).toHaveCount(0);
   await expect(body).toHaveAttribute("data-dismiss", "2");
   const cards = page.locator(".ko-grid-open");
+  const tiles = page.locator(".ko-summary .ko-grid > li");
+  const faces = tiles.locator(".kc-article");
+  await expect(tiles.nth(0).getByText("New For Everyone")).toBeVisible();
+  await expect(tiles.nth(0).getByText("New For You")).toBeVisible();
+  await expect(tiles.nth(1).getByText(/New For/)).toHaveCount(0);
   await press("ArrowRight");
   await expect(cards.nth(0)).toBeFocused();
+  await expect(cards.nth(0)).toHaveCSS("outline-style", "none");
+  await expect(faces.nth(0)).toHaveCSS("outline-width", "3px");
+  await expect
+    .poll(() => focusMarker(faces.nth(0)))
+    .toMatchObject({ hasStar: true });
+  await expect
+    .poll(() => focusMarker(cards.nth(0)))
+    .toMatchObject({ hasStar: false });
   await press("ArrowRight");
   await expect(cards.nth(1)).toBeFocused();
+  await expect(cards.nth(1)).toHaveCSS("outline-style", "none");
+  await expect(faces.nth(1)).toHaveCSS("outline-width", "3px");
+  await expect(faces.nth(0)).toHaveCSS("outline-style", "none");
+  await expect
+    .poll(() => focusMarker(faces.nth(1)))
+    .toMatchObject({ hasStar: true });
+  await expect
+    .poll(() => focusMarker(faces.nth(0)))
+    .toMatchObject({ hasStar: false });
   await expect(popup).toContainText("Northern Lights");
   await press("Enter");
   await expect(body).toHaveAttribute("data-opens", "1");
@@ -2545,6 +2759,36 @@ test("a pinned tooltip focuses the first card on a new summary after the found-p
   await expect(cards.nth(1)).toBeFocused();
 });
 
+test("an unpinned pack tooltip follows the mouse without changing keyboard focus", async () => {
+  await pulsarSettings({
+    packOpeningHotkeysEnabled: true,
+    packOpeningHotkeys: {
+      nextCard: {
+        code: "ArrowRight",
+        ctrl: false,
+        alt: false,
+        shift: false,
+        meta: false,
+      },
+    },
+  });
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  await expect(page.locator("#kosmore-pack-hotkeys-style")).toHaveCount(1);
+  const cards = page.locator(".ko-grid-open");
+  const popup = page.locator("#kosmore-root");
+  await page.keyboard.press("ArrowRight");
+  await expect(cards.first()).toBeFocused();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+
+  await cards.nth(2).hover({ position: { x: 220, y: 40 } });
+  await expect(popup.locator("h2")).toHaveText("Voyager 1");
+  await expect(cards.first()).toBeFocused();
+
+  await page.keyboard.press("ArrowRight");
+  await expect(cards.nth(1)).toBeFocused();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+});
+
 test("pinning a keyboard-opened tooltip preserves card focus and uses the saved position", async () => {
   await worker.evaluate(async () => {
     const key = "kosmore.settings";
@@ -2619,7 +2863,16 @@ test("pinning a keyboard-opened tooltip preserves card focus and uses the saved 
   await page.keyboard.press("Space");
   await expect(unpin).toHaveAttribute("aria-pressed", "true");
   await expect(cards.first()).toBeFocused();
+
+  // The pinned tooltip covers the right side of the third card.
+  await cards.nth(2).hover({ position: { x: 10, y: 40 } });
+  await expect(popup.locator("h2")).toHaveText("Voyager 1");
+  await expect(unpin).toHaveAttribute("aria-pressed", "true");
+  await expect(cards.first()).toBeFocused();
+
   await page.keyboard.press("ArrowRight");
+  await expect(cards.nth(1)).toBeFocused();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
   await page.keyboard.press("ArrowRight");
   await expect(cards.nth(2)).toBeFocused();
   await expect(popup.locator("h2")).toHaveText("Voyager 1");
@@ -4209,8 +4462,11 @@ test("my listing history loads only on demand, keeps native newest order, refres
     reads++;
     return route.fulfill({
       json: myListingPage([
+        ...(latest === "19000000"
+          ? [myListing(79, "42", { startPrice: latest })]
+          : []),
         myListing(80, "42", {
-          startPrice: latest,
+          startPrice: "17000000",
           group: "sold",
           state: "sold",
           finalPrice: "99000000",
@@ -4244,6 +4500,13 @@ test("my listing history loads only on demand, keeps native newest order, refres
       name: "My previous listings",
       exact: true,
     });
+    await expect(
+      popup.getByText("No saved listings for this card."),
+    ).toBeVisible();
+    expect(reads).toBe(0);
+    await popup
+      .getByRole("button", { name: "Refresh my listing history" })
+      .click();
     await expect(list.locator("b")).toHaveText(["$17", "$11"]);
     await expect(list.locator("time").first()).toHaveAttribute(
       "datetime",
@@ -4251,7 +4514,9 @@ test("my listing history loads only on demand, keeps native newest order, refres
     );
     expect(reads).toBe(1);
     latest = "19000000";
-    await popup.getByRole("button", { name: "Refresh", exact: true }).click();
+    await popup
+      .getByRole("button", { name: "Refresh my listing history", exact: true })
+      .click();
     await expect(list.locator("b").first()).toHaveText("$19");
     expect(reads).toBe(2);
     await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
@@ -4292,7 +4557,7 @@ test("my listing history loads only on demand, keeps native newest order, refres
     await expect(
       popup.getByRole("tab", { name: "My listing history", exact: true }),
     ).toHaveAttribute("aria-selected", "true");
-    await expect(list.locator("b")).toHaveText(["$19", "$11"]);
+    await expect(list.locator("b")).toHaveText(["$19", "$17", "$11"]);
     expect(writeRequests).toBe(0);
   } finally {
     await page.unroute("**/api/me/auctions?**");
@@ -4329,14 +4594,11 @@ test("listing performance: history fetches one batch only while selected and loa
     const more = popup.getByRole("button", { name: "Load more", exact: true });
     await expect(more).toBeEnabled();
     await expect(
-      popup.getByText(
-        "No matching listings in this batch. Older listings may still be available.",
-        { exact: true },
-      ),
+      popup.getByText("No saved listings for this card."),
     ).toBeVisible();
-    await expect(
-      popup.getByText("You haven't listed this card yet.", { exact: true }),
-    ).toHaveCount(0);
+    expect(limits).toEqual([]);
+    await more.click();
+    await expect(more).toBeEnabled();
     expect(limits).toEqual([50]);
     await mkdir("test-results/screenshots", { recursive: true });
     await popup.screenshot({
@@ -4397,6 +4659,7 @@ test("listing performance: leaving History cancels its fetch and preserves alrea
       });
     await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
     await history.click();
+    await popup.getByRole("button", { name: "Load more", exact: true }).click();
     await expect(popup.locator(".my-listing")).toHaveCount(50);
     const failed = page.waitForEvent(
       "requestfailed",
@@ -4413,6 +4676,16 @@ test("listing performance: leaving History cancels its fetch and preserves alrea
     await popup.getByRole("button", { name: "Load more", exact: true }).click();
     await expect(popup.locator(".my-listing")).toHaveCount(100);
     expect(reads).toBe(3);
+    await popup.getByRole("button", { name: "Load more", exact: true }).click();
+    await expect(popup.locator(".my-listing")).toHaveCount(150);
+    expect(reads).toBe(4);
+    await page.reload();
+    await page.locator(".kc-article").hover();
+    await expect(popup.locator(".my-listing")).toHaveCount(100);
+    await expect(
+      popup.getByRole("button", { name: "Load more", exact: true }),
+    ).toBeEnabled();
+    expect(reads).toBe(4);
   } finally {
     release();
     await page.unroute("**/api/me/auctions?**");
@@ -4443,6 +4716,10 @@ test("listing performance: concurrent game tabs share their in-flight history re
         .click();
       await popup
         .getByRole("tab", { name: "My listing history", exact: true })
+        .click();
+      await popup.getByText("No saved listings for this card.").waitFor();
+      await popup
+        .getByRole("button", { name: "Refresh my listing history" })
         .click();
     }
     await expect.poll(() => reads).toBe(1);
@@ -4475,6 +4752,10 @@ test("my listing history keeps unavailable and empty states distinct and retries
     const popup = page.locator("#kosmore-root");
     await popup
       .getByRole("tab", { name: "My listing history", exact: true })
+      .click();
+    await popup.getByText("No saved listings for this card.").waitFor();
+    await popup
+      .getByRole("button", { name: "Refresh my listing history" })
       .click();
     await expect(
       popup.getByRole("button", { name: "Retry listing history", exact: true }),
@@ -6087,7 +6368,9 @@ test("tooltip header shows family badges and matching inline market prices indep
     await expect(listed).toHaveText("Listed For: $6");
     mode = "failed";
     await popup.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(listed).toHaveText("Listed For: Unavailable");
+    await expect(listed).toHaveText("Listed For: $6");
+    await expect(listed).toHaveAttribute("data-stale-price", "");
+    await expect(listed).toHaveAttribute("title", /Last known/);
     mode = "none";
     await popup.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(listed).toBeHidden();
@@ -6845,6 +7128,11 @@ test("my last listing fills only its card, shares sale settings, and uses starti
     await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
     const first = page.locator(".bsell-row").nth(0),
       second = page.locator(".bsell-row").nth(1);
+    await expect(first.locator(".price-badge.history")).toContainText("—");
+    expect(reads).toBe(0);
+    await first
+      .getByRole("button", { name: "Refresh my listing history" })
+      .click();
     await expect(
       first.getByRole("button", { name: /^My Last Listing: \$17/ }),
     ).toBeEnabled();
@@ -6902,6 +7190,10 @@ test("my last listing fills only its card, shares sale settings, and uses starti
       "true",
     );
     expect(writeRequests).toBe(0);
+    account = "OtherPlayer";
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(page.locator(".price-badge.history")).toContainText("—");
+    expect(reads).toBe(1);
     await group
       .getByLabel("Show My Last Listing price", { exact: true })
       .uncheck();
@@ -6913,7 +7205,7 @@ test("my last listing fills only its card, shares sale settings, and uses starti
   }
 });
 
-test("listing performance: saved sale prices appear during revalidation and successful listing writes invalidate them", async () => {
+test("listing performance: saved sale prices stay visible during refresh and confirmed writes update them without history reads", async () => {
   let reads = 0,
     price = "17000000",
     hold = false,
@@ -6925,11 +7217,21 @@ test("listing performance: saved sale prices appear during revalidation and succ
     reads++;
     if (hold) await held;
     await route.fulfill({
-      json: myListingPage([myListing(4000, "42", { startPrice: price })]),
+      json: myListingPage([
+        ...(price === "23000000"
+          ? [myListing(4002, "42", { startPrice: price })]
+          : []),
+        myListing(4000, "42"),
+      ]),
     });
   });
   await page.route("https://kosmora.io/api/auctions", (route) =>
     route.fulfill({ json: { auctionId: myListing(4001).id } }),
+  );
+  await page.route("**/api/auctions/" + myListing(4001).id, (route) =>
+    route.fulfill({
+      json: { auction: myListing(4001, "42", { startPrice: "29000000" }) },
+    }),
   );
   await page.route("https://kosmora.io/api/auctions/quote", (route) =>
     route.fulfill({ json: { auctionId: myListing(4001).id } }),
@@ -6951,28 +7253,20 @@ test("listing performance: saved sale prices appear during revalidation and succ
     const badge = page.locator(
       "[data-kosmore-sales-overlay] .price-badge.history",
     );
+    await expect(badge).toContainText("—");
+    expect(reads).toBe(0);
+    const refresh = page.getByRole("button", {
+      name: "Refresh my listing history",
+    });
+    await refresh.click();
     await expect(badge).toContainText("$17");
     expect(reads).toBe(1);
     await page.reload();
     await expect(badge).toContainText("$17");
     expect(reads).toBe(1);
-    await worker.evaluate(async () => {
-      const key = "kosmore.myListingPrices",
-        data = (await chrome.storage.local.get(key))[key] as {
-          entries: Record<string, { checkedAt: number }>;
-        };
-      data.entries["fixtureplayer:42"].checkedAt = Date.now() - 300_001;
-      await chrome.storage.local.set({ [key]: data });
-      const sessionKey = "kosmore.listingHistory.fixtureplayer",
-        batch = (await chrome.storage.session.get(sessionKey))[sessionKey] as {
-          fetchedAt: number;
-        };
-      batch.fetchedAt = Date.now() - 300_001;
-      await chrome.storage.session.set({ [sessionKey]: batch });
-    });
     price = "23000000";
     hold = true;
-    await page.reload();
+    await refresh.click();
     await expect(badge).toContainText("$17");
     await expect(badge).toBeEnabled();
     await expect.poll(() => reads).toBe(2);
@@ -6989,7 +7283,6 @@ test("listing performance: saved sale prices appear during revalidation and succ
     );
     await page.waitForTimeout(180);
     expect(reads).toBe(2);
-    price = "29000000";
     await page.evaluate(() =>
       fetch("/api/auctions", {
         method: "POST",
@@ -6998,7 +7291,7 @@ test("listing performance: saved sale prices appear during revalidation and succ
       }),
     );
     await expect(badge).toContainText("$29");
-    expect(reads).toBe(3);
+    expect(reads).toBe(2);
     await expect(page.getByTestId("sell-start")).toHaveValue("99");
     await badge.click();
     await expect(page.getByTestId("sell-start")).toHaveValue("29");
@@ -7015,6 +7308,7 @@ test("listing performance: saved sale prices appear during revalidation and succ
     await page.unroute("**/api/me/auctions?**");
     await page.unroute("https://kosmora.io/api/auctions");
     await page.unroute("https://kosmora.io/api/auctions/quote");
+    await page.unroute("**/api/auctions/" + myListing(4001).id);
   }
 });
 
@@ -7420,6 +7714,7 @@ test("listed-price links work through multi-select without toggling a card selec
   }
 });
 test("sale screens show only badges for confirmed market history and active auctions", async () => {
+  await pulsarSettings({ showSalesMyLastListing: false });
   let release!: () => void, started!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -7546,6 +7841,7 @@ test("pack summary star waits for offscreen overlays and the final card entrance
       "inset(50%)",
     );
     await expect(star).toHaveCSS("animation-name", "spin");
+    await expect(star).toHaveCSS("color", "rgb(222, 193, 127)");
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(star).toHaveCSS("animation-name", "none");
     await expect(badge.getByRole("status")).toContainText(
@@ -7579,6 +7875,11 @@ test("pack summary star waits for offscreen overlays and the final card entrance
       element.getAnimations().forEach((animation) => animation.finish());
     });
     await expect(star).toHaveCSS("animation-name", "none");
+    await expect(star).toHaveCSS("color", "rgb(134, 239, 172)");
+    await expect(badge.getByText("KosMore")).toHaveCSS(
+      "color",
+      "rgb(134, 239, 172)",
+    );
     await expect(badge.getByRole("status")).toBeEmpty();
     expect(
       await grid.evaluate((element) => element.getBoundingClientRect().top),
@@ -7591,8 +7892,347 @@ test("pack summary star waits for offscreen overlays and the final card entrance
   } finally {
     releaseFirst();
     releaseSecond();
+    await page.goto("about:blank");
     await page.unroute(priceRoute);
     await page.emulateMedia({ reducedMotion: null });
+    await page.setViewportSize(viewport);
+  }
+});
+
+test("pack summary star shows first and repeated cooldowns until overlays finish", async () => {
+  await worker.evaluate(async () => {
+    const key = "kosmore.settings";
+    const saved = (await chrome.storage.local.get(key))[key] as object;
+    await chrome.storage.local.set({
+      [key]: {
+        ...saved,
+        showSaleHistoryOverlay: true,
+        showLastSalePriceOverlay: true,
+        collectSaleRateData: false,
+      },
+    });
+  });
+  const priceRoute = "**/api/cards/42/prices?finish=fullart";
+  let requests = 0;
+  let releaseSuccess!: () => void;
+  const success = new Promise<void>((resolve) => {
+    releaseSuccess = resolve;
+  });
+  await page.route(priceRoute, async (route) => {
+    if (++requests <= 2) {
+      await route.fulfill({
+        status: 429,
+        headers: { "Retry-After": "1" },
+        json: {},
+      });
+      return;
+    }
+    await success;
+    await route.fulfill({ json: prices(3) });
+  });
+  try {
+    await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+    const badge = page.locator("[data-kosmore-pack-summary-status]");
+    const star = badge.locator(".kosmore-star");
+    const label = badge.getByText("KosMore", { exact: true });
+    await expect(star).toHaveCSS("color", "rgb(253, 186, 116)");
+    await expect(label).toHaveCSS("color", "rgb(253, 186, 116)");
+    await expect(star).toHaveCSS("animation-name", "spin");
+    await expect(badge.getByRole("status")).toContainText("Rate limited.");
+
+    await expect(star).toHaveCSS("color", "rgb(252, 165, 165)");
+    await expect(label).toHaveCSS("color", "rgb(252, 165, 165)");
+    await expect(badge.getByRole("status")).toContainText(
+      "Rate limited again.",
+    );
+    await expect.poll(() => requests).toBe(3);
+    await expect(star).toHaveCSS("animation-name", "spin");
+
+    releaseSuccess();
+    await expect(
+      page.locator(".ko-grid [data-kosmore-card-overlays] .sale"),
+    ).toHaveCount(6);
+    await expect(star).toHaveCSS("color", "rgb(134, 239, 172)");
+    await expect(star).toHaveCSS("animation-name", "none");
+  } finally {
+    releaseSuccess();
+    await page.unroute(priceRoute);
+  }
+});
+
+test("20-card pack summary loads all badges without scrolling", async () => {
+  await worker.evaluate(async () => {
+    const key = "kosmore.settings";
+    const saved = (await chrome.storage.local.get(key))[key] as object;
+    await chrome.storage.local.set({
+      [key]: {
+        ...saved,
+        showSaleHistoryOverlay: true,
+        showLastSalePriceOverlay: false,
+        collectSaleRateData: false,
+      },
+    });
+  });
+  const viewport = page.viewportSize()!;
+  const recapRoute = "**/packs/open?*recap20=1";
+  const priceRoute = "**/api/cards/*/prices?**";
+  const stagger = Array.from(
+    { length: 20 },
+    (_, i) => `.ko-grid > li:nth-child(${i + 1}) { animation-delay: ${i * 25}ms; }`,
+  ).join("\n");
+  const html = fixture("summary", 20).replace(
+    "</body>",
+    `
+    <style>
+      .ko-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+      @keyframes entrance { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+      .ko-grid > li { animation: entrance 200ms both; }
+      ${stagger}
+    </style>
+    <script>
+      const grid = document.querySelector('.ko-grid');
+      const badgeSelector = '[data-kosmore-card-overlays]';
+      const markOnce = (name, ready) => {
+        if (ready && !performance.getEntriesByName(name).length) performance.mark(name);
+      };
+      performance.mark('recap-start');
+      const observer = new MutationObserver(() => {
+        const visible = grid.querySelectorAll('li:nth-child(-n+5) ' + badgeSelector).length;
+        const total = grid.querySelectorAll(badgeSelector).length;
+        markOnce('first-badge', visible > 0);
+        markOnce('last-visible-badge', visible === 5);
+        markOnce('first-offscreen-badge', total > visible);
+        if (total === 20) {
+          performance.mark('last-badge');
+          observer.disconnect();
+        }
+      });
+      observer.observe(grid, { subtree: true, childList: true });
+      const frames = [];
+      requestAnimationFrame(function sample(now) {
+        frames.push(now);
+        if (now - frames[0] < 675) requestAnimationFrame(sample);
+        else grid.dataset.frameTimes = JSON.stringify(frames.slice(1).map((t, i) => t - frames[i]));
+      });
+    </script></body>`,
+  );
+  let offscreen = 0,
+    peakOffscreen = 0;
+  await page.route(recapRoute, (route) =>
+    route.fulfill({ contentType: "text/html", body: html }),
+  );
+  await page.route(priceRoute, async (route) => {
+    const id = Number(
+      new URL(route.request().url()).pathname.split("/").at(-2),
+    );
+    const belowFold = id >= 65;
+    if (belowFold) peakOffscreen = Math.max(peakOffscreen, ++offscreen);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    if (belowFold) offscreen--;
+    await route.fulfill({ json: prices(3) });
+  });
+  try {
+    await page.setViewportSize({ width: 1440, height: 335 });
+    await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap20=1`);
+    const grid = page.locator(".ko-grid");
+    const cards = grid.locator(":scope > li");
+    await expect(cards.nth(4)).toBeInViewport();
+    await expect(cards.nth(5)).not.toBeInViewport();
+    await expect(grid.locator("[data-kosmore-card-overlays] .sale")).toHaveCount(
+      20,
+    );
+    await expect(grid).toHaveAttribute("data-frame-times", /\[/);
+    expect(peakOffscreen).toBe(1);
+    expect(await page.evaluate(() => scrollY)).toBe(0);
+    if (process.env.KOSMORE_RECAP_BENCHMARK) {
+      const timing = await grid.evaluate((element) => {
+        const mark = (name: string) =>
+          performance.getEntriesByName(name)[0].startTime;
+        const frames = (
+          JSON.parse(element.getAttribute("data-frame-times")!) as number[]
+        ).sort((a, b) => a - b);
+        return {
+          firstBadgeMs: Math.round(mark("first-badge") - mark("recap-start")),
+          offscreenBadgeGapMs: Math.round(
+            mark("first-offscreen-badge") - mark("last-visible-badge"),
+          ),
+          lastBadgeMs: Math.round(mark("last-badge") - mark("recap-start")),
+          entranceP95FrameMs: frames[Math.ceil(frames.length * 0.95) - 1],
+          entranceMaxFrameMs: frames.at(-1),
+        };
+      });
+      console.log(`recap benchmark ${JSON.stringify(timing)}`);
+    }
+  } finally {
+    await page.unroute(recapRoute);
+    await page.unroute(priceRoute);
+    await page.setViewportSize(viewport);
+  }
+});
+
+test("live recap prices do not hold up badges on later visible cards", async () => {
+  const benchmark = !!process.env.KOSMORE_LIVE_RECAP_BENCHMARK;
+  await worker.evaluate(async () => {
+    const key = "kosmore.settings";
+    const saved = (await chrome.storage.local.get(key))[key] as object;
+    await chrome.storage.local.set({
+      [key]: {
+        ...saved,
+        showSaleHistoryOverlay: true,
+        showLastSalePriceOverlay: true,
+        showActiveAuctionsOverlay: true,
+        showLowestListingPriceOverlay: true,
+        collectSaleRateData: false,
+      },
+    });
+  });
+  const viewport = page.viewportSize()!;
+  const recapRoute = "**/packs/open?*liveRecap=1";
+  const cardRoute = "**/api/collection/*";
+  const priceRoute = "**/api/cards/*/prices?**";
+  const auctionRoute = "**/api/auctions?**";
+  const openingRoute = "**/api/openings/*";
+  const html = fixture("summary", 20).replace(
+    "</body>",
+    `<style>.ko-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }</style>
+    <script>
+      performance.mark('recap-start');
+      const cards = [...document.querySelectorAll('.ko-grid > li')];
+      const mark = (name, ready) => {
+        if (ready && !performance.getEntriesByName(name).length) performance.mark(name);
+      };
+      requestAnimationFrame(function sample() {
+        const badges = cards.map(card => card.querySelector('[data-kosmore-card-overlays]')?.shadowRoot);
+        const visible = badges.slice(0, 5);
+        mark('first-badge', visible.some(badge => badge?.querySelector('.sale,.auction')));
+        mark('visible-badges', visible.every(badge => badge?.querySelector('.sale') && badge.querySelector('.auction')));
+        const priced = badges.every(badge => badge?.querySelectorAll('.badge-price').length === 2);
+        mark('all-prices', priced);
+        if (!priced) requestAnimationFrame(sample);
+      });
+    </script></body>`,
+  );
+  const delay = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+  let releasePrice!: () => void;
+  const heldPrice = new Promise<void>((resolve) => {
+    releasePrice = resolve;
+  });
+  const priceReads: string[] = [],
+    auctionReads: string[] = [];
+  let openingReads = 0;
+  const priceLatency = (slow: boolean) =>
+    slow && !benchmark ? heldPrice : delay(slow ? 350 : 18);
+  await page.route(recapRoute, (route) =>
+    route.fulfill({ contentType: "text/html", body: html }),
+  );
+  await page.route(openingRoute, (route) => {
+    openingReads++;
+    return route.fulfill({ json: opening });
+  });
+  await page.route(cardRoute, async (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    await delay(18);
+    await route.fulfill({ json: { ...card(id), name: `Card ${id}` } });
+  });
+  await page.route(priceRoute, async (route) => {
+    const url = new URL(route.request().url());
+    const id = url.pathname.split("/").at(-2)!;
+    const finish = url.searchParams.get("finish");
+    priceReads.push(`${id}:${finish}`);
+    await priceLatency(id === "60" && finish === "fullart");
+    const data = prices(1);
+    if (finish === "fullart") {
+      data.prices.sales[0].price = "18000000";
+      data.prices.sales[0].soldAt = new Date(
+        Date.now() - 3_600_000,
+      ).toISOString();
+    }
+    await route.fulfill({ json: data });
+  });
+  await page.route(auctionRoute, async (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    const id = query.get("q")!.split(" ").at(-1)!;
+    const next = query.get("offset") === "1";
+    auctionReads.push(`${id}:${Number(next)}`);
+    await priceLatency(id === "61" && next);
+    await route.fulfill({
+      json: {
+        items: [
+          auction(Number(id) + (next ? 100 : 0), id, {
+            startPrice: next ? "9000000" : "20000000",
+          }),
+        ],
+        nextOffset: next ? null : 1,
+      },
+    });
+  });
+  try {
+    await page.setViewportSize({ width: 1440, height: 335 });
+    await page.mouse.move(1, 1);
+    await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&liveRecap=1`);
+    const grid = page.locator(".ko-grid");
+    const cards = grid.locator(":scope > li");
+    const overlays = grid.locator("[data-kosmore-card-overlays]");
+    const star = page.locator("[data-kosmore-pack-summary-status]");
+    if (!benchmark) {
+      const laterCard = cards.nth(4);
+      await expect(laterCard).toBeInViewport();
+      await expect(laterCard.locator(".signal-badge.sale")).toBeVisible();
+      await expect(laterCard.locator(".signal-badge.auction")).toBeVisible();
+      await expect(cards.first().locator(".sale .badge-price")).toHaveCount(0);
+      await expect(cards.nth(1).locator(".auction .badge-price")).toHaveCount(
+        0,
+      );
+      await expect(star).toHaveAttribute("data-loading", "");
+      await expect(page.locator("#kosmore-root")).toHaveCount(0);
+      expect(openingReads).toBe(0);
+      await cards.nth(1).locator(".ko-grid-open").hover();
+      const popup = page.locator("#kosmore-root");
+      await expect(popup).toBeVisible();
+      await expect(popup.getByText("Listed For: Loading…")).toBeVisible();
+      await expect.poll(() => openingReads).toBe(1);
+    }
+    releasePrice();
+    await expect(overlays.locator(".sale .badge-price")).toHaveText(
+      Array(20).fill("$18"),
+    );
+    await expect(overlays.locator(".auction .badge-price")).toHaveText(
+      Array(20).fill("$9"),
+    );
+    await expect(star).not.toHaveAttribute("data-loading", "");
+    if (!benchmark)
+      await expect(
+        page.locator("#kosmore-root").getByText("Listed For: $9"),
+      ).toBeVisible();
+    expect(priceReads).toHaveLength(60);
+    expect(new Set(priceReads).size).toBe(60);
+    expect(auctionReads).toHaveLength(40);
+    expect(new Set(auctionReads).size).toBe(40);
+    if (benchmark) {
+      const timing = await page.evaluate(() => {
+        const stamp = (name: string) =>
+          performance.getEntriesByName(name)[0].startTime;
+        const start = stamp("recap-start");
+        return Object.fromEntries(
+          ["first-badge", "visible-badges", "all-prices"].map((name) => [
+            name,
+            Math.round(stamp(name) - start),
+          ]),
+        );
+      });
+      console.log(`live recap benchmark ${JSON.stringify(timing)}`);
+    }
+  } finally {
+    releasePrice();
+    for (const route of [
+      recapRoute,
+      cardRoute,
+      priceRoute,
+      auctionRoute,
+      openingRoute,
+    ])
+      await page.unroute(route);
     await page.setViewportSize(viewport);
   }
 });
@@ -7799,6 +8439,86 @@ test("performance: quest badges appear before slow market results and survive a 
   }
 });
 
+test("sale rate: pauses live from Stat Boxes and opens that section from the disabled tile", async () => {
+  const options = await context.newPage();
+  try {
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#stat-boxes`,
+    );
+    const group = options.locator("#stat-boxes");
+    const toggle = group.getByRole("switch", {
+      name: "Collect Sale Rate data",
+    });
+    const saleRateRow = group
+      .locator(".stat-choice")
+      .filter({ has: options.getByLabel(/^Show Sale Rate/) });
+    await expect(toggle).toBeChecked();
+    await expect(
+      group
+        .locator(":scope > .settings-group-independent + .savebar")
+        .getByRole("button", { name: "Save", exact: true }),
+    ).toBeVisible();
+    await page.goto("https://kosmora.io/collection");
+    await page.locator(".kc-article").hover();
+    const popup = page.locator("#kosmore-root");
+    await expect(popup.locator(".stats tbody")).toContainText("Standard");
+    await toggle.uncheck();
+    await expect(
+      saleRateRow.getByText("Disabled", { exact: true }),
+    ).toBeVisible();
+    await expect(saleRateRow.getByLabel(/^Show Sale Rate/)).toBeEnabled();
+    const tile = popup.getByRole("button", { name: /Sale Rate: Disabled/ });
+    await expect(tile).toBeVisible();
+    await expect(tile.locator("strong")).toHaveCSS("font-size", "11px");
+    await expect(tile.locator("strong")).toHaveCSS("white-space", "nowrap");
+    await expect(popup.locator(".stats tbody .sale-rate").first()).toHaveText(
+      "Disabled",
+    );
+    const openedPage = context.waitForEvent("page");
+    await tile.click();
+    const linked = await openedPage;
+    try {
+      await expect(linked).toHaveURL(/options\.html#stat-boxes$/);
+      await expect(
+        linked.getByRole("switch", { name: "Collect Sale Rate data" }),
+      ).not.toBeChecked();
+    } finally {
+      await linked.close();
+    }
+    await toggle.check();
+    await expect(
+      saleRateRow.getByText("Disabled", { exact: true }),
+    ).toHaveCount(0);
+    await expect(tile).toHaveCount(0);
+  } finally {
+    await options.close();
+  }
+});
+
+test("disabled market overlays make no market reads while other badges load", async () => {
+  await pulsarSettings({
+    showQuestOverlay: true,
+    showActiveAuctionsOverlay: false,
+    showSaleHistoryOverlay: false,
+  });
+  const marketRequests: string[] = [];
+  const countMarket = (request: { url(): string }) => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/auctions" || path.endsWith("/prices"))
+      marketRequests.push(path);
+  };
+  page.on("request", countMarket);
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await expect(
+      page.locator("[data-kosmore-card-overlays] .quest"),
+    ).toBeVisible();
+    expect(marketRequests).toEqual([]);
+  } finally {
+    page.off("request", countMarket);
+  }
+});
+
 test("sale rate: relays the page's own auction reads and settles them per finish from fresh histories", async () => {
   // Start from an empty observation log.
   await worker.evaluate(async () => {
@@ -7820,9 +8540,19 @@ test("sale rate: relays the page's own auction reads and settles them per finish
     ],
     nextOffset: null,
   };
-  await page.route("https://kosmora.io/api/auctions*", (route) =>
-    route.fulfill({ json: listings }),
-  );
+  const offsets: string[] = [];
+  await page.route("https://kosmora.io/api/auctions*", (route) => {
+    const offset = new URL(route.request().url()).searchParams.get("offset");
+    if (new URL(route.request().url()).searchParams.get("q"))
+      return route.fulfill({ json: { items: [], nextOffset: null } });
+    offsets.push(offset ?? "");
+    return route.fulfill({
+      json:
+        offset === "2"
+          ? { ...listings, items: listings.items.slice(2) }
+          : { nextOffset: 2, items: listings.items.slice(0, 2) },
+    });
+  });
   try {
     await page.goto("https://kosmora.io/collection");
     await page.locator(".kc-article").hover();
@@ -7831,10 +8561,27 @@ test("sale rate: relays the page's own auction reads and settles them per finish
     // The page itself reads the market; the relay forwards a copy.
     const status = await page.evaluate(async () => {
       const res = await fetch("/api/auctions?sort=ending&offset=0");
-      return (await res.json()).items.length;
+      const first = await res.json();
+      const second = await fetch(
+        "/api/auctions?sort=ending&offset=" + first.nextOffset,
+      );
+      return first.items.length + (await second.json()).items.length;
     });
+    expect(offsets).toEqual(["0", "2"]);
     expect(status).toBe(4); // the page still receives its full response
-    // Fresh histories settle the ended listings.
+    const bucket = `kosmore.marketOutcomes.${ended.slice(0, 10)}`;
+    await expect
+      .poll(
+        () =>
+          worker.evaluate(async (key) => {
+            const value = (await chrome.storage.local.get(key))[key] as
+              { a?: Record<string, unknown> } | undefined;
+            return Object.keys(value?.a ?? {});
+          }, bucket),
+        { timeout: 8000 },
+      )
+      .toEqual(expect.arrayContaining(listings.items.map((item) => item.id)));
+    // Fresh histories settle the ended listings after both pages are observed.
     await popup.getByRole("button", { name: "Refresh" }).click();
     const rows = popup.locator(".stats tbody tr");
     await expect(
@@ -8021,7 +8768,7 @@ test("Vortex family impact: marks stakes and picker cards, preserves native pick
 });
 
 test("fusion family impact: marks tiles safe or not from the page's own reads, follows the tray, never blocks picks, and fits narrow cards", async () => {
-  let familyReads = 0;
+  const familyReads: string[][] = [];
   await page.route("https://kosmora.io/fusion", (route) =>
     route.fulfill({
       contentType: "text/html; charset=utf-8",
@@ -8046,8 +8793,11 @@ test("fusion family impact: marks tiles safe or not from the page's own reads, f
     });
   });
   await page.route("https://kosmora.io/api/me/families*", (route) => {
-    familyReads++;
-    return route.fulfill({ json: myFamilies });
+    const ids =
+      new URL(route.request().url()).searchParams.get("ids")?.split(",") ?? [];
+    familyReads.push(ids);
+    const families = myFamilies.families.filter((row) => ids.includes(row.id));
+    return route.fulfill({ json: { families, total: families.length } });
   });
   const tile = (id: string) => page.locator(`.grid .pick[data-id="${id}"]`);
   const badge = (id: string) =>
@@ -8068,7 +8818,9 @@ test("fusion family impact: marks tiles safe or not from the page's own reads, f
       await expect(badge(id)).toHaveText("✓ Safe");
       await expect(badge(id)).toHaveClass(/safe/);
     }
-    expect(familyReads).toBe(1);
+    expect(familyReads.flat().sort()).toEqual(
+      myFamilies.families.map((row) => row.id).sort(),
+    );
     expect(cardReads).toBeLessThanOrEqual(7); // once per card at most
     expect(writeRequests).toBe(0);
 
@@ -8181,10 +8933,21 @@ test("fusion family impact: marks tiles safe or not from the page's own reads, f
 });
 
 test("persisted settings and listing prices survive a browser restart", async () => {
-  await page.route("**/api/me/auctions?**", (route) =>
-    route.fulfill({ json: myListingPage([myListing(5000)]) }),
+  const id = myListing(5000).id;
+  await page.route("https://kosmora.io/api/auctions", (route) =>
+    route.fulfill({ json: { auctionId: id } }),
+  );
+  await page.route("**/api/auctions/" + id, (route) =>
+    route.fulfill({ json: { auction: myListing(5000) } }),
   );
   await page.goto("https://kosmora.io/market/sell?subject=42");
+  await page.evaluate(async (instanceId) => {
+    await fetch("/api/collection/42").then((response) => response.json());
+    await fetch("/api/auctions", {
+      method: "POST",
+      body: JSON.stringify({ instanceId, startPrice: "17000000" }),
+    }).then((response) => response.json());
+  }, COPY_A);
   await expect(page.locator(".price-badge.history")).toContainText("$17");
   await worker.evaluate(async () => {
     await chrome.storage.local.set({ "kosmore.marketFinishes": ["veil"] });
@@ -8201,8 +8964,8 @@ test("persisted settings and listing prices survive a browser restart", async ()
     channel: "chromium",
     headless: true,
     args: [
-      `--disable-extensions-except=${resolve("dist")}`,
-      `--load-extension=${resolve("dist")}`,
+      `--disable-extensions-except=${bundle}`,
+      `--load-extension=${bundle}`,
     ],
   });
   worker =
@@ -8257,4 +9020,228 @@ test("persisted settings and listing prices survive a browser restart", async ()
     notes: "Remember after restart",
     families: ["Fish"],
   });
+});
+
+test("read budget: native listing capture avoids deep history on the next sell form", async () => {
+  const baseline = !!process.env.KOSMORE_TEST_BUNDLE;
+  let requests = 0,
+    bytes = 0;
+  const recent = Array.from({ length: 799 }, (_, i) => myListing(i + 1, "46"));
+  const last = myListing(900, "42", { startPrice: "27000000" });
+  await pulsarSettings({
+    showSalesMyLastListing: !baseline,
+    showSalesLowestListing: false,
+    showSalesLastSale: false,
+  });
+  await page.route("**/api/me/auctions?**", async (route) => {
+    const limit = Number(
+      new URL(route.request().url()).searchParams.get("unsold"),
+    );
+    const response = myListingPage([...recent, last].slice(0, limit));
+    response.groups.unsold = 800;
+    const body = JSON.stringify(response);
+    requests++;
+    bytes += Buffer.byteLength(body);
+    await new Promise((done) => setTimeout(done, 70));
+    await route.fulfill({ body, contentType: "application/json" });
+  });
+  await page.route("https://kosmora.io/api/auctions", (route) =>
+    route.fulfill({ json: { auctionId: last.id } }),
+  );
+  await page.route("**/api/collection/42", (route) =>
+    route.fulfill({ json: card("42") }),
+  );
+  await page.route("**/api/auctions/" + last.id, (route) =>
+    route.fulfill({ json: { auction: last } }),
+  );
+  try {
+    await page.goto("https://kosmora.io/collection");
+    await page.evaluate(async () => {
+      await fetch("/api/collection/42").then((res) => res.json());
+    });
+    await page.evaluate(async (instanceId) => {
+      await fetch("/api/auctions", {
+        method: "POST",
+        body: JSON.stringify({ instanceId, startPrice: "27000000" }),
+      }).then((res) => res.json());
+    }, COPY_A);
+    if (!baseline)
+      await expect
+        .poll(() =>
+          worker.evaluate(
+            async () =>
+              !!(
+                await chrome.storage.local.get(
+                  "kosmore.listingRecord.fixtureplayer.42",
+                )
+              )["kosmore.listingRecord.fixtureplayer.42"],
+          ),
+        )
+        .toBe(true);
+    if (baseline) await pulsarSettings({ showSalesMyLastListing: true });
+    const started = performance.now();
+    await page.goto("https://kosmora.io/market/sell?subject=42");
+    await expect(
+      page.getByRole("button", { name: /^My Last Listing: \$27/ }),
+    ).toBeEnabled();
+    console.log(
+      "KOSMORE_LISTING_BUDGET " +
+        JSON.stringify({
+          requests,
+          bytes,
+          priceMs: Math.round(performance.now() - started),
+        }),
+    );
+    if (!baseline) expect(requests).toBe(0);
+  } finally {
+    await page.unroute("**/api/me/auctions?**");
+    await page.unroute("https://kosmora.io/api/auctions");
+    await page.unroute("**/api/collection/42");
+    await page.unroute("**/api/auctions/" + last.id);
+  }
+});
+
+test("read budget: first market badge, price and tooltip data on a paginated grid", async () => {
+  let requests = 0,
+    bytes = 0;
+  const tally = (body: unknown) => {
+    requests++;
+    bytes += Buffer.byteLength(JSON.stringify(body));
+    return body;
+  };
+  const delay = () => new Promise((done) => setTimeout(done, 100));
+  await pulsarSettings({
+    showSaleHistoryOverlay: true,
+    showActiveAuctionsOverlay: true,
+    showLastSalePriceOverlay: true,
+    showLowestListingPriceOverlay: true,
+  });
+  await page.route("https://kosmora.io/collection", (route) =>
+    route.fulfill({ contentType: "text/html", body: fixture("page") }),
+  );
+  await page.route("**/api/collection/42", (route) =>
+    route.fulfill({ json: card("42") }),
+  );
+  await page.route("**/api/auctions?**", async (route) => {
+    const offset = Number(
+      new URL(route.request().url()).searchParams.get("offset"),
+    );
+    await delay();
+    await route.fulfill({
+      json: tally({
+        items: [auction(810 + offset)],
+        nextOffset: offset ? null : 1,
+      }),
+    });
+  });
+  await page.route("**/api/cards/*/prices?**", async (route) => {
+    await delay();
+    await route.fulfill({ json: tally(prices(3)) });
+  });
+  try {
+    const samples: Array<{
+      badgeMs: number;
+      priceMs: number;
+      tooltipMs: number;
+    }> = [];
+    for (let i = 0; i < 3; i++) {
+      await page.mouse.move(0, 0);
+      await page.goto("https://kosmora.io/collection");
+      const measureBadge = async (selector: string) =>
+        Math.round(
+          await (
+            await page.waitForFunction((selector) => {
+              const badge = document
+                .querySelector("[data-kosmore-card-overlays]")
+                ?.shadowRoot?.querySelector(selector);
+              return badge?.getBoundingClientRect().height
+                ? performance.now()
+                : 0;
+            }, selector)
+          ).jsonValue(),
+        );
+      const badgeMs = await measureBadge(".sale");
+      const priceMs = await measureBadge(".sale .badge-price");
+      const card = page.locator(".kc-article");
+      await card.evaluate((el) =>
+        el.addEventListener(
+          "pointerover",
+          () => performance.mark("fixture-card-hover"),
+          { once: true },
+        ),
+      );
+      await card.hover();
+      const tooltipMs = Math.round(
+        await (
+          await page.waitForFunction(() => {
+            const hovered =
+              performance.getEntriesByName("fixture-card-hover")[0];
+            const price = document
+              .querySelector("#kosmore-root")
+              ?.shadowRoot?.querySelector(".last-sold");
+            return hovered &&
+              price?.getBoundingClientRect().height &&
+              price.textContent?.startsWith("Last Sale: $")
+              ? performance.now() - hovered.startTime
+              : 0;
+          })
+        ).jsonValue(),
+      );
+      await expect(page.locator("#kosmore-root .listed-for")).toContainText(
+        "$10",
+      );
+      samples.push({ badgeMs, priceMs, tooltipMs });
+    }
+    const median = (key: keyof (typeof samples)[number]) =>
+      samples.map((sample) => sample[key]).sort((a, b) => a - b)[1];
+    console.log(
+      "KOSMORE_MARKET_BUDGET " +
+        JSON.stringify({
+          requestsPerRun: requests / samples.length,
+          bytesPerRun: bytes / samples.length,
+          badgeMs: median("badgeMs"),
+          priceMs: median("priceMs"),
+          tooltipMs: median("tooltipMs"),
+          samples,
+        }),
+    );
+  } finally {
+    await page.unroute("https://kosmora.io/collection");
+    await page.unroute("**/api/collection/42");
+    await page.unroute("**/api/auctions?**");
+    await page.unroute("**/api/cards/*/prices?**");
+  }
+});
+
+test("native relists verify the exact auction once and save the accepted starting price", async () => {
+  const previous = myListing(999);
+  const relisted = myListing(1000, "42", { startPrice: "31000000" });
+  let detailReads = 0;
+  await pulsarSettings({
+    showSalesLowestListing: false,
+    showSalesLastSale: false,
+  });
+  await page.route("**/api/auctions/" + previous.id + "/relist", (route) =>
+    route.fulfill({ json: { auctionId: relisted.id } }),
+  );
+  await page.route("**/api/auctions/" + relisted.id, (route) => {
+    detailReads++;
+    return route.fulfill({ json: { auction: relisted } });
+  });
+  try {
+    await page.goto("https://kosmora.io/market/sell?subject=42");
+    for (let i = 0; i < 2; i++) {
+      await page.evaluate(async (id) => {
+        await fetch("/api/auctions/" + id + "/relist", {
+          method: "POST",
+          body: "{}",
+        });
+      }, previous.id);
+      await expect(page.locator(".price-badge.history")).toContainText("$31");
+    }
+    expect(detailReads).toBe(1);
+  } finally {
+    await page.unroute("**/api/auctions/" + previous.id + "/relist");
+    await page.unroute("**/api/auctions/" + relisted.id);
+  }
 });

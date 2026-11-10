@@ -1,9 +1,9 @@
 import { face } from "./data";
 
 export function packOpeningFixture(revealHints = true) {
-  const card = (id: string, link = false) =>
+  const card = (id: string, link = false, labels = "") =>
     `<li>${face(id)}${link ? '<a href="/card/42?copy=fixture" onclick="count(\'card\'); return false">See card</a>' : ""}
-      <button class="ko-grid-open" onclick="openViewer()" aria-label="See card up close"></button></li>`;
+      <button class="ko-grid-open" onclick="openViewer()" aria-label="See card up close"></button>${labels}</li>`;
   const summary = `
     <div class="ko-scene ko-summary-scene">
       <div class="ko-summary">
@@ -15,7 +15,10 @@ export function packOpeningFixture(revealHints = true) {
           <li class="ko-bonus-rogue">Rogue Pack</li>
           <li class="ko-bonus-mega">Mega Pack</li>
         </ul>
-        <ul class="ko-grid">${card("42", true)}${card("42")}</ul>
+        <ul class="ko-grid">
+          ${card("42", true, "<span>New For Everyone</span><span>New For You</span>")}
+          ${card("42")}
+        </ul>
         <div class="ko-grid-more" aria-hidden="true"></div>
         <div class="op-actions op-actions-stack">
           <button class="btn-gold btn-lg" onclick="nextPack(this)">Open the next pack</button>

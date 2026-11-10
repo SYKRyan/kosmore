@@ -16,10 +16,17 @@ export class RemainingPacks {
     private enabled: () => boolean,
   ) {
     this.label.setAttribute("data-kosmore-remaining-packs", "");
+    this.label.style.marginBlockStart = "-4px";
   }
 
   start() {
-    observePage(() => this.refresh());
+    observePage(() => {
+      if (
+        this.request ||
+        (this.enabled() && location.pathname === "/packs/open")
+      )
+        this.refresh();
+    });
     this.refresh();
   }
 
@@ -28,6 +35,12 @@ export class RemainingPacks {
       this.enabled() && location.pathname === "/packs/open"
         ? document.querySelector<HTMLElement>(`.ko-summary ${NEXT_PACK}`)
         : null;
+    if (!button) {
+      this.request?.abort.abort();
+      this.request = undefined;
+      this.label.remove();
+      return;
+    }
     const params = new URLSearchParams(location.search);
     const shown =
       params.get("id") ?? params.get("resume") ?? params.get("batch");
@@ -38,7 +51,7 @@ export class RemainingPacks {
     this.request?.abort.abort();
     this.request = undefined;
     this.label.remove();
-    if (!button || !key || params.get("replay") === "1") return;
+    if (!key || params.get("replay") === "1") return;
     const abort = new AbortController();
     this.request = { button, key, abort };
     const excluded = new Set(key.split(","));
@@ -47,7 +60,7 @@ export class RemainingPacks {
       .then((ids) => {
         if (abort.signal.aborted || !button.isConnected) return;
         const count = ids.filter((id) => !excluded.has(id)).length;
-        this.label.textContent = `${count.toLocaleString()} ${count === 1 ? "pack" : "packs"} remaining`;
+        this.label.textContent = `${count.toLocaleString()} ${count === 1 ? "pack" : "packs"} ready`;
         button.before(this.label);
       })
       .catch(() => {

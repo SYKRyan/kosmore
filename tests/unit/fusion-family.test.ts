@@ -297,6 +297,7 @@ function setup(
     now?: () => number;
     recipes?: boolean;
     account?: () => Promise<unknown>;
+    familyCountsFor?: (ids: string[]) => Promise<Map<string, number>>;
   } = {},
 ) {
   const accountChanged: (() => void)[] = [];
@@ -316,6 +317,7 @@ function setup(
     insights: vi.fn(async (id: string) => ({ families: MEMBERSHIP[id] })),
     onAccountChange: (fn: () => void) => accountChanged.push(fn),
     ...(options.account ? { account: options.account } : {}),
+    familyCountsFor: options.familyCountsFor,
   };
   const impact = new FusionFamilyImpact(
     client,
@@ -470,7 +472,10 @@ it("re-reads counts after a fusion, delayed but never skipped", async () => {
   impact.setSettings(defaults());
   await settle();
   expect(client.familyCounts).toHaveBeenCalledTimes(4);
-  expect(client.familyCounts).toHaveBeenLastCalledWith(undefined, true);
+  expect(client.familyCounts).toHaveBeenLastCalledWith(
+    expect.any(AbortSignal),
+    true,
+  );
 });
 
 it("re-reads counts when the player comes back to the tab", async () => {
@@ -959,7 +964,11 @@ it("uses total owned copies and every economic family for trade choices and refr
   expect(tradeBadge("8")?.getAttribute("aria-label")).toContain(
     "trading this card drops Parrots",
   );
-  expect(client.insights).toHaveBeenCalledWith("8", undefined, true);
+  expect(client.insights).toHaveBeenCalledWith(
+    "8",
+    expect.any(AbortSignal),
+    true,
+  );
 });
 
 it("withholds trade verdicts for unknown families, counts or ownership", async () => {
@@ -1108,8 +1117,15 @@ it("refreshes Vortex ownership and counts after the native lobby refresh and wit
     "drops Parrots",
   );
   for (const id of ["4", "5", "7"]) expect(tradeBadge(id)).toBeUndefined();
-  expect(client.insights).toHaveBeenCalledWith("8", undefined, true);
-  expect(client.familyCounts).toHaveBeenLastCalledWith(undefined, true);
+  expect(client.insights).toHaveBeenCalledWith(
+    "8",
+    expect.any(AbortSignal),
+    true,
+  );
+  expect(client.familyCounts).toHaveBeenLastCalledWith(
+    expect.any(AbortSignal),
+    true,
+  );
 });
 
 it("withholds Vortex badges when ownership is missing without starving other visible cards", async () => {
@@ -1154,6 +1170,25 @@ it("discards ownership and count reads started before a Vortex refresh", async (
   expect(tradeBadge("4")?.getAttribute("aria-label")).toContain(
     "drops Parrots",
   );
-  expect(client.insights).toHaveBeenCalledWith("4", undefined, true);
+  expect(client.insights).toHaveBeenCalledWith(
+    "4",
+    expect.any(AbortSignal),
+    true,
+  );
   expect(client.familyCounts).toHaveBeenCalledTimes(2);
+});
+
+it("waits before retrying an unknown family from a scoped counts response", async () => {
+  page();
+  const familyCountsFor = vi.fn(
+    async (ids: string[]) =>
+      new Map(ids.filter((id) => id !== MAMA.id).map((id) => [id, 10])),
+  );
+  setup({ gap: 60_000, familyCountsFor });
+  await settle();
+  expect(familyCountsFor.mock.calls.flatMap(([ids]) => ids)).toContain(MAMA.id);
+  expect(shown("7")).toBe("-");
+  const reads = familyCountsFor.mock.calls.length;
+  await settle();
+  expect(familyCountsFor).toHaveBeenCalledTimes(reads);
 });
