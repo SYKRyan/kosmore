@@ -1,12 +1,24 @@
 import { LISTING_REFRESH_LABEL } from "../kosmora/my-listings";
 import type { KosmoraClient, Settings } from "../shared/types";
 import { messageOf } from "../shared/types";
-import { adjustedSalePrice } from "../shared/sales-prices";
+import {
+  SALE_MINIMUMS,
+  adjustedSalePrice,
+  belowSaleMinimum,
+  discountedSalePrice,
+  quickSalePrice,
+} from "../shared/sales-prices";
+import {
+  isSaleBatchMessage,
+  saleSelectionKey,
+} from "../shared/sale-family-selection";
 import {
   editableSalesInput,
   fillSalesInput,
   salesTargets,
   salesTarget,
+  salesSubmitButton,
+  SALES_SUMMARY_WARNING,
   type SalesTarget,
 } from "../kosmora/sales";
 import { formatKosmo } from "../kosmora/contracts";
@@ -21,7 +33,7 @@ import { MARKET_BADGE_CSS } from "./signal-badges";
 import { el } from "./ui";
 import { observePage, affected, type PageChanges } from "./page-changes";
 
-const STYLE = `:host{display:block;margin:6px 0 10px;font:12px/1.4 system-ui,sans-serif;color:#ece7f3}:host([hidden]){display:none}.badges{display:flex;flex-wrap:wrap;gap:6px}.price-badge{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-height:28px;box-sizing:border-box;padding:4px 8px;border:1px solid;border-radius:6px;font:inherit;box-shadow:0 1px 5px #0005}button{cursor:pointer}button:hover{filter:brightness(1.2)}button:focus-visible{outline:2px solid #e7cb84;outline-offset:3px}button:disabled{cursor:default;opacity:.65}svg{display:block;flex-shrink:0}.history-controls{display:inline-flex;align-items:center;gap:4px;max-width:100%}.history-check{padding:4px;color:#ead6ab;background:#211831;border-color:#584869}.history-check svg{width:14px;height:14px}.amount{overflow-wrap:anywhere}.status{font-size:11px;color:#b9dcbc;margin-top:4px}.status:empty{display:none}.status.loading{color:#c3b2d4}.status.error{color:#f3a6b1}${MARKET_BADGE_CSS}`;
+const STYLE = `:host{display:block;margin:6px 0 10px;font:12px/1.4 system-ui,sans-serif;color:#ece7f3}:host([hidden]){display:none}.badges{display:flex;flex-wrap:wrap;gap:6px}.price-badge{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-height:28px;box-sizing:border-box;padding:4px 8px;border:1px solid;border-radius:6px;font:inherit;box-shadow:0 1px 5px #0005}button{cursor:pointer}button:hover{filter:brightness(1.2)}button:focus-visible{outline:2px solid #e7cb84;outline-offset:3px}button:disabled{cursor:default;opacity:.65}svg{display:block;flex-shrink:0}.history-controls{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%}.history-check{padding:4px;color:#ead6ab;background:#211831;border-color:#584869}.history-check svg{width:14px;height:14px}.amount{overflow-wrap:anywhere}[data-kosmore-sales-warning="row"]{display:block;font-weight:600;margin-bottom:6px}.quick-prices{margin-top:6px}.badges:empty+.quick-prices{margin-top:0}.quick-prices-label{display:block;margin-bottom:4px;color:#d4c6e4}.discount,.quick-price{color:#ffe3af;background:#2c2039;border-color:#796143}.status{font-size:11px;color:#b9dcbc;margin-top:4px}.status:empty{display:none}.status.loading{color:#c3b2d4}.status.error{color:#f3a6b1}${MARKET_BADGE_CSS}`;
 interface OverlaySize {
   width: number;
   height: number;
@@ -39,6 +51,10 @@ interface Entry {
   loading: boolean;
   marketRequest?: AbortController;
   editable: boolean;
+  quickHeading?: HTMLElement;
+  quickSection?: HTMLElement;
+  quickPrices: HTMLButtonElement[];
+  warning?: HTMLElement;
   signals?: CardSignals;
   error?: string;
   myPrice?: string;
@@ -49,6 +65,8 @@ interface Entry {
   mineLoading?: boolean;
   mineResolved?: boolean;
   mineError?: string;
+  copyId?: string;
+  discountPrice?: string;
 }
 const KEYS = [
   "salesOverlaysEnabled",
@@ -61,6 +79,12 @@ const KEYS = [
   "showSalesMyLastListing",
   "salesMyLastListingSetsPrice",
   "salesMyLastListingAdjustment",
+  "salesDiscountEnabled",
+  "salesDiscountAmount",
+  "salesDiscountMode",
+  "salesDiscountThreshold",
+  "salesQuickPricesEnabled",
+  "salesCustomMinimumsEnabled",
 ] as const;
 
 export class SalesOverlays {
@@ -99,9 +123,24 @@ export class SalesOverlays {
   private running = 0;
   private scheduled = false;
   private refreshTimer?: ReturnType<typeof setInterval>;
-  private batchSpacing?: HTMLStyleElement;
+  private saleSpacing?: HTMLStyleElement;
   private notBefore = 0;
   private timer?: ReturnType<typeof setTimeout>;
+  private summaryWarning?: HTMLElement;
+  private listingContextLost = false;
+  private historyNotice?: HTMLElement;
+  private warningFrame = 0;
+  private batchCopies?: {
+    page: string;
+    batch?: { revision: number; copies: Map<string, string> };
+    draft?: { revision: number; copies: Map<string, string> };
+  };
+  private historyRefresh?: {
+    page: string;
+    account: string;
+    request: AbortController;
+    promise: Promise<unknown>;
+  };
   constructor(private client: KosmoraClient) {
     this.provider = new CardSignalProvider(client);
     this.intersection = new IntersectionObserver((records) => {
@@ -126,8 +165,39 @@ export class SalesOverlays {
     window.addEventListener("pagehide", () => {
       this.generation++;
       this.provider.reset();
+      this.historyRefresh?.request.abort();
       for (const entry of this.entries.values()) entry.mineRequest?.abort();
     });
+    window.addEventListener("message", (event) => {
+      if (
+        event.source !== window ||
+        event.origin !== location.origin ||
+        location.pathname !== "/market/sell/batch" ||
+        !isSaleBatchMessage(event.data) ||
+        event.data.page !== location.href
+      )
+        return;
+      const { page, source, revision, copies } = event.data;
+      if (this.batchCopies?.page !== page) this.batchCopies = { page };
+      if (revision <= (this.batchCopies[source]?.revision ?? 0)) return;
+      this.batchCopies[source] = { revision, copies: new Map(copies) };
+      if (this.settings?.salesDiscountEnabled && this.enabled())
+        this.schedule();
+    });
+    const updateWarnings = () => {
+      if (
+        this.warningFrame ||
+        !this.settings?.salesCustomMinimumsEnabled ||
+        !this.enabled()
+      )
+        return;
+      this.warningFrame = requestAnimationFrame(() => {
+        this.warningFrame = 0;
+        this.refreshWarnings();
+      });
+    };
+    for (const event of ["input", "change", "click"])
+      document.addEventListener(event, updateWarnings, true);
     observePage((changes) => {
       if (this.enabled() || this.entries.size || this.refreshTimer)
         this.scan(changes);
@@ -148,11 +218,22 @@ export class SalesOverlays {
     });
   }
   setSettings(settings: Settings) {
+    const quickChanged =
+      this.settings?.salesQuickPricesEnabled !==
+        settings.salesQuickPricesEnabled ||
+      JSON.stringify(this.settings?.salesQuickPrices) !==
+        JSON.stringify(settings.salesQuickPrices);
     const changed =
       !this.settings ||
-      KEYS.some((key) => this.settings![key] !== settings[key]);
+      quickChanged ||
+      KEYS.some((key) => this.settings![key] !== settings[key]) ||
+      JSON.stringify(this.settings.salesCustomMinimums) !==
+        JSON.stringify(settings.salesCustomMinimums);
     this.settings = settings;
-    if (changed) this.invalidate();
+    if (!changed) return;
+    if (quickChanged)
+      for (const entry of this.entries.values()) this.mountQuickPrices(entry);
+    this.invalidate(false);
   }
   enabled() {
     return (
@@ -160,7 +241,11 @@ export class SalesOverlays {
       this.settings?.salesOverlaysEnabled &&
       (this.settings.showSalesLastSale ||
         this.settings.showSalesLowestListing ||
-        this.settings.showSalesMyLastListing)
+        this.settings.showSalesMyLastListing ||
+        this.settings.salesDiscountEnabled ||
+        this.settings.salesCustomMinimumsEnabled ||
+        (this.settings.salesQuickPricesEnabled &&
+          this.settings.salesQuickPrices.length > 0))
     );
   }
   invalidate(clear = true) {
@@ -177,12 +262,14 @@ export class SalesOverlays {
         entry.mineLoading = false;
         entry.mineResolved = false;
         entry.mineError = undefined;
-        entry.loading = true;
+        entry.loading = this.showsMarketPrices();
         entry.marketRequest = undefined;
         entry.error = undefined;
         entry.myPrice = undefined;
         entry.myAccount = undefined;
-        if (entry.visible) this.queue.add(entry);
+        entry.discountPrice = undefined;
+        if (entry.visible && entry.loading) this.queue.add(entry);
+        this.render(entry);
       }
     }
     this.schedule();
@@ -203,6 +290,7 @@ export class SalesOverlays {
     this.intersection.unobserve(entry.target.input);
     this.queue.delete(entry);
     entry.host.remove();
+    entry.warning?.remove();
     this.entries.delete(entry.target.input);
   }
   private schedule() {
@@ -214,6 +302,16 @@ export class SalesOverlays {
     });
   }
   private scan(changes?: PageChanges) {
+    if (
+      this.historyRefresh &&
+      (!this.enabled() ||
+        !this.settings?.salesDiscountEnabled ||
+        this.historyRefresh.page !== location.href)
+    ) {
+      this.historyRefresh.request.abort();
+      this.historyRefresh = undefined;
+    }
+    if (this.batchCopies?.page !== location.href) this.batchCopies = undefined;
     if (this.enabled()) {
       this.refreshTimer ??= setInterval(() => {
         if (!document.hidden && this.enabled()) this.invalidate(false);
@@ -248,6 +346,16 @@ export class SalesOverlays {
         continue;
       }
       entry.target = target;
+      const copyId = this.selectedCopy(target);
+      if (entry.copyId !== copyId) {
+        entry.copyId = copyId;
+        entry.discountPrice = undefined;
+        entry.mineRequest?.abort();
+        entry.mineRequest = undefined;
+        entry.mineLoading = false;
+        entry.mineResolved = false;
+        this.render(entry);
+      }
       if (target.after.nextElementSibling !== entry.host)
         target.after.after(entry.host);
       if (entry.editable !== editableSalesInput(input)) this.render(entry);
@@ -275,10 +383,18 @@ export class SalesOverlays {
         target.after.closest<HTMLElement>(".bsell-row") ?? undefined;
       // A native repaint can replace the row or its price input. Carry geometry
       // only when the old and new row can be matched unambiguously.
-      if (batchRow && !this.batchSpacing) {
-        this.batchSpacing = el("style");
-        this.batchSpacing.textContent = `.bsell-row [data-kosmore-sales-overlay]:not([hidden]):has(+ [data-kosmore-fusion-family]:not([hidden])){margin-bottom:2px}.bsell-row [data-kosmore-sales-overlay]:not([hidden]) + [data-kosmore-fusion-family]{margin-top:2px}`;
-        document.head.append(this.batchSpacing);
+      if (!this.saleSpacing) {
+        this.saleSpacing = el("style");
+        this.saleSpacing.textContent = `
+          .bsell-row [data-kosmore-sales-overlay]:not([hidden]):has(+ [data-kosmore-fusion-family]:not([hidden])){margin-bottom:2px}
+          .bsell-row [data-kosmore-sales-overlay]:not([hidden]) + [data-kosmore-fusion-family]{margin-top:2px}
+          [data-kosmore-sales-warning]{display:block;font:600 12px/1.4 system-ui,sans-serif;margin:2px 0 0;grid-column:1/-1}
+          ${SALES_SUMMARY_WARNING}{margin:0;text-align:center;flex:0 0 100%}
+          .bsell ${SALES_SUMMARY_WARNING},.bsell-bar > ${SALES_SUMMARY_WARNING}{text-align:end}
+          .bsell-bar:has(> ${SALES_SUMMARY_WARNING}){row-gap:4px}
+          .sell-form [data-kosmore-fusion-family]:has(+ ${SALES_SUMMARY_WARNING}){margin-bottom:2px}
+        `;
+        document.head.append(this.saleSpacing);
       }
       const previous =
         batchRow &&
@@ -296,11 +412,14 @@ export class SalesOverlays {
         host,
         body,
         status,
+        copyId: this.selectedCopy(target),
+        quickPrices: [],
         visible: false,
-        loading: true,
+        loading: this.showsMarketPrices(),
         editable: editableSalesInput(input),
       };
       this.entries.set(input, entry);
+      this.mountQuickPrices(entry);
       this.reserveBatchSpace(entry);
       target.after.after(host);
       if (batchRow) {
@@ -310,7 +429,22 @@ export class SalesOverlays {
       this.render(entry);
       this.intersection.observe(input);
     }
+    this.refreshWarnings();
+    this.updateHistoryNotice();
     this.pump();
+  }
+  private showsMarketPrices() {
+    return !!(
+      this.settings?.showSalesLastSale || this.settings?.showSalesLowestListing
+    );
+  }
+  private selectedCopy(target: SalesTarget) {
+    if (!this.settings?.salesDiscountEnabled) return;
+    if (target.copyId) return target.copyId;
+    if (this.batchCopies?.page !== location.href) return;
+    const { batch, draft } = this.batchCopies;
+    const key = saleSelectionKey(target.context);
+    return draft?.copies.get(key) ?? batch?.copies.get(key);
   }
   private valid(entry: Entry, generation = this.generation) {
     return (
@@ -415,9 +549,32 @@ export class SalesOverlays {
       else if (entry.visible) void this.loadMyPrice(entry);
     }
   }
+  private refreshDiscountHistory(subject: string, account: string) {
+    const active = this.historyRefresh;
+    if (active?.page === location.href && active.account === account)
+      return active.promise;
+    active?.request.abort();
+    const request = new AbortController();
+    const refresh = {
+      page: location.href,
+      account,
+      request,
+      promise: this.client
+        .listingHistory(subject, "refresh", request.signal)
+        .finally(() => {
+          if (this.historyRefresh === refresh) this.historyRefresh = undefined;
+        }),
+    };
+    this.historyRefresh = refresh;
+    return refresh.promise;
+  }
   private async loadMyPrice(entry: Entry, refresh = false) {
     if (
-      !this.settings?.showSalesMyLastListing ||
+      !(
+        this.settings?.showSalesMyLastListing ||
+        this.settings?.salesDiscountEnabled
+      ) ||
+      this.listingContextLost ||
       document.hidden ||
       !entry.visible ||
       entry.mineRequest ||
@@ -425,6 +582,10 @@ export class SalesOverlays {
       !this.valid(entry)
     )
       return;
+    if (!chrome.runtime?.id) {
+      this.loseListingContext();
+      return;
+    }
     if (refresh && Date.now() < this.notBefore) {
       entry.mineError =
         "Your listing history is temporarily unavailable. Try again shortly.";
@@ -437,6 +598,7 @@ export class SalesOverlays {
     entry.mineRequest = request;
     entry.mineLoading = refresh;
     entry.mineError = undefined;
+    entry.discountPrice = undefined;
     const valid = () =>
       !request.signal.aborted &&
       entry.mineRequest === request &&
@@ -444,24 +606,46 @@ export class SalesOverlays {
     this.render(entry);
     try {
       const account = await this.client.account(request.signal, false);
-      if (refresh)
-        await this.client.listingHistory(
-          entry.target.context.subjectId,
-          "refresh",
-          request.signal,
-        );
+      if (!valid()) return;
+      const subject = entry.target.context.subjectId;
+      if (refresh) {
+        if (this.settings!.salesDiscountEnabled && entry.copyId)
+          await this.refreshDiscountHistory(subject, account.key);
+        else
+          await this.client.listingHistory(subject, "refresh", request.signal);
+      }
+      if (!valid()) return;
       entry.mineDirty = false;
-      const result = await this.client.latestListing(
-        entry.target.context.subjectId,
-        request.signal,
-      );
+      const history =
+        this.settings!.salesDiscountEnabled && entry.copyId
+          ? await this.client.cachedListings(subject, request.signal)
+          : undefined;
+      const result = history
+        ? history.listings[0]
+        : await this.client.latestListing(subject, request.signal);
       if (!valid()) return;
       entry.myAccount = account.key;
       entry.myPrice = result?.startPrice;
       entry.recordedAt = result?.submittedAt;
+      if (history && entry.copyId) {
+        this.render(entry);
+        const price = await this.client.discountListingPrice(
+          subject,
+          entry.copyId,
+          this.settings!.salesDiscountThreshold,
+          history.listings,
+          request.signal,
+        );
+        if (valid()) entry.discountPrice = price;
+      } else entry.discountPrice = undefined;
     } catch (error) {
       if (!valid()) return;
-      entry.mineError = `Your listing history: ${messageOf(error)}`;
+      const message = messageOf(error);
+      if (/^extension context invalidated\.?$/i.test(message)) {
+        this.loseListingContext();
+        return;
+      }
+      entry.mineError = `Your listing history: ${message}`;
       if (error instanceof ApiError && error.status === 429)
         this.notBefore = error.retryAt || Date.now() + 30_000;
     } finally {
@@ -475,8 +659,42 @@ export class SalesOverlays {
       }
     }
   }
+  private loseListingContext() {
+    if (this.listingContextLost) return;
+    this.listingContextLost = true;
+    this.historyRefresh?.request.abort();
+    for (const entry of this.entries.values()) {
+      entry.mineRequest?.abort();
+      entry.mineRequest = undefined;
+      entry.mineLoading = false;
+      entry.mineError = undefined;
+      entry.myPrice = undefined;
+      entry.myAccount = undefined;
+      entry.recordedAt = undefined;
+      entry.discountPrice = undefined;
+      this.render(entry);
+    }
+    this.updateHistoryNotice();
+  }
+  private updateHistoryNotice() {
+    const entry = this.listingContextLost
+      ? this.entries.values().next().value
+      : undefined;
+    const anchor =
+      entry?.batchRow?.closest(".bsell-list") ?? entry?.target.after;
+    if (!anchor?.isConnected) {
+      this.historyNotice?.remove();
+      return;
+    }
+    const notice = (this.historyNotice ??= this.warning(
+      "Refresh this Kosmora tab to reconnect your listing history.",
+      "reconnect",
+    ));
+    if (anchor.previousElementSibling !== notice) anchor.before(notice);
+  }
   private render(entry: Entry) {
     entry.editable = editableSalesInput(entry.target.input);
+    for (const button of entry.quickPrices) button.disabled = !entry.editable;
     entry.body.replaceChildren();
     const loading = entry.loading || entry.mineLoading === true;
     entry.host.setAttribute("aria-busy", String(loading));
@@ -493,10 +711,11 @@ export class SalesOverlays {
       entry.status.textContent = "";
     }
     const s = this.settings!;
+    let historyBadge: HTMLElement | undefined;
     for (const [kind, label, visible, clickable, adjustment, price] of [
       [
         "sale",
-        "Last Sale",
+        "Last Sale:",
         s.showSalesLastSale,
         s.salesLastSaleSetsPrice,
         s.salesLastSaleAdjustment,
@@ -504,7 +723,7 @@ export class SalesOverlays {
       ],
       [
         "auction",
-        "Lowest Listed",
+        "Lowest Listed:",
         s.showSalesLowestListing,
         s.salesLowestListingSetsPrice,
         s.salesLowestListingAdjustment,
@@ -588,33 +807,184 @@ export class SalesOverlays {
                 : kind === "history"
                   ? current.salesMyLastListingAdjustment
                   : current.salesLowestListingAdjustment;
-            const value = adjustedSalePrice(price!, offset);
-            fillSalesInput(entry.target.input, value);
-            entry.status.className = "status";
-            entry.status.textContent = `Starting price set to ${value} Kosmo.`;
+            this.setPrice(
+              entry,
+              adjustedSalePrice(price!, offset, this.minimum(entry)),
+            );
           } catch (error) {
             entry.status.className = "status error";
             entry.status.textContent = messageOf(error);
           }
         });
       } else badge.setAttribute("role", "img");
-      if (kind === "history") {
-        const controls = el("span", "history-controls");
-        const check = el("button", "price-badge history-check");
-        check.type = "button";
-        check.disabled = !!entry.mineRequest;
-        check.title = LISTING_REFRESH_LABEL;
-        check.setAttribute("aria-label", LISTING_REFRESH_LABEL);
-        check.append(headerIcon("refresh"));
-        check.addEventListener("click", (event) => {
-          event.stopPropagation();
-          void this.loadMyPrice(entry, true);
-        });
-        controls.append(badge, check);
-        entry.body.append(controls);
-      } else entry.body.append(badge);
+      if (kind === "history") historyBadge = badge;
+      else entry.body.append(badge);
+    }
+    if (historyBadge || s.salesDiscountEnabled) {
+      const controls = el("span", "history-controls");
+      if (historyBadge) controls.append(historyBadge);
+      const discount =
+        s.salesDiscountEnabled && entry.discountPrice !== undefined
+          ? this.discountButton(entry, entry.discountPrice)
+          : undefined;
+      if (discount) controls.append(discount);
+      controls.append(this.refreshButton(entry));
+      entry.body.append(controls);
     }
     this.updateVisibility(entry);
+  }
+  private refreshButton(entry: Entry) {
+    const check = el("button", "price-badge history-check");
+    check.type = "button";
+    check.disabled = this.listingContextLost || !!entry.mineRequest;
+    check.title = LISTING_REFRESH_LABEL;
+    check.setAttribute("aria-label", LISTING_REFRESH_LABEL);
+    check.append(headerIcon("refresh"));
+    check.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void this.loadMyPrice(entry, true);
+    });
+    return check;
+  }
+  private minimum(entry: Entry) {
+    return entry.target.rarity ? SALE_MINIMUMS[entry.target.rarity] : 1;
+  }
+  private setPrice(entry: Entry, value: string) {
+    fillSalesInput(entry.target.input, value);
+    entry.status.className = "status";
+    entry.status.textContent = `Starting price set to ${value} Kosmo.`;
+  }
+  private discountButton(entry: Entry, price: string) {
+    const settings = this.settings!,
+      copyId = entry.copyId;
+    const minimum = this.minimum(entry);
+    const value = discountedSalePrice(
+      price,
+      settings.salesDiscountAmount,
+      settings.salesDiscountMode,
+      minimum,
+    );
+    if (value === adjustedSalePrice(price, 0, minimum)) return;
+    const button = el("button", "price-badge discount", `Discount: $${value}`);
+    button.type = "button";
+    button.disabled = !entry.editable;
+    button.title = `Set starting price to ${value} Kosmo.`;
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      if (!this.valid(entry) || !editableSalesInput(entry.target.input)) return;
+      try {
+        const account = await this.client.account();
+        const target = salesTarget(entry.target.input);
+        if (
+          target &&
+          this.valid(entry) &&
+          this.settings!.salesDiscountEnabled &&
+          entry.myAccount === account.key &&
+          this.selectedCopy(target) === copyId &&
+          entry.discountPrice === price &&
+          editableSalesInput(entry.target.input)
+        )
+          this.setPrice(entry, value);
+      } catch (error) {
+        entry.status.className = "status error";
+        entry.status.textContent = messageOf(error);
+      }
+    });
+    return button;
+  }
+  private mountQuickPrices(entry: Entry) {
+    entry.quickHeading?.remove();
+    entry.quickHeading = undefined;
+    entry.quickSection?.remove();
+    entry.quickSection = undefined;
+    entry.quickPrices = [];
+    const settings = this.settings!;
+    if (!settings.salesQuickPricesEnabled || !settings.salesQuickPrices.length)
+      return;
+    const section = el("section", "quick-prices"),
+      label = el("b", "quick-prices-label", "Quick Prices"),
+      buttons = el("div", "badges");
+    label.id = "quick-prices-label";
+    section.setAttribute("aria-labelledby", label.id);
+    for (const price of settings.salesQuickPrices) {
+      const button = el(
+        "button",
+        "price-badge quick-price",
+        `$${price.toLocaleString("en-US", { maximumFractionDigits: 6 })}`,
+      );
+      button.type = "button";
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (!this.valid(entry) || !editableSalesInput(entry.target.input))
+          return;
+        this.setPrice(entry, quickSalePrice(price, this.minimum(entry)));
+      });
+      entry.quickPrices.push(button);
+      buttons.append(button);
+    }
+    entry.body.before(label);
+    section.append(buttons);
+    entry.status.before(section);
+    entry.quickHeading = label;
+    entry.quickSection = section;
+  }
+  private warning(text: string, kind: "row" | "summary" | "reconnect") {
+    const warning = el("span", "", text);
+    warning.setAttribute("data-kosmore-sales-warning", kind);
+    warning.setAttribute("aria-live", "polite");
+    warning.style.color = "#ff828b";
+    return warning;
+  }
+  private refreshWarnings() {
+    let below = false;
+    const minimums =
+      this.enabled() && this.settings!.salesCustomMinimumsEnabled
+        ? this.settings!.salesCustomMinimums
+        : undefined;
+    for (const entry of this.entries.values()) {
+      const { input, rarity, after } = entry.target;
+      const minimum = rarity && minimums?.[rarity];
+      if (
+        minimum === undefined ||
+        !input.isConnected ||
+        !belowSaleMinimum(input.value, minimum)
+      ) {
+        if (entry.warning) {
+          entry.warning.remove();
+          entry.warning = undefined;
+          this.updateVisibility(entry);
+        }
+        continue;
+      }
+      const text = `Below ${rarity} minimum of ${minimum}`;
+      const warning = (entry.warning ??= this.warning(text, "row"));
+      if (warning.textContent !== text) warning.textContent = text;
+      if (entry.batchRow) {
+        // Keep the warning out of the native price grid so it cannot move its controls.
+        if (warning.parentNode !== entry.host.shadowRoot)
+          (entry.quickHeading ?? entry.body).before(warning);
+        this.updateVisibility(entry);
+      } else {
+        const parent = input.closest("label") ?? after;
+        if (warning.parentElement !== parent) parent.append(warning);
+      }
+      below = true;
+    }
+    const submit = below && salesSubmitButton();
+    if (submit) {
+      const batch = location.pathname.endsWith("/batch");
+      const text = batch
+        ? "Some cards are below their configured minimums"
+        : "This card is below its configured minimum";
+      const warning = (this.summaryWarning ??= this.warning(text, "summary"));
+      if (warning.textContent !== text) warning.textContent = text;
+      if (batch) {
+        if (submit.nextElementSibling !== warning) submit.after(warning);
+      } else if (warning.nextElementSibling !== submit) submit.before(warning);
+    } else {
+      this.summaryWarning?.remove();
+      this.summaryWarning = undefined;
+    }
   }
   private updateVisibility(entry: Entry) {
     entry.host.hidden =
@@ -622,6 +992,8 @@ export class SalesOverlays {
       !entry.loading &&
       !entry.mineLoading &&
       !entry.body.children.length &&
+      !entry.quickPrices.length &&
+      !(entry.batchRow && entry.warning) &&
       !entry.error &&
       !entry.mineError;
   }

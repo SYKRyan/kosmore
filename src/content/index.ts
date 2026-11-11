@@ -112,7 +112,8 @@ let settings = defaults();
 function tracksListingPrices() {
   return (
     settings.enabled ||
-    (settings.salesOverlaysEnabled && settings.showSalesMyLastListing)
+    (settings.salesOverlaysEnabled &&
+      (settings.showSalesMyLastListing || settings.salesDiscountEnabled))
   );
 }
 function syncRelayPreferences() {

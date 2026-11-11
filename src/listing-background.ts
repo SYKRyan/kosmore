@@ -107,6 +107,16 @@ export function installListingBackground() {
       if (message.op === "listingSavedPrice")
         return (await service.tracked(message.accountKey, message.subjectId))
           .listings[0];
+      if (message.op === "listingMetadata") {
+        const updated = await service.attachMetadata(
+          message.accountKey,
+          message.subjectId,
+          new Map(message.metadata),
+          controller.signal,
+        );
+        if (updated) await changed();
+        return null;
+      }
       if (message.op === "listingHistory") {
         const result = await service.history(
           message.accountKey,

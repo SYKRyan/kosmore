@@ -1,6 +1,6 @@
 import { resolveCard } from "../kosmora/dom";
 import { foldFamilyName } from "../kosmora/families";
-import { salesTargets } from "../kosmora/sales";
+import { SALES_SUMMARY_WARNING, salesTargets } from "../kosmora/sales";
 import { saleSelectionKey } from "../shared/sale-family-selection";
 import { SaleFamilySelection } from "./sale-family-selection";
 import {
@@ -877,9 +877,11 @@ export class FusionFamilyImpact {
     }
     const sig = `${blacklisted ? "blacklist" : (verdict?.safe ?? "pending")}|${label}`;
     // On the card art when there is one, so no card text is covered.
-    const before = saleAfter
+    const submit = saleAfter
       ?.closest("form.sell-form")
       ?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    const warning = submit?.previousElementSibling;
+    const before = warning?.matches(SALES_SUMMARY_WARNING) ? warning : submit;
     const after = saleAfter?.nextElementSibling?.matches(
       "[data-kosmore-sales-overlay]",
     )

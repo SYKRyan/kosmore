@@ -1,6 +1,9 @@
 import { expect, it } from "vitest";
 import {
   adjustedSalePrice,
+  belowSaleMinimum,
+  discountedSalePrice,
+  quickSalePrice,
   validSaleAdjustment,
 } from "../../src/shared/sales-prices";
 import { parseSettings } from "../../src/shared/settings";
@@ -15,12 +18,21 @@ it("adds positive and negative Kosmo adjustments exactly, including fractional a
   );
   expect(adjustedSalePrice("1", 9000000000.123455)).toBe("9000000000.123456");
 });
-it("rejects invalid adjustments and nonpositive results without inventing a substitute price", () => {
+it("rejects invalid adjustments and floors low results at the game's rarity minimum", () => {
   for (const value of [NaN, Infinity, "-1", null, 0.0000001, 1e12])
     expect(validSaleAdjustment(value)).toBe(false);
-  expect(() => adjustedSalePrice("1000000", -1)).toThrow("greater than 0");
-  expect(() => adjustedSalePrice("1000000", -2)).toThrow("greater than 0");
+  expect(adjustedSalePrice("1000000", -1)).toBe("1");
+  expect(adjustedSalePrice("21000000", -2, 20)).toBe("20");
   expect(() => adjustedSalePrice("invalid", 0)).toThrow();
+});
+it("rounds the percent reduction before subtracting and applies only the game minimum", () => {
+  expect(discountedSalePrice("102500000", 25, "percent", 1)).toBe("76.5");
+  expect(discountedSalePrice("102500000", 25, "flat", 1)).toBe("77.5");
+  expect(discountedSalePrice("520000000", 120, "percent", 500)).toBe("500");
+  expect(quickSalePrice(2.25, 20)).toBe("20");
+  expect(quickSalePrice(20.25, 20)).toBe("20.25");
+  expect(belowSaleMinimum("20.25", 20.5)).toBe(true);
+  expect(belowSaleMinimum("20.50", 20.5)).toBe(false);
 });
 it("defaults shared sales badges and click behavior on with zero adjustments and keeps independent choices", () => {
   const old = parseSettings({ schemaVersion: 1 });

@@ -1,3 +1,5 @@
+import type { DiscountMode, SaleRarity } from "./sales-prices";
+
 export type Finish = "plain" | "veil" | "fullart";
 export const FINISHES: Finish[] = ["plain", "veil", "fullart"];
 export const FINISH_LABEL: Record<Finish, string> = {
@@ -142,6 +144,14 @@ export interface Settings {
   showSalesMyLastListing: boolean;
   salesMyLastListingSetsPrice: boolean;
   salesMyLastListingAdjustment: number;
+  salesDiscountEnabled: boolean;
+  salesDiscountAmount: number;
+  salesDiscountMode: DiscountMode;
+  salesDiscountThreshold: number;
+  salesCustomMinimumsEnabled: boolean;
+  salesCustomMinimums: Record<SaleRarity, number>;
+  salesQuickPricesEnabled: boolean;
+  salesQuickPrices: number[];
   statBoxesEnabled: boolean;
   collectSaleRateData: boolean;
   pinnedAlbumsEnabled: boolean;
@@ -218,6 +228,13 @@ export interface KosmoraClient {
     id: string,
     signal?: AbortSignal,
   ): Promise<import("../kosmora/my-listings").TrackedListing | undefined>;
+  discountListingPrice(
+    subject: string,
+    copyId: string,
+    threshold: number,
+    listings: import("../kosmora/my-listings").TrackedListing[],
+    signal: AbortSignal,
+  ): Promise<string | undefined>;
   possibleInterest(
     familyIds: string[],
     signal?: AbortSignal,

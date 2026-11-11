@@ -25,6 +25,7 @@ import {
 import { multiSelectFixture } from "../fixtures/multi-select";
 import { auction, auctionPage } from "../fixtures/auctions";
 import { myListing, myListingPage } from "../fixtures/my-listings";
+import type { TrackedListing } from "../../src/kosmora/my-listings";
 import {
   FUSION_FAMILIES,
   familyMilestones,
@@ -7555,8 +7556,8 @@ test("sales badges fill only their own controlled batch price fields with indepe
     const rows = page.locator(".bsell-row"),
       first = rows.nth(0),
       second = rows.nth(1);
-    const lastSale = first.getByRole("button", { name: /^Last Sale \$12/ });
-    const lowest = first.getByRole("button", { name: /^Lowest Listed \$8/ });
+    const lastSale = first.getByRole("button", { name: /^Last Sale: \$12/ });
+    const lowest = first.getByRole("button", { name: /^Lowest Listed: \$8/ });
     await expect(lastSale).toBeEnabled();
     await expect(lowest).toBeEnabled();
     await expect(first.locator("input")).toHaveValue("12.00");
@@ -7593,9 +7594,9 @@ test("sales badges fill only their own controlled batch price fields with indepe
       .fill("2");
     await settings.getByRole("button", { name: "Save", exact: true }).click();
     await expect(settings.getByRole("status")).toContainText("Saved.");
-    await first.getByRole("button", { name: /^Last Sale \$12/ }).click();
+    await first.getByRole("button", { name: /^Last Sale: \$12/ }).click();
     await expect(first.locator("input")).toHaveValue("11");
-    await second.getByRole("button", { name: /^Lowest Listed \$20/ }).click();
+    await second.getByRole("button", { name: /^Lowest Listed: \$20/ }).click();
     await expect(second.locator("input")).toHaveValue("22");
     expect(
       await page.evaluate(
@@ -7900,7 +7901,7 @@ test("card and sales overlays remain independent of the hover-tooltip switch", a
   expect(writeRequests).toBe(0);
 });
 
-test("single-sale badges share settings and respect click toggles, visibility, readonly inputs and nonpositive adjustments", async () => {
+test("single-sale badges share settings and respect click toggles, visibility, readonly inputs and minimum prices", async () => {
   const options = await context.newPage();
   try {
     await options.goto(`chrome-extension://${extensionId}/options.html`);
@@ -7921,9 +7922,9 @@ test("single-sale badges share settings and respect click toggles, visibility, r
     );
     const input = page.getByTestId("sell-start"),
       widget = page.locator("[data-kosmore-sales-overlay]");
-    await widget.getByRole("button", { name: /^Last Sale \$12/ }).click();
+    await widget.getByRole("button", { name: /^Last Sale: \$12/ }).click();
     await expect(input).toHaveValue("11");
-    await widget.getByRole("button", { name: /^Lowest Listed \$10/ }).click();
+    await widget.getByRole("button", { name: /^Lowest Listed: \$10/ }).click();
     await expect(input).toHaveValue("12");
     expect(
       await page.evaluate(
@@ -7954,8 +7955,10 @@ test("single-sale badges share settings and respect click toggles, visibility, r
       .fill("-20");
     await save.click();
     await widget.getByRole("button", { name: /^Last Sale/ }).click();
-    await expect(input).toHaveValue("12");
-    await expect(widget.getByRole("status")).toContainText("greater than 0");
+    await expect(input).toHaveValue("1");
+    await expect(widget.getByRole("status")).toContainText(
+      "Starting price set to 1 Kosmo",
+    );
     await settings
       .getByRole("switch", {
         name: "Set price when Last Sale is clicked",
@@ -7971,7 +7974,7 @@ test("single-sale badges share settings and respect click toggles, visibility, r
       widget.getByRole("button", { name: /^Last Sale/ }),
     ).toHaveCount(0);
     await widget.locator(".sale").click();
-    await expect(input).toHaveValue("12");
+    await expect(input).toHaveValue("1");
     await settings
       .getByRole("checkbox", { name: "Show Lowest Listed price", exact: true })
       .uncheck();
@@ -8008,6 +8011,425 @@ test("single-sale badges share settings and respect click toggles, visibility, r
     await options.close();
   }
 });
+test("Quick Prices retain their order and nodes through refreshes, and rarity warnings leave submission available", async () => {
+  const options = await context.newPage();
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    const settings = options.locator("#sales-overlay"),
+      quickSwitch = settings.getByRole("checkbox", {
+        name: "Quick Prices",
+        exact: true,
+      });
+    await expect(quickSwitch).not.toBeChecked();
+    const discount = settings.getByRole("checkbox", {
+      name: "Enable Discount button",
+    });
+    const amount = settings.getByLabel("Amount", { exact: true }),
+      type = settings.getByLabel("Discount type", { exact: true }),
+      threshold = settings.getByLabel("Threshold", { exact: true });
+    await expect(discount).not.toBeChecked();
+    await expect(amount).toBeVisible();
+    await expect(amount).toBeDisabled();
+    await discount.check();
+    await expect(amount).toHaveValue("25");
+    await expect(type).toHaveValue("flat");
+    await expect(threshold).toHaveValue("5");
+    const amountBox = (await amount.boundingBox())!,
+      typeBox = (await type.boundingBox())!,
+      thresholdBox = (await threshold.boundingBox())!;
+    expect(typeBox.width).toBe(amountBox.width);
+    expect(typeBox.x).toBe(amountBox.x);
+    expect(typeBox.y).toBeGreaterThan(amountBox.y + amountBox.height);
+    expect(thresholdBox.y).toBeGreaterThan(typeBox.y + typeBox.height);
+    await discount.uncheck();
+    const quick = settings.getByRole("group", { name: "Quick Prices" }),
+      priceInput = quick.getByLabel("Price", { exact: true }),
+      addPrice = quick.getByRole("button", { name: "Add price" });
+    await expect(priceInput).toBeVisible();
+    await expect(priceInput).toBeDisabled();
+    await expect(addPrice).toBeDisabled();
+    await quickSwitch.check();
+    const priceBox = (await priceInput.boundingBox())!,
+      addBox = (await addPrice.boundingBox())!;
+    expect(priceBox.x).toBe(amountBox.x);
+    expect(addBox.x + addBox.width).toBeCloseTo(priceBox.x + priceBox.width, 0);
+    expect(addBox.y).toBeGreaterThan(priceBox.y + priceBox.height);
+    for (const price of ["50", "2.25", "60"]) {
+      await priceInput.fill(price);
+      await addPrice.click();
+    }
+    await quick.getByRole("button", { name: "Move price 2 up" }).click();
+    await quick.getByRole("button", { name: "Remove price 3" }).click();
+    await settings
+      .getByRole("checkbox", { name: "Use Custom Rarity Minimums" })
+      .check();
+    const minimums = settings.getByRole("group", {
+      name: "Use Custom Rarity Minimums",
+    });
+    const commonBox = (await minimums.getByLabel("Common", { exact: true }).boundingBox())!,
+      uncommonBox = (await minimums.getByLabel("Uncommon", { exact: true }).boundingBox())!;
+    expect(uncommonBox.y).toBeGreaterThan(commonBox.y + commonBox.height);
+    const epic = minimums.getByLabel("Epic", { exact: true });
+    await expect(epic).toHaveValue("20");
+    await epic.fill("19");
+    const save = settings.getByRole("button", { name: "Save", exact: true });
+    await save.click();
+    await expect(settings.getByRole("status")).toContainText(
+      "Epic minimum of at least 20",
+    );
+    await epic.fill("40");
+    await save.click();
+    await expect(settings.getByRole("status")).toContainText("Saved");
+    await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
+    const row = page.locator(".bsell-row").first(),
+      prices = row
+        .getByRole("region", { name: "Quick Prices" })
+        .getByRole("button"),
+      start = row.getByRole("textbox", { name: /Starting price/ }),
+      refresh = row.getByRole("button", { name: "Refresh my listing history" });
+    await start.evaluate((input) => {
+      const box = document.createElement("span");
+      box.className = "bsell-input";
+      input.before(box);
+      box.append(input);
+    });
+    await page.getByTestId("submit-sales").evaluate((button) => {
+      const screen = button.closest(".bsell")!;
+      const footer = document.createElement("div");
+      footer.className = "dock action-bar bsell-bar";
+      const info = document.createElement("span");
+      info.className = "action-bar-info";
+      info.textContent = "2 cards";
+      button.removeAttribute("data-testid");
+      button.setAttribute("class", "ui-btn ui-btn-primary");
+      button.textContent = "Put on sale";
+      footer.append(info, button);
+      screen.after(footer);
+    });
+    await page.addStyleTag({
+      content: `
+        .bsell-prices { display:grid; grid-template-columns:155px 1fr; align-items:end; gap:10px }
+        .bsell-prices label { display:grid; gap:6px }
+        .bsell-prices label > span { color:#bea9d4 }
+        .bsell-bar { display:flex; flex-wrap:wrap; gap:12px }
+        .bsell-bar > .action-bar-info { flex:1 }
+      `,
+    });
+    await row.locator(".kc").evaluate((card) => card.classList.add("kc-epic"));
+    await expect(prices).toHaveText(["$2.25", "$50"]);
+    const overlay = row.locator("[data-kosmore-sales-overlay]");
+    await expect(
+      overlay.locator(".quick-prices-label:has(+ .badges + .quick-prices)"),
+    ).toHaveText("Quick Prices");
+    await prices
+      .first()
+      .evaluate((node) => node.setAttribute("data-test-original", ""));
+    await refresh.click();
+    await expect(refresh).toBeEnabled();
+    await expect(prices.first()).toHaveAttribute("data-test-original", "");
+    await settings.getByLabel("Last Sale price adjustment", { exact: true }).fill("-1");
+    await save.click();
+    await expect(settings.getByRole("status")).toContainText("Saved");
+    await expect(prices.first()).toHaveAttribute("data-test-original", "");
+    const rowWarning = overlay.locator('[data-kosmore-sales-warning="row"]');
+    const controlsOffset = () =>
+      row.evaluate((element) => {
+        const box = element.querySelector(".bsell-input")!.getBoundingClientRect();
+        const tools = element.querySelector(".suggested")!.getBoundingClientRect();
+        return tools.y - box.y;
+      });
+    await start.fill("50");
+    await expect(rowWarning).toHaveCount(0);
+    const offset = await controlsOffset();
+    await prices.first().click();
+    await expect(start).toHaveValue("20");
+    await expect(rowWarning).toHaveText("Below Epic minimum of 40");
+    await expect(rowWarning).toHaveCSS("color", "rgb(255, 130, 139)");
+    expect(await controlsOffset()).toBeCloseTo(offset, 1);
+    const startBox = (await start.boundingBox())!,
+      warningBox = (await rowWarning.boundingBox())!;
+    expect(warningBox.y).toBeGreaterThanOrEqual(startBox.y + startBox.height);
+    const submit = page.getByRole("button", { name: "Put on sale", exact: true }),
+      summary = page.locator(
+        '.bsell-bar > button + [data-kosmore-sales-warning="summary"]',
+      );
+    await expect(summary).toHaveText(
+      "Some cards are below their configured minimums",
+    );
+    const summaryBox = (await summary.boundingBox())!,
+      submitBox = (await submit.boundingBox())!;
+    await expect(summary).toHaveCSS("text-align", "end");
+    expect(summaryBox.y - submitBox.y - submitBox.height).toBeCloseTo(4, 0);
+    await prices.last().click();
+    await expect(start).toHaveValue("50");
+    await expect(rowWarning).toHaveCount(0);
+    await expect(summary).toHaveCount(0);
+    await start.fill("30");
+    await expect(rowWarning).toBeVisible();
+    await expect(summary).toBeVisible();
+    await submit.click();
+    await expect(page.locator("body")).toHaveAttribute(
+      "data-submitted",
+      "true",
+    );
+    expect(writeRequests).toBe(0);
+  } finally {
+    await options.close();
+  }
+});
+
+const savedDiscountHistoryKey = "kosmore.listingRecord.fixtureplayer.42";
+async function seedDiscountHistory(listings: TrackedListing[]) {
+  await worker.evaluate(
+    async ({ key, listings }) => {
+      await chrome.storage.local.set({
+        [key]: {
+          v: 2,
+          complete: false,
+          pruned: false,
+          hasMore: true,
+          checkedAt: 0,
+          listings,
+        },
+      });
+    },
+    { key: savedDiscountHistoryKey, listings },
+  );
+}
+
+test("Discount uses the selected copy's saved unsold listings on both sell screens without refreshing history", async () => {
+  await pulsarSettings({
+    salesDiscountEnabled: true,
+    salesDiscountMode: "percent",
+    salesDiscountThreshold: 2,
+  });
+  await seedDiscountHistory([
+    {
+      id: myListing(21).id,
+      copyId: COPY_B,
+      startPrice: "99000000",
+      group: "unsold",
+    },
+    {
+      id: myListing(20).id,
+      copyId: COPY_A,
+      startPrice: "102500000",
+      group: "unsold",
+    },
+    {
+      id: myListing(19).id,
+      copyId: COPY_A,
+      startPrice: "110000000",
+      group: "unsold",
+    },
+  ]);
+  let historyReads = 0;
+  await page.route("**/api/me/auctions?**", (route) => {
+    historyReads++;
+    return route.abort();
+  });
+  await page.goto(
+    `https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`,
+  );
+  const sharedRefresh =
+    ".history-controls > .history + .discount + .history-check";
+  await expect(page.locator(sharedRefresh)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Discount: $76.5", exact: true })
+    .click();
+  await expect(page.getByTestId("sell-start")).toHaveValue("76.5");
+  await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
+  await page.route("**/api/market/listings/batch?**", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            key: "42.v",
+            instanceId: COPY_A,
+            card: { subjectId: "42" },
+            rarity: "Rare",
+            suggestion: "100",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/market/sell-draft", (route) =>
+    route.fulfill({ json: {} }),
+  );
+  await page.evaluate(() =>
+    fetch("/api/market/listings/batch?subjects=42.v").then((response) =>
+      response.json(),
+    ),
+  );
+  const first = page.locator(".bsell-row").first();
+  await expect(first.locator(sharedRefresh)).toBeVisible();
+  await first
+    .getByRole("button", { name: "Discount: $76.5", exact: true })
+    .click();
+  await expect(
+    first.getByRole("textbox", { name: /Starting price/ }),
+  ).toHaveValue("76.5");
+  await page.evaluate(
+    (copy) =>
+      fetch("/api/market/sell-draft", {
+        method: "PUT",
+        body: JSON.stringify({
+          items: [{ subjectId: "42", veil: true, copy }],
+        }),
+      }),
+    COPY_B,
+  );
+  await expect(first.locator(".price-badge.discount")).toHaveCount(0);
+  await expect(
+    first.getByRole("textbox", { name: /Starting price/ }),
+  ).toHaveValue("76.5");
+  expect(historyReads).toBe(0);
+});
+
+test("Discount checks the outcomes of saved submissions without a history refresh", async () => {
+  await pulsarSettings({ salesDiscountEnabled: true });
+  const listings = Array.from({ length: 6 }, (_, index) =>
+    myListing(510 + index, "42"),
+  );
+  await seedDiscountHistory(
+    listings.map(({ id, endsAt }, index) => ({
+      id,
+      copyId: COPY_A,
+      startPrice: index === 0 ? "498000000" : "325000000",
+      ...(index < 4
+        ? { submittedAt: Date.now() - (index + 1) * 3_600_000 }
+        : { group: "unsold" as const, state: "expired", endsAt }),
+    })),
+  );
+  let historyReads = 0,
+    detailReads = 0;
+  await page.route("**/api/me/auctions?**", (route) => {
+    historyReads++;
+    return route.abort();
+  });
+  await page.route("**/api/auctions/*", (route) => {
+    const listing = listings.find(({ id }) =>
+      route.request().url().endsWith(id),
+    );
+    if (!listing) return route.fallback();
+    detailReads++;
+    return route.fulfill({ json: { ...listing, copy: { id: COPY_A } } });
+  });
+  await page.goto(
+    `https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`,
+  );
+  await page
+    .getByRole("button", { name: "Discount: $473", exact: true })
+    .click();
+  await expect(page.getByTestId("sell-start")).toHaveValue("473");
+  const saved = await worker.evaluate(async (key) => {
+    return (
+      (await chrome.storage.local.get(key))[key] as {
+        listings: TrackedListing[];
+      }
+    ).listings;
+  }, savedDiscountHistoryKey);
+  expect(
+    saved
+      .slice(0, 4)
+      .every(({ state, group }) => state === "expired" && group === "unsold"),
+  ).toBe(true);
+  expect(saved[0].startPrice).toBe("498000000");
+  expect(detailReads).toBe(4);
+  expect(historyReads).toBe(0);
+});
+
+test("Discount verifies older saved expirations using Kosmora's live copy fields", async () => {
+  await pulsarSettings({ salesDiscountEnabled: true });
+  const listings = Array.from({ length: 6 }, (_, i) =>
+    myListing(460 + i, "42", {
+      startPrice: i === 0 ? "420000000" : "399000000",
+    }),
+  );
+  await seedDiscountHistory(
+    [listings[0], ...listings.slice(4)].map(({ id, startPrice, endsAt }) => ({
+      id,
+      startPrice,
+      endsAt,
+      state: "expired",
+      group: "unsold",
+    })),
+  );
+  await page.route("**/api/me/auctions?**", (route) =>
+    route.fulfill({
+      json: {
+        ...myListingPage(listings.slice(0, 4)),
+        relistAll: {
+          items: [{ auctionId: listings[0].id, instanceId: COPY_A }],
+        },
+      },
+    }),
+  );
+  let detailReads = 0;
+  await page.route("**/api/auctions/*", (route) => {
+    const index = listings.findIndex(({ id }) =>
+      route.request().url().endsWith(id),
+    );
+    if (index < 0) return route.fallback();
+    detailReads++;
+    return route.fulfill({
+      json: { ...listings[index], copy: { id: index === 2 ? COPY_B : COPY_A } },
+    });
+  });
+  await page.route("**/api/market/listings/batch?**", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            key: "42.v",
+            instanceId: COPY_A,
+            card: { subjectId: "42" },
+            rarity: "Epic",
+            suggestion: { start: "210000000" },
+          },
+        ],
+      },
+    }),
+  );
+  await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
+  await page.evaluate(() =>
+    fetch("/api/market/listings/batch?subjects=42.v").then((response) =>
+      response.json(),
+    ),
+  );
+  const row = page.locator(".bsell-row").first();
+  await row
+    .getByRole("button", { name: "Refresh my listing history", exact: true })
+    .click();
+  await row
+    .getByRole("button", { name: "Discount: $395", exact: true })
+    .click();
+  await expect(
+    row.getByRole("textbox", { name: /Starting price/ }),
+  ).toHaveValue("395");
+  await expect(
+    page.locator(".bsell-row").nth(1).locator(".discount"),
+  ).toHaveCount(0);
+  expect(detailReads).toBe(5);
+  const saved = await worker.evaluate(async (key) => {
+    const { listings } = (await chrome.storage.local.get(key))[key] as {
+      listings: { copyId?: string; group: string; startPrice: string }[];
+    };
+    return listings;
+  }, savedDiscountHistoryKey);
+  expect(saved.map(({ copyId }) => copyId)).toEqual([
+    COPY_A,
+    COPY_A,
+    COPY_B,
+    COPY_A,
+    COPY_A,
+    COPY_A,
+  ]);
+  expect(saved.every(({ group }) => group === "unsold")).toBe(true);
+  expect(saved[0].startPrice).toBe("420000000");
+});
+
 test("late sales prices cannot populate a replaced batch row or edit a new card automatically", async () => {
   let release!: () => void, started!: () => void;
   const held = new Promise<void>((resolve) => {
@@ -8050,12 +8472,12 @@ test("late sales prices cannot populate a replaced batch row or edit a new card 
       "47",
     );
     await expect(
-      first.getByRole("button", { name: /^Last Sale \$7/ }),
+      first.getByRole("button", { name: /^Last Sale: \$7/ }),
     ).toBeEnabled();
     await expect(first.locator(".price-badge.sale")).not.toContainText("$90");
     await expect(first.locator("input")).toHaveValue("12.00");
     expect(await oldInput!.evaluate((el) => el.isConnected)).toBe(false);
-    await first.getByRole("button", { name: /^Last Sale \$7/ }).click();
+    await first.getByRole("button", { name: /^Last Sale: \$7/ }).click();
     await expect(first.locator("input")).toHaveValue("7");
     await expect(
       page.locator(".bsell-row").nth(1).locator("input"),
@@ -9787,5 +10209,50 @@ test("native relists verify the exact auction once and save the accepted startin
   } finally {
     await page.unroute("**/api/auctions/" + previous.id + "/relist");
     await page.unroute("**/api/auctions/" + relisted.id);
+  }
+});
+
+test("Sell Many shows one reconnect notice when the tab outlives an extension reload", async () => {
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-img").hover();
+  const popup = page.locator("#kosmore-root");
+  await expect(popup).toBeVisible();
+
+  const session = await context.newCDPSession(page);
+  const errors: string[] = [];
+  session.on("Runtime.exceptionThrown", ({ exceptionDetails }) => {
+    errors.push(
+      exceptionDetails.exception?.description ?? exceptionDetails.text,
+    );
+  });
+  try {
+    await session.send("Runtime.enable");
+    const nextWorker = context.waitForEvent("serviceworker");
+    await worker.evaluate(() => setTimeout(() => chrome.runtime.reload(), 0));
+    worker = await nextWorker;
+    await page.evaluate((markup) => {
+      history.pushState({}, "", "/market/sell/batch?s=42.v,46.f");
+      const batch = new DOMParser().parseFromString(markup, "text/html");
+      document
+        .querySelector("main")!
+        .replaceWith(batch.querySelector("main")!);
+    }, sellManyFixture(true));
+    const notice = page.locator('[data-kosmore-sales-warning="reconnect"]'),
+      refresh = page.getByRole("button", { name: "Refresh my listing history" });
+    await expect(popup).toHaveCount(0);
+    await expect(notice).toHaveText(
+      "Refresh this Kosmora tab to reconnect your listing history.",
+    );
+    await expect(refresh).toHaveCount(2);
+    for (const button of await refresh.all()) await expect(button).toBeDisabled();
+    await expect(page.getByText(/Extension context invalidated/i)).toHaveCount(0);
+    expect(errors).toEqual([]);
+
+    await page.reload();
+    await expect(page.locator("[data-kosmore-sales-overlay]")).toHaveCount(2);
+    await expect(notice).toHaveCount(0);
+    await expect(refresh.first()).toBeEnabled();
+  } finally {
+    await session.detach();
   }
 });

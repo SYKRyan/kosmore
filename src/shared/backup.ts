@@ -19,7 +19,13 @@ import {
 } from "./hotkeys";
 import { STAT_CATALOG } from "./stat-catalog";
 import { parsePopupPosition } from "./popup-layout";
-import { validSaleAdjustment } from "./sales-prices";
+import {
+  SALE_MINIMUMS,
+  type SaleRarity,
+  validDiscountThreshold,
+  validSaleAdjustment,
+  validSalePrice,
+} from "./sales-prices";
 import { subjectId, uuid } from "../kosmora/contracts";
 import { FINISHES, messageOf, type Finish, type Settings } from "./types";
 
@@ -136,6 +142,42 @@ function backupSettings(value: unknown): Settings {
   ] as const)
     if (Object.hasOwn(raw, key) && !validSaleAdjustment(raw[key]))
       throw new Error(`Setting ${key} is not a valid price adjustment.`);
+  if (
+    Object.hasOwn(raw, "salesDiscountAmount") &&
+    !validSalePrice(raw.salesDiscountAmount, 1)
+  )
+    throw new Error("The discount amount must be at least 1.");
+  if (
+    Object.hasOwn(raw, "salesDiscountMode") &&
+    raw.salesDiscountMode !== "flat" &&
+    raw.salesDiscountMode !== "percent"
+  )
+    throw new Error("The discount type must be Flat or Percent.");
+  if (
+    Object.hasOwn(raw, "salesDiscountThreshold") &&
+    !validDiscountThreshold(raw.salesDiscountThreshold)
+  )
+    throw new Error(
+      "The discount threshold must be a whole number of at least 1.",
+    );
+  if (
+    Object.hasOwn(raw, "salesQuickPrices") &&
+    !array(raw.salesQuickPrices, "Quick Prices").every((price) =>
+      validSalePrice(price),
+    )
+  )
+    throw new Error(
+      "Quick Prices must contain positive prices with up to six decimal places.",
+    );
+  if (Object.hasOwn(raw, "salesCustomMinimums"))
+    for (const [rarity, minimum] of Object.entries(
+      record(raw.salesCustomMinimums, "Custom rarity minimums"),
+    ))
+      if (
+        !Object.hasOwn(SALE_MINIMUMS, rarity) ||
+        !validSalePrice(minimum, SALE_MINIMUMS[rarity as SaleRarity])
+      )
+        throw new Error(`Invalid custom rarity minimum for ${rarity}.`);
   if (
     Object.hasOwn(raw, "popupPosition") &&
     raw.popupPosition !== null &&
