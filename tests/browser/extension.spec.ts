@@ -2565,7 +2565,9 @@ test("pack hotkeys use native controls and keep card inspection on keyboard focu
       },
     });
   });
-  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1`);
+  await page.goto(
+    `https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1&slowTear=1&secondCard=1`,
+  );
   await expect(page.locator("#kosmore-pack-hotkeys-style")).toHaveCount(1);
   const body = page.locator("body");
   const popup = page.locator("#kosmore-root");
@@ -2585,21 +2587,31 @@ test("pack hotkeys use native controls and keep card inspection on keyboard focu
   await press("l");
   await expect(body).toHaveAttribute("data-skip", "1");
   await expect(body).toHaveAttribute("data-later", "1");
+  const pack = page.locator(".ko-pack-ready");
+  await pack.evaluate((element) => element.classList.add("ko-pack-hold"));
   await page.keyboard.down("ArrowRight");
   await page.keyboard.down("ArrowRight");
   await page.keyboard.up("ArrowRight");
-  await expect(body).toHaveAttribute("data-advances", "1");
-  await press("ArrowRight");
+  await expect(body).not.toHaveAttribute("data-advances");
+  await pack.evaluate((element) => element.classList.remove("ko-pack-hold"));
   const revealedCard = page.locator(".ko-card");
   await expect(revealedCard).toBeFocused();
+  await expect(body).toHaveAttribute("data-advances", "2");
+  await expect(revealedCard).toHaveCSS("outline-style", "none");
   await expect
     .poll(() => focusMarker(revealedCard))
-    .toEqual({
-      hasStar: true,
-      centered: true,
-      matchesOutline: true,
-    });
+    .toMatchObject({ hasStar: false });
+  await expect(popup).toHaveCount(0);
+  await tooltipButton().click();
   await expect(popup).toContainText("Northern Lights");
+  await press("ArrowRight");
+  await expect(revealedCard).toBeFocused();
+  await expect(revealedCard).toHaveCSS("outline-style", "none");
+  await expect
+    .poll(() => focusMarker(revealedCard))
+    .toMatchObject({ hasStar: false });
+  await expect(revealedCard).toContainText("Voyager 1");
+  await expect(popup).toHaveCount(0);
   await press("ArrowRight");
   await expect(page.locator(".ko-drop")).toBeVisible();
   await expect(popup).toHaveCount(0);
@@ -2616,13 +2628,13 @@ test("pack hotkeys use native controls and keep card inspection on keyboard focu
   await expect(tiles.nth(0).getByText("New For Everyone")).toBeVisible();
   await expect(tiles.nth(0).getByText("New For You")).toBeVisible();
   await expect(tiles.nth(1).getByText(/New For/)).toHaveCount(0);
-  await press("ArrowRight");
   await expect(cards.nth(0)).toBeFocused();
+  await expect(popup).toHaveCount(0);
   await expect(cards.nth(0)).toHaveCSS("outline-style", "none");
   await expect(faces.nth(0)).toHaveCSS("outline-width", "3px");
   await expect
     .poll(() => focusMarker(faces.nth(0)))
-    .toMatchObject({ hasStar: true });
+    .toEqual({ hasStar: true, centered: true, matchesOutline: true });
   await expect
     .poll(() => focusMarker(cards.nth(0)))
     .toMatchObject({ hasStar: false });
@@ -2688,7 +2700,19 @@ test("pack hotkeys use native controls and keep card inspection on keyboard focu
   await expect(page).toHaveURL("https://kosmora.io/card/43");
 });
 
-test("a pinned tooltip focuses the first card on a new summary after the found-pack prompt", async () => {
+test("a pinned tooltip follows card reveals and focuses the first summary card after the found-pack prompt", async () => {
+  await pulsarSettings({
+    packOpeningHotkeysEnabled: true,
+    packOpeningHotkeys: {
+      nextCard: {
+        code: "ArrowRight",
+        ctrl: false,
+        alt: false,
+        shift: false,
+        meta: false,
+      },
+    },
+  });
   await page.goto("https://kosmora.io/collection");
   await page.locator(".kc-article").hover();
   const popup = page.locator("#kosmore-root");
@@ -2706,20 +2730,36 @@ test("a pinned tooltip focuses the first card on a new summary after the found-p
     )
     .toBe(true);
 
-  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1`);
+  await page.goto(
+    `https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1&secondCard=1`,
+  );
   await expect(
     popup.getByText("No Card Selected", { exact: true }),
   ).toBeVisible();
   await page.keyboard.press("ArrowRight");
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
   await page.keyboard.press("ArrowRight");
-  await expect(page.locator(".ko-beat-shown")).toBeVisible();
+  await expect(popup.locator("h2")).toHaveText("Voyager 1");
+  await expect(popup).toHaveAttribute("data-pinned", "");
   await page.keyboard.press("ArrowRight");
   const prompt = page.getByRole("button", { name: "Continue", exact: true });
   const cards = page.locator(".ko-grid-open");
   await expect(prompt).toBeVisible();
   await expect(cards.first()).not.toBeFocused();
+  await cards.first().evaluate((button: HTMLButtonElement) => {
+    button.disabled = true;
+  });
   await prompt.click();
   await prompt.click();
+  await expect(prompt).toHaveCount(0);
+  await cards.first().evaluate(async (button: HTMLButtonElement) => {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+    if (document.activeElement?.matches(".ko-grid-open"))
+      throw new Error("Focused a later card while the first card was unavailable");
+    button.disabled = false;
+  });
   await expect(cards.first()).toBeFocused();
   await expect(popup.locator("h2")).toHaveText("Northern Lights");
   await expect(popup).toHaveAttribute("data-pinned", "");
@@ -2733,21 +2773,32 @@ test("a pinned tooltip focuses the first card on a new summary after the found-p
   await expect(cards.first()).toBeFocused();
   await expect(popup.locator("h2")).toHaveText("Northern Lights");
   // Kosmora can announce a found pack after the summary has already appeared.
-  await page.locator(".ko-summary").evaluate((summary) => {
-    const drop = document.createElement("div");
-    drop.className = "ko-drop";
-    drop.setAttribute("aria-modal", "true");
-    const button = document.createElement("button");
-    button.textContent = "Continue";
-    button.addEventListener("click", () => drop.remove());
-    drop.append(button);
-    summary.prepend(drop);
-    button.focus();
-  });
+  const showLateDrop = () =>
+    page.locator(".ko-summary").evaluate((summary) => {
+      const drop = document.createElement("div");
+      drop.className = "ko-drop";
+      drop.setAttribute("aria-modal", "true");
+      const button = document.createElement("button");
+      button.textContent = "Continue";
+      button.addEventListener("click", () => drop.remove());
+      drop.append(button);
+      summary.prepend(drop);
+      button.focus();
+    });
+  await showLateDrop();
   await expect(prompt).toBeFocused();
   await prompt.click();
   await expect(cards.first()).toBeFocused();
   await expect(popup.locator("h2")).toHaveText("Northern Lights");
+
+  await cards.nth(1).hover({ position: { x: 220, y: 40 } });
+  await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_B);
+  await showLateDrop();
+  await expect(prompt).toBeFocused();
+  await prompt.click();
+  await expect(prompt).toHaveCount(0);
+  await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_B);
+  await expect(cards.first()).not.toBeFocused();
 
   await cards.nth(1).focus();
   await page.locator(".ko-summary").evaluate(async (summary) => {
@@ -2787,6 +2838,19 @@ test("an unpinned pack tooltip follows the mouse without changing keyboard focus
   await page.keyboard.press("ArrowRight");
   await expect(cards.nth(1)).toBeFocused();
   await expect(popup.locator("h2")).toHaveText("Northern Lights");
+
+  const tiles = page.locator(".ko-grid > li");
+  await tiles.evaluateAll((items) => {
+    items.forEach((item, index) => {
+      (item as HTMLElement).hidden = index !== 1;
+    });
+  });
+  const face = tiles.nth(1).locator(".kc-article");
+  await expect(cards.nth(1)).toBeFocused();
+  await expect(face).toHaveCSS("outline-style", "none");
+  expect(
+    await face.evaluate((element) => getComputedStyle(element, "::after").backgroundImage),
+  ).toBe("none");
 });
 
 test("pinning a keyboard-opened tooltip preserves card focus and uses the saved position", async () => {
@@ -4955,7 +5019,7 @@ test("card market indicators remain independent while tooltip headers use price 
     await page.unroute("**/api/cards/*/prices?**");
   }
 });
-test("For Sale marks only your listed cards on the left, stays aligned and honors overlay settings", async () => {
+test("For Sale marks only your listings, centers in albums and honors overlay settings", async () => {
   await worker.evaluate(async () => {
     const saved = (await chrome.storage.local.get("kosmore.settings"))[
       "kosmore.settings"
@@ -4997,12 +5061,16 @@ test("For Sale marks only your listed cards on the left, stays aligned and honor
   });
   const options = await context.newPage();
   try {
-    await page.goto("https://kosmora.io/collection");
-    await page.evaluate(
+    const albumUrl = `https://kosmora.io/albums/${ALBUM_A}`;
+    await page.route(albumUrl, (route) =>
+      route.fulfill({ contentType: "text/html", body: fixture("page") }),
+    );
+    const showCards = () => page.evaluate(
       (html) => {
         document.querySelector("main")!.innerHTML = html;
       },
-      '<h1>For Sale overlay</h1><div style="display:flex;gap:20px">' +
+      '<style>.kc-window > .kc-img { display:block }</style>' +
+        '<h1>For Sale overlay</h1><div style="display:flex;gap:20px">' +
         ["42", "43"]
           .map(
             (id) =>
@@ -5011,6 +5079,8 @@ test("For Sale marks only your listed cards on the left, stays aligned and honor
           .join("") +
         "</div>",
     );
+    await page.goto("https://kosmora.io/collection");
+    await showCards();
     const own = page.locator("#card-42"),
       label = own.locator("[data-kosmore-card-overlays] .on-sale");
     await expect(label).toHaveText("For Sale");
@@ -5119,6 +5189,32 @@ test("For Sale marks only your listed cards on the left, stays aligned and honor
       .getByRole("button", { name: "Save", exact: true })
       .click();
     await expect(label).toBeVisible();
+
+    await page.goto(albumUrl);
+    await showCards();
+    await expect(label).toBeVisible();
+    await expect(label).toHaveCSS("background-color", "rgba(0, 0, 0, 0.62)");
+    await expect(page.locator("#card-43 .on-sale")).toHaveCount(0);
+    await own.locator("footer").evaluate((footer) => {
+      footer.style.minHeight = "55px";
+    });
+    for (const width of [200, 144]) {
+      await own.evaluate((el, width) => (el.style.width = `${width}px`), width);
+      const bounds = (await own.locator(".kc-img").boundingBox())!;
+      const sale = (await label.boundingBox())!;
+      expect(
+        Math.abs(sale.x + sale.width / 2 - bounds.x - bounds.width / 2),
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(sale.y + sale.height / 2 - bounds.y - bounds.height / 2),
+      ).toBeLessThanOrEqual(1);
+      expect(sale.width).toBeGreaterThan(55);
+      expect(sale.width).toBeLessThan(bounds.width);
+    }
+    await expect(label).toHaveCSS("pointer-events", "none");
+    await page.screenshot({
+      path: "test-results/screenshots/album-for-sale-overlay.png",
+    });
     await options.getByLabel("Enable card overlays", { exact: true }).uncheck();
     await expect(page.locator("[data-kosmore-card-overlays]")).toHaveCount(0);
     await expect(toggle).toBeDisabled();

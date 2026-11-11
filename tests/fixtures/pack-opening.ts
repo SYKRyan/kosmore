@@ -109,16 +109,27 @@ export function packOpeningFixture(revealHints = true) {
         observer.observe(sentinel);
       }
       window.addEventListener('keydown', (event) => {
-        const ready = document.querySelector('.ko-pack-ready');
+        const ready = document.querySelector('.ko-pack-ready:not(.ko-pack-hold)');
         const table = document.querySelector('.ko-table');
         if (event.key !== 'ArrowRight' || (!ready && !table)) return;
         event.preventDefault();
         count('advances');
-        if (ready) ready.outerHTML = '<div class="ko-table">Reveal card</div>';
-        else if (!table.querySelector('.ko-card')) {
-          table.innerHTML = ${JSON.stringify(`<div class="ko-card ko-beat-idle" role="button" tabindex="-1"><div class="ko-face-front">${face("42")}</div></div><ol class="ko-tray"><li class="on"></li></ol>`)};
-          setTimeout(() => table.querySelector('.ko-card').className = 'ko-card ko-beat-shown', 50);
-        } else finish();
+        if (ready) {
+          const deal = () => ready.outerHTML = ${JSON.stringify(`<div class="ko-table"><div class="ko-card ko-beat-idle" role="button" tabindex="-1"><div class="ko-face-front">${face("42")}</div></div><ol class="ko-tray"><li class="on"></li></ol></div>`)};
+          if (new URLSearchParams(location.search).has('slowTear')) {
+            ready.className = 'ko-pack-burst';
+            setTimeout(deal, 50);
+          } else deal();
+        } else if (table.querySelector('.ko-beat-idle')) {
+          const card = table.querySelector('.ko-beat-idle');
+          card.className = 'ko-card ko-beat-flipping';
+          setTimeout(() => card.className = 'ko-card ko-beat-shown', 50);
+        } else if (table.querySelector('.ko-beat-shown')) {
+          if (new URLSearchParams(location.search).has('secondCard') && document.body.dataset.advances === '3') {
+            table.querySelector('.ko-face-front').innerHTML = ${JSON.stringify(face("43", "Voyager 1"))};
+            table.querySelector('.ko-tray').insertAdjacentHTML('beforeend', '<li class="on"></li>');
+          } else finish();
+        }
       });
     </script>
   </body></html>`;

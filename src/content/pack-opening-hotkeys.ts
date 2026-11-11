@@ -19,6 +19,9 @@ const FOUND_PACK_CONTINUE = "button.ko-drop-btn";
 const FOUND_PACK_TYPES = ["ko-drop-rogue", "ko-drop-mega"] as const;
 const GRID_CARD = ".ko-grid > li > button.ko-grid-open";
 const GRID_MORE = ".ko-grid-more";
+const SEALED_PACK = ".ko-pack-intro, .ko-pack-ready";
+const READY_PACK = ".ko-pack-ready:not(.ko-pack-hold)";
+const REVEAL_TABLE = ".ko-table:not(.ko-table-ahead)";
 const REVEALED_CARD = ".ko-card.ko-beat-shown";
 const REVEAL = ".ko-scene:not(.ko-summary-scene)";
 const SKIP = "button.ko-skip:not(.ko-later):not(.ko-talents)";
@@ -75,7 +78,11 @@ function gridCards(summary: HTMLElement): HTMLElement[] {
 export class PackOpeningHotkeys {
   private url = location.href;
   private focused?: HTMLElement;
-  private reveal?: { scene: HTMLElement; previous?: string };
+  private reveal?: {
+    scene: HTMLElement;
+    previous?: string;
+    advance?: "tear" | "firstCard";
+  };
   private batch?: {
     summary: HTMLElement;
     index: number | "last";
@@ -83,9 +90,11 @@ export class PackOpeningHotkeys {
     timer: ReturnType<typeof setTimeout>;
   };
   private handledKey?: string;
+  private revealedOpening?: string;
   private summaryFocus?: {
-    summary: HTMLElement;
+    opening: string | HTMLElement;
     pending: boolean;
+    requiresPinnedTooltip: boolean;
     card?: HTMLElement;
   };
   private skipAttempts = new Set<string>();
@@ -109,17 +118,20 @@ export class PackOpeningHotkeys {
     const style = document.createElement("style");
     style.id = "kosmore-pack-hotkeys-style";
     const focusedSummaryButton = `button.ko-grid-open:is([${PACK_FOCUS}], :focus-visible)`;
-    const focusedSummaryFace = `${SUMMARY} .ko-grid > li:has(> ${focusedSummaryButton}) .kc-article`;
-    const summaryButtonWithFace = `${SUMMARY} .ko-grid > li:has(.kc-article) > ${focusedSummaryButton}`;
-    const outlinedCard = `[${PACK_FOCUS}]:not(${summaryButtonWithFace}), ${focusedSummaryFace}`;
+    const summaryGrid = `${SUMMARY} .ko-grid`;
+    const visibleCard = 'li:not([hidden], [aria-hidden="true"], [inert])';
+    const multiCardGrid = `${summaryGrid}:has(> ${visibleCard} ~ ${visibleCard})`;
+    const focusedSummaryFace = `${multiCardGrid} > li:has(> ${focusedSummaryButton}) .kc-article`;
+    const summaryButtonWithoutFace = `${multiCardGrid} > li:not(:has(.kc-article)) > ${focusedSummaryButton}`;
+    const outlinedCard = `${focusedSummaryFace}, ${summaryButtonWithoutFace}`;
     style.textContent = `
-      [${PACK_FOCUS}],
-      ${focusedSummaryFace} {
+      ${summaryGrid} > li > ${focusedSummaryButton},
+      ${REVEAL} ${REVEALED_CARD}[${PACK_FOCUS}] {
+        outline: none !important;
+      }
+      ${outlinedCard} {
         outline: 3px solid ${FOCUS_COLOR} !important;
         outline-offset: 3px;
-      }
-      ${summaryButtonWithFace} {
-        outline: none !important;
       }
       /* Let Kosmora's card positioning take precedence. */
       :where(${outlinedCard}) {
@@ -161,6 +173,7 @@ export class PackOpeningHotkeys {
     );
     window.addEventListener("pagehide", () => {
       this.nextPackSkip = undefined;
+      this.revealedOpening = undefined;
       this.summaryFocus = undefined;
       this.reset();
     });
@@ -198,9 +211,20 @@ export class PackOpeningHotkeys {
     return true;
   }
 
+  inspectSummaryCard(context: CardContext) {
+    if (context.surface !== "summary" || context.entryIndex === 0) return;
+    const summary = context.anchor.closest<HTMLElement>(SUMMARY);
+    if (summary) this.cancelSummaryFocus(summary);
+  }
+
   private onFocusIn = (event: FocusEvent) => {
     if (event.target instanceof Element && !this.keepsFocus(event.target)) {
-      this.deferFocusForDrop(event.target);
+      if (location.pathname === OPENING_PATH) {
+        const drop = event.target.closest(".ko-drop");
+        const summary = document.querySelector<HTMLElement>(SUMMARY);
+        if (drop) this.deferFocusForDrop(drop);
+        else if (summary) this.cancelSummaryFocus(summary);
+      }
       this.cancelBatch();
       this.reveal = undefined;
       this.clearFocus();
@@ -322,7 +346,7 @@ export class PackOpeningHotkeys {
       this.activate(event, control(scene, "button.ko-skip.ko-later"));
     else if (
       action === "nextCard" &&
-      control(scene, ".ko-pack-ready, .ko-table:not(.ko-table-ahead)")
+      control(scene, `${SEALED_PACK}, ${REVEAL_TABLE}`)
     ) {
       this.consume(event);
       const shown = control(scene, REVEALED_CARD);
@@ -332,18 +356,54 @@ export class PackOpeningHotkeys {
       this.reveal = {
         scene,
         previous: context ? contextKey(context) : undefined,
+        advance: control(scene, SEALED_PACK) ? "tear" : undefined,
       };
-      // The live reveal control uses pointer gestures and a window keyboard
-      // handler. Dispatch its native key directly to that handler's target.
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "ArrowRight",
-          code: "ArrowRight",
-          cancelable: true,
-        }),
-      );
+      if (this.reveal.advance) this.updateReveal();
+      else this.advanceReveal();
     }
   };
+
+  private advanceReveal() {
+    // Kosmora handles pointer gestures and the equivalent key on the window.
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "ArrowRight",
+        code: "ArrowRight",
+        cancelable: true,
+      }),
+    );
+  }
+
+  private updateReveal() {
+    const reveal = this.reveal;
+    if (!reveal) return;
+    const { scene } = reveal;
+    if (!scene.isConnected || !scene.matches(REVEAL)) {
+      this.reveal = undefined;
+      return;
+    }
+    if (reveal.advance === "tear") {
+      if (control(scene, READY_PACK)) {
+        reveal.advance = "firstCard";
+        this.advanceReveal();
+      }
+      return;
+    }
+    const table = control(scene, REVEAL_TABLE);
+    if (!table) return;
+    const shown = control(table, REVEALED_CARD);
+    const context = shown && resolveCard(shown);
+    if (shown && context && contextKey(context) !== reveal.previous) {
+      this.reveal = undefined;
+      this.focusCard(shown, context, "pinned");
+    } else if (
+      reveal.advance === "firstCard" &&
+      control(table, ".ko-card.ko-beat-idle")
+    ) {
+      reveal.advance = undefined;
+      this.advanceReveal();
+    }
+  }
 
   private onPackClick = (event: MouseEvent) => {
     if (
@@ -352,8 +412,13 @@ export class PackOpeningHotkeys {
     )
       return;
     const openingId = this.openingId(new URLSearchParams(location.search));
-    if (openingId && event.target.closest(SKIP)?.closest(REVEAL))
-      this.recordSkip(openingId);
+    const skip = event.target.closest(SKIP);
+    if (
+      (skip ?? event.target.closest("button.ko-skip.ko-later"))?.closest(REVEAL)
+    ) {
+      this.reveal = undefined;
+      if (skip && openingId) this.recordSkip(openingId);
+    }
     if (event.target.closest(`${SUMMARY} ${BACK_TO_PACKS}`))
       this.nextPackSkip = undefined;
     const next = event.target.closest<HTMLElement>(`${SUMMARY} ${NEXT_PACK}`);
@@ -505,42 +570,84 @@ export class PackOpeningHotkeys {
     this.closeTooltip();
   }
 
-  private focusCard(card: HTMLElement, context = resolveCard(card)) {
+  private focusCard(
+    card: HTMLElement,
+    context = resolveCard(card),
+    tooltip: "always" | "pinned" = "always",
+  ) {
+    if (context) this.inspectSummaryCard(context);
     if (this.focused !== card) this.focused?.removeAttribute(PACK_FOCUS);
     this.focused = card;
     card.setAttribute(PACK_FOCUS, "");
     card.focus({ preventScroll: true });
     card.scrollIntoView({ block: "nearest", inline: "nearest" });
-    if (context) this.showTooltip(context);
+    if (context && (tooltip === "always" || this.pinnedTooltipVisible()))
+      this.showTooltip(context);
     else this.closeTooltip();
   }
 
   private deferFocusForDrop(target: Element) {
+    const summary = target.closest<HTMLElement>(SUMMARY);
     const focus = this.summaryFocus;
     if (
       focus?.card &&
       focus.card === this.focused &&
-      target.closest(".ko-drop")?.closest(SUMMARY) === focus.summary
+      summary?.contains(focus.card) &&
+      target.closest(".ko-drop")
     ) {
       focus.pending = true;
     }
   }
 
+  private summaryFocusFor(summary: HTMLElement) {
+    // A recap URL update or replacement summary can still be the same opening.
+    const openingId = this.summaryOpeningId();
+    const opening = openingId || summary;
+    if (opening !== this.summaryFocus?.opening) {
+      const fromReveal = this.revealedOpening === openingId;
+      this.revealedOpening = undefined;
+      this.summaryFocus = {
+        opening,
+        pending: fromReveal || this.pinnedTooltipVisible(),
+        requiresPinnedTooltip: !fromReveal,
+      };
+    }
+    return this.summaryFocus;
+  }
+
+  private summaryOpeningId() {
+    const params = new URLSearchParams(location.search);
+    return params.get("batch") || this.openingId(params);
+  }
+
+  private cancelSummaryFocus(summary: HTMLElement) {
+    const focus = this.summaryFocusFor(summary);
+    focus.pending = false;
+    focus.card = undefined;
+  }
+
   private focusSummary() {
-    const summary =
-      location.pathname === OPENING_PATH
-        ? document.querySelector<HTMLElement>(SUMMARY)
-        : null;
-    if (!summary) {
+    if (location.pathname !== OPENING_PATH) {
+      this.revealedOpening = undefined;
       this.summaryFocus = undefined;
       return;
     }
-    const pinned = this.pinnedTooltipVisible();
-    if (summary !== this.summaryFocus?.summary)
-      this.summaryFocus = { summary, pending: pinned };
-    const focus = this.summaryFocus;
-    if (!focus || !pinned) {
-      if (focus) focus.pending = false;
+    const summary = document.querySelector<HTMLElement>(SUMMARY);
+    if (!summary) {
+      const scene = control(document, REVEAL);
+      if (!scene) return;
+      this.summaryFocus = undefined;
+      const opening = this.summaryOpeningId();
+      if (opening !== this.revealedOpening)
+        this.revealedOpening = control(scene, REVEALED_CARD)
+          ? opening
+          : undefined;
+      return;
+    }
+    const focus = this.summaryFocusFor(summary);
+    if (focus.requiresPinnedTooltip && !this.pinnedTooltipVisible()) {
+      focus.pending = false;
+      focus.card = undefined;
       return;
     }
     if (!focus.pending && focus.card !== this.focused) return;
@@ -550,12 +657,12 @@ export class PackOpeningHotkeys {
       return;
     }
     if (!focus.pending) return;
-    const card = control(summary, GRID_CARD);
-    const context = card && resolveCard(card);
-    if (!card || !context) return;
+    const card = summary.querySelector<HTMLElement>(GRID_CARD);
+    const context = card && available(card) && resolveCard(card);
+    if (!context) return;
     focus.card = card;
     focus.pending = false;
-    this.focusCard(card, context);
+    this.focusCard(card, context, "pinned");
   }
 
   private cancelBatch() {
@@ -603,16 +710,7 @@ export class PackOpeningHotkeys {
     }
     if (this.focused && (!available(this.focused) || !this.hasFocus()))
       this.clearFocus();
-    if (this.reveal) {
-      const { scene, previous } = this.reveal;
-      const shown = control(scene, REVEALED_CARD);
-      const context = shown && resolveCard(shown);
-      if (!scene.isConnected) this.reveal = undefined;
-      else if (shown && context && contextKey(context) !== previous) {
-        this.reveal = undefined;
-        this.focusCard(shown);
-      }
-    }
+    this.updateReveal();
     if (this.batch) {
       const { summary, index, count } = this.batch;
       const cards = gridCards(summary);

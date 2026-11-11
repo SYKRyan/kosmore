@@ -213,7 +213,7 @@ Find **Pack Openings** just below **Navigation Hotkeys**. Its hotkeys start off 
 
 **Show remaining pack count** starts on and shows the number of ready packs above **Open the Next Pack**.
 
-- **Next Card** tears the ready pack and steps through the reveal. On the summary, use **Next Card**, **Previous Card**, **Focus First Card**, or **Focus Last Card** to inspect the grid. The tooltip follows keyboard focus when enabled.
+- **Next Card** tears the ready pack and steps through the reveal. A pinned tooltip follows each card as you advance. On the summary, use **Next Card**, **Previous Card**, **Focus First Card**, or **Focus Last Card** to inspect the grid with the tooltip.
 - **See Card** opens the focused card’s detail page. Press **Enter** on a focused summary card to use Kosmora’s close-up viewer.
 - **Dismiss Found Pack**, **Skip Opening**, **Later**, **Share**, and **Home** activate the corresponding controls when Kosmora offers them. **Next Pack/Back to Packs** opens the next pack or returns to Packs when the summary offers that link.
 - **Any key dismisses found pack** starts on. Turn it off to use the **Dismiss Found Pack** keybind instead.

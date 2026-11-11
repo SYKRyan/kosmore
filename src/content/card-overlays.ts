@@ -13,6 +13,11 @@ import { SIGNAL_BADGE_CSS, signalBadges } from "./signal-badges";
 import { el } from "./ui";
 import { observePage, affected, type PageChanges } from "./page-changes";
 import { packSummaryStatus } from "./pack-summary-status";
+interface OverlayPosition {
+  element: HTMLElement;
+  value: string;
+  priority: string;
+}
 interface Entry {
   root: HTMLElement;
   context: CardContext;
@@ -22,23 +27,70 @@ interface Entry {
   request?: AbortController;
   signals?: CardSignals;
   host?: HTMLElement;
-  positioned?: { value: string; priority: string };
+  positioned?: OverlayPosition;
+  albumSale?: { host: HTMLElement; positioned?: OverlayPosition };
 }
 const OFFSCREEN_PAUSE_MS = 50;
-const STYLE = `
+const HOST_STYLE = `
 :host{all:initial;position:absolute;inset:6px;container-type:inline-size;z-index:20;pointer-events:none;user-select:none;font:600 10px/1 system-ui,sans-serif}
+`;
+const SALE_STYLE = `
+.on-sale{box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex-shrink:0;height:22px;margin-right:auto;padding:0 6px;border-radius:5px;background:#000;border:1px solid #fff;box-shadow:0 1px 5px #0009;color:#fff;white-space:nowrap}
+`;
+const STYLE = `
+${HOST_STYLE}
+${SALE_STYLE}
 .top-row,.bottom-row{position:absolute;left:0;right:0;display:flex;align-items:center;gap:4px;min-width:0}
 .top-row{top:0;justify-content:flex-end;align-items:flex-start}.bottom-row{bottom:0;justify-content:flex-end}
 .icons{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:4px;min-width:0;max-width:100%;margin-left:auto}
-.signal-badge,.on-sale{box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#171027ed;border:1px solid #b6955a;box-shadow:0 1px 5px #0009;color:#f4d68c}
+.signal-badge{box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#171027ed;border:1px solid #b6955a;box-shadow:0 1px 5px #0009;color:#f4d68c}
 .signal-badge.with-price{flex-shrink:1;width:auto;min-width:22px;max-width:100%;border-radius:6px;padding:0 5px;gap:4px}
 .badge-price{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 ${SIGNAL_BADGE_CSS}
 .market-link{pointer-events:auto;cursor:pointer;text-decoration:none}.market-link:hover{filter:brightness(1.2)}.market-link:focus-visible{outline:2px solid #e7cb84;outline-offset:2px}
-.on-sale{width:auto;margin-right:auto;padding:0 6px;border-radius:5px;background:#000;border-color:#fff;color:#fff;white-space:nowrap}
 svg{display:block;flex-shrink:0}
 @container (max-width:150px){.on-sale{font-size:9px;padding:0 4px}.bottom-row{gap:3px}.signal-badge.with-price{padding:0 4px;gap:3px;font-size:9px}}
 `;
+const ALBUM_SALE_STYLE = `
+${HOST_STYLE}
+${SALE_STYLE}
+:host { inset: 0; }
+.on-sale {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  height: auto;
+  margin: 0;
+  padding: .35em .65em;
+  border-radius: 7px;
+  background: rgb(0 0 0 / .62);
+  font-size: clamp(11px, 12cqi, 24px);
+  font-weight: 700;
+}
+`;
+
+function positionOverlay(element: HTMLElement): OverlayPosition | undefined {
+  if (getComputedStyle(element).position !== "static") return;
+  const { style } = element;
+  const previous = {
+    element,
+    value: style.getPropertyValue("position"),
+    priority: style.getPropertyPriority("position"),
+  };
+  style.setProperty("position", "relative");
+  return previous;
+}
+
+function restorePosition(previous?: OverlayPosition) {
+  if (!previous) return;
+  const { element, value, priority } = previous;
+  const { style } = element;
+  if (style.position !== "relative" || style.getPropertyPriority("position"))
+    return;
+  if (value) style.setProperty("position", value, priority);
+  else style.removeProperty("position");
+}
 export class CardOverlays {
   private provider: CardSignalProvider;
   private settings?: Settings;
@@ -219,6 +271,12 @@ export class CardOverlays {
         entry.host = undefined;
         entry.done = false;
         if (this.shouldLoad(entry)) this.queue.add(entry);
+      } else if (
+        entry.signals?.onSale &&
+        this.albumArtwork(entry) !==
+          (entry.albumSale?.host.parentElement ?? undefined)
+      ) {
+        this.render(entry, entry.signals);
       }
     }
     for (const [root, context] of targets) {
@@ -285,19 +343,25 @@ export class CardOverlays {
     this.intersection.unobserve(entry.root);
     this.queue.delete(entry);
     entry.host?.remove();
+    restorePosition(entry.positioned);
+    this.removeAlbumSale(entry);
+  }
+  private removeAlbumSale(entry: Entry) {
+    entry.albumSale?.host.remove();
+    restorePosition(entry.albumSale?.positioned);
+    entry.albumSale = undefined;
+  }
+  private albumArtwork(entry: Entry) {
     if (
-      entry.positioned &&
-      entry.root.style.getPropertyValue("position") === "relative" &&
-      !entry.root.style.getPropertyPriority("position")
-    ) {
-      if (entry.positioned.value)
-        entry.root.style.setProperty(
-          "position",
-          entry.positioned.value,
-          entry.positioned.priority,
-        );
-      else entry.root.style.removeProperty("position");
-    }
+      !entry.signals?.onSale ||
+      !this.settings?.showOnSaleOverlay ||
+      !/^\/albums\/[^/]+\/?$/.test(location.pathname)
+    )
+      return;
+    return (
+      entry.root.querySelector<HTMLElement>(".kc-window, .kc-fa-art") ??
+      undefined
+    );
   }
   private current(entry: Entry, generation: number) {
     const context = resolveCard(entry.root);
@@ -439,8 +503,13 @@ export class CardOverlays {
     this.pump();
   }
   private render(entry: Entry, signals: CardSignals) {
-    if (entry.signals === signals && entry.host?.isConnected) return;
+    const sameSignals = entry.signals === signals;
     entry.signals = signals;
+    const artwork = this.albumArtwork(entry);
+    const artworkChanged =
+      artwork !== (entry.albumSale?.host.parentElement ?? undefined);
+    if (sameSignals && entry.host?.isConnected && !artworkChanged) return;
+    if (artworkChanged) this.removeAlbumSale(entry);
     if (
       !signals.onSale &&
       !signals.activeAuctions &&
@@ -467,7 +536,20 @@ export class CardOverlays {
         "You have this card for sale on the market",
       );
       label.title = "You have this card for sale on the market";
-      top.append(label);
+      if (artwork) {
+        const sale = entry.albumSale ?? {
+          host: el("span"),
+          positioned: positionOverlay(artwork),
+        };
+        sale.host.setAttribute(OVERLAY_ATTR, "");
+        const saleShadow =
+          sale.host.shadowRoot ?? sale.host.attachShadow({ mode: "open" });
+        saleShadow.replaceChildren(el("style", "", ALBUM_SALE_STYLE), label);
+        entry.albumSale = sale;
+        if (!sale.host.isConnected) artwork.append(sale.host);
+      } else {
+        top.append(label);
+      }
     }
     const badges = signalBadges(
       signals,
@@ -489,13 +571,7 @@ export class CardOverlays {
     }
     if (top.children.length) shadow.append(top);
     if (bottom.children.length) shadow.append(bottom);
-    if (getComputedStyle(entry.root).position === "static") {
-      entry.positioned = {
-        value: entry.root.style.getPropertyValue("position"),
-        priority: entry.root.style.getPropertyPriority("position"),
-      };
-      entry.root.style.setProperty("position", "relative");
-    }
+    entry.positioned ??= positionOverlay(entry.root);
     entry.host = host;
     if (!host.isConnected) entry.root.append(host);
   }

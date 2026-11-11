@@ -433,9 +433,10 @@ Save the group to apply your choices.
 Show remaining pack count starts on and shows the number of ready packs
 above Open the Next Pack.
 
-- Next Card tears the ready pack and steps through the reveal. On the
-  summary, use Next Card, Previous Card, Focus First Card, or Focus Last
-  Card to inspect the grid. The tooltip follows focus when enabled.
+- Next Card tears the ready pack and steps through the reveal. A pinned
+  tooltip follows each card as you advance. On the summary, use Next Card,
+  Previous Card, Focus First Card, or Focus Last Card to inspect the grid
+  with the tooltip.
 - See Card opens the focused card’s detail page. Press Enter on a focused
   summary card to use Kosmora’s close-up viewer.
 - Dismiss Found Pack, Skip Opening, Later, Share, and Home activate the

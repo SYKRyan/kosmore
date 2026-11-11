@@ -590,6 +590,7 @@ function enter(target: Element, pointer?: PointerEvent) {
     clearTimeout(openTimer);
     return;
   }
+  packOpeningHotkeys.inspectSummaryCard(context);
   hovered = true;
   cancelClose();
   if (
@@ -609,6 +610,7 @@ function enter(target: Element, pointer?: PointerEvent) {
   }, settings.hoverDelayMs);
 }
 function openFromButton(context: CardContext) {
+  packOpeningHotkeys.inspectSummaryCard(context);
   clearTimeout(openTimer);
   cancelClose();
   if (
