@@ -472,7 +472,8 @@ h3 {
   flex: 1;
   min-width: 0;
 }
-.sell-button {
+.sell-button,
+.transfer-button {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -732,19 +733,34 @@ h3 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
+  gap: 3px 8px;
   border-top: 1px solid #ffffff0b;
-  padding: 10px 18px 18px;
+  padding: 10px 18px 3px;
   font-size: 10px;
   color: #9383a5;
 }
 .footer .brand {
-  justify-self: start;
+  grid-area: 2 / 2;
 }
-.footer .sell-button {
-  justify-self: center;
+.footer .copy-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
 }
 .footer .settings-button {
+  grid-area: 2 / 3;
   justify-self: end;
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+}
+.footer .settings-button:hover:not(:disabled) {
+  background: transparent;
+  color: #fff0c9;
 }
 @media (max-height: 740px) {
   .top {
@@ -758,7 +774,7 @@ h3 {
     padding: 7px;
   }
   .footer {
-    padding: 10px 16px 12px;
+    padding-inline: 16px;
   }
 }
 .loading {

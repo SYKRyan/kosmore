@@ -9,9 +9,11 @@ import { parseCardNote, type CardNote } from "./card-notes";
 import {
   NAVIGATION,
   PACK_OPENING,
+  HOVER_TOOLTIP,
   hotkeyConflict,
   validShortcutCode,
   type Hotkeys,
+  type HoverTooltipId,
   type PackOpeningId,
   type PinnedAlbumHotkeys,
 } from "./hotkeys";
@@ -174,6 +176,7 @@ function backupSettings(value: unknown): Settings {
   for (const [field, actions] of [
     ["hotkeys", NAVIGATION],
     ["packOpeningHotkeys", PACK_OPENING],
+    ["hoverTooltipHotkeys", HOVER_TOOLTIP],
   ] as const) {
     if (!Object.hasOwn(raw, field)) continue;
     const keys = record(raw[field], "Shortcuts");
@@ -181,7 +184,7 @@ function backupSettings(value: unknown): Settings {
       const shortcut = record(value, "Shortcut");
       if (
         !actions.some((item) => item.id === id) ||
-        !validShortcutCode(shortcut.code, field === "packOpeningHotkeys") ||
+        !validShortcutCode(shortcut.code, field !== "hotkeys") ||
         ![shortcut.ctrl, shortcut.alt, shortcut.shift, shortcut.meta].every(
           (flag) => typeof flag === "boolean",
         )
@@ -195,6 +198,8 @@ function backupSettings(value: unknown): Settings {
     (raw.hotkeys as Hotkeys) ?? {},
     (raw.packOpeningHotkeys as Hotkeys<PackOpeningId>) ?? {},
     validateAlbumHotkeys(raw.pinnedAlbumHotkeys, raw.pinnedAlbums),
+    undefined,
+    (raw.hoverTooltipHotkeys as Hotkeys<HoverTooltipId>) ?? {},
   );
   if (conflict) throw new Error(conflict);
   return parseSettings(raw);
@@ -425,6 +430,8 @@ function importValues(
       settings.hotkeys,
       settings.packOpeningHotkeys,
       settings.pinnedAlbumHotkeys,
+      undefined,
+      settings.hoverTooltipHotkeys,
     );
     if (conflict) throw new Error(conflict);
     writes[SETTINGS_KEY] = settings;

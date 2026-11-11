@@ -16,6 +16,7 @@ import {
   hotkeyConflict,
   NAVIGATION,
   PACK_OPENING,
+  HOVER_TOOLTIP,
   type Shortcut,
 } from "../shared/hotkeys";
 import { button, el, note } from "../content/ui";
@@ -37,7 +38,9 @@ type FeatureKey =
   | "socialRemindersEnabled"
   | "tradeRemindersEnabled"
   | "friendTooltipEnabled"
+  | "hotkeysEnabled"
   | "navigationHotkeysEnabled"
+  | "hoverTooltipHotkeysEnabled"
   | "packOpeningHotkeysEnabled"
   | "showRemainingPackCount"
   | "cardOverlaysEnabled"
@@ -301,27 +304,67 @@ const popupInputs = (
 });
 general.append(el("div", "rule"), mobileFriendly);
 const hotkeySettings = new HotkeySettings(
-  "Navigation Hotkeys",
+  "Navigation",
   NAVIGATION,
   (hotkeys) => {
     draft.hotkeys = hotkeys;
   },
 );
 const packHotkeySettings = new HotkeySettings(
-  "Pack Openings",
+  "Pack Opening",
   PACK_OPENING,
   (hotkeys) => {
     draft.packOpeningHotkeys = hotkeys;
   },
   true,
 );
+const tooltipHotkeySettings = new HotkeySettings(
+  "Hover Tooltip",
+  HOVER_TOOLTIP,
+  (hotkeys) => {
+    draft.hoverTooltipHotkeys = hotkeys;
+  },
+  true,
+);
+const hotkeysPanel = el("section", "panel");
+hotkeysPanel.setAttribute("aria-label", "Hotkeys");
+hotkeySettings.host.id = "navigation-hotkeys";
+packHotkeySettings.host.id = "pack-opening-hotkeys";
+tooltipHotkeySettings.host.id = "hover-tooltip-hotkeys";
+const hotkeySubgroups = el(
+  "fieldset",
+  "settings-group-content hotkey-subgroups",
+);
+hotkeySubgroups.setAttribute("aria-label", "Hotkey subgroups");
+hotkeySubgroups.append(
+  hotkeySettings.host,
+  packHotkeySettings.host,
+  tooltipHotkeySettings.host,
+);
+const hotkeysStatus = el("p", "status");
+hotkeysStatus.setAttribute("data-feature-status", "");
+hotkeysStatus.setAttribute("role", "status");
+hotkeysPanel.append(
+  el("h2", "", "Hotkeys"),
+  el(
+    "p",
+    "sub hotkeys-subtitle",
+    "Choose a letter, number, or F-key with optional Ctrl, Alt, Shift, or Meta. Pack Opening and Hover Tooltip also accept arrows, Home, and End. Escape cancels recording. Shortcuts pause while typing, and browser-reserved keys may not reach KosMore. The master switch also controls pinned album shortcuts.",
+  ),
+  hotkeySubgroups,
+  hotkeysStatus,
+);
+const packBehavior = el("section", "panel");
+const packHeading = el("div", "settings-group-heading");
+packHeading.append(el("h2", "", "Pack Openings"));
+packBehavior.append(packHeading);
 function syncTooltipSizing() {
   for (const { field, input } of popupInputs)
     if (field === "popupWidth" || field === "popupHeight")
       input.disabled = draft.fullScreenCenteredOnOpen;
 }
 function sectionToggle(host: HTMLElement, key: FeatureKey, label: string) {
-  const heading = host.querySelector("h2")!;
+  const heading = host.querySelector("h2, h3")!;
   const row = el("div", "settings-group-heading"),
     input = el("input", "section-switch");
   input.type = "checkbox";
@@ -343,15 +386,17 @@ function sectionToggle(host: HTMLElement, key: FeatureKey, label: string) {
   return input;
 }
 function renderGroupState(host: HTMLElement) {
-  const input = featureGroups.get(host)!.input;
-  const disabled = !input.checked;
+  const input = featureGroups.get(host)?.input;
+  const disabled = groupDisabled(host);
   const saving = savingGroups.has(host);
-  input.disabled = !settingsReady || saving;
+  if (input) input.disabled = !settingsReady || saving;
   host.classList.toggle("settings-group-disabled", disabled);
   const content = host.querySelector<HTMLFieldSetElement>(
     ":scope > .settings-group-content",
   );
   if (content) content.disabled = disabled || saving || !settingsReady;
+  if (host === packBehavior)
+    anyKeyDismissesFoundPack.disabled = !draft.hotkeysEnabled;
   for (const input of host.querySelectorAll<HTMLInputElement>(
     ".settings-group-independent input",
   ))
@@ -360,9 +405,20 @@ function renderGroupState(host: HTMLElement) {
     ":scope > .savebar button",
   ))
     button.disabled = disabled || saving || !settingsReady;
-  host.querySelector<HTMLElement>(".settings-group-state")!.hidden = !disabled;
+  const state = host.querySelector<HTMLElement>(".settings-group-state");
+  if (state) state.hidden = !disabled;
 }
-const hotkeysEnabled = sectionToggle(
+function groupDisabled(host: HTMLElement) {
+  return host === packBehavior
+    ? !draft.packOpeningHotkeysEnabled
+    : featureGroups.get(host)?.input.checked === false;
+}
+const allHotkeysEnabled = sectionToggle(
+  hotkeysPanel,
+  "hotkeysEnabled",
+  "Enable all hotkeys",
+);
+const navigationHotkeysEnabled = sectionToggle(
   hotkeySettings.host,
   "navigationHotkeysEnabled",
   "Enable navigation hotkey",
@@ -371,6 +427,11 @@ const packHotkeysEnabled = sectionToggle(
   packHotkeySettings.host,
   "packOpeningHotkeysEnabled",
   "Enable pack opening hotkeys",
+);
+const hoverHotkeysEnabled = sectionToggle(
+  tooltipHotkeySettings.host,
+  "hoverTooltipHotkeysEnabled",
+  "Enable hover tooltip hotkeys",
 );
 const friendTooltipSettings = new FriendTooltipSettings((update) =>
   Object.assign(draft, update),
@@ -506,8 +567,7 @@ const anyKeyDismissesFoundPack = checkboxSetting(
   (checked) => {
     draft.anyKeyDismissesFoundPack = checked;
   },
-  packHotkeySettings.host,
-  packHotkeySettings.host.querySelector(".hotkey-list"),
+  packBehavior,
 );
 const autoSkipOpening = checkboxSetting(
   "autoSkipOpening",
@@ -516,8 +576,7 @@ const autoSkipOpening = checkboxSetting(
   (checked) => {
     draft.autoSkipOpening = checked;
   },
-  packHotkeySettings.host,
-  packHotkeySettings.host.querySelector(".hotkey-list"),
+  packBehavior,
 );
 const autoDismissFoundPack = checkboxSetting(
   "autoDismissFoundPack",
@@ -526,13 +585,10 @@ const autoDismissFoundPack = checkboxSetting(
   (checked) => {
     draft.autoDismissFoundPack = checked;
   },
-  packHotkeySettings.host,
-  packHotkeySettings.host.querySelector(".hotkey-list"),
+  packBehavior,
 );
 const packDisplaySettings = el("div", "settings-group-independent");
-packHotkeySettings.host
-  .querySelector(".settings-group-heading")!
-  .after(packDisplaySettings);
+packHeading.after(packDisplaySettings);
 const showRemainingPackCount = checkboxSetting(
   "showRemainingPackCount",
   "Show remaining pack count",
@@ -540,7 +596,7 @@ const showRemainingPackCount = checkboxSetting(
   (checked) => {
     draft.showRemainingPackCount = checked;
     void persistFeature(
-      packHotkeySettings.host,
+      packBehavior,
       "showRemainingPackCount",
       showRemainingPackCount,
     );
@@ -812,7 +868,9 @@ function groupControls(group: SettingsGroup) {
   const content = el("fieldset", "settings-group-content");
   content.setAttribute("aria-label", `${group.name} options`);
   for (const child of [...group.host.children])
-    if (!child.matches(".settings-group-heading, .settings-group-independent"))
+    if (
+      !child.matches("h3, .settings-group-heading, .settings-group-independent")
+    )
       content.append(child);
   group.host.append(content);
   renderGroupState(group.host);
@@ -889,23 +947,30 @@ groupControls({
 });
 groupControls({
   host: hotkeySettings.host,
-  name: "hotkeys",
+  name: "navigation hotkeys",
   keys: ["navigationHotkeysEnabled", "hotkeys"],
   render: renderSettings,
   validateSave: validateShortcuts,
 });
 groupControls({
   host: packHotkeySettings.host,
-  name: "pack openings",
-  keys: [
-    "packOpeningHotkeysEnabled",
-    "anyKeyDismissesFoundPack",
-    "autoSkipOpening",
-    "autoDismissFoundPack",
-    "packOpeningHotkeys",
-  ],
+  name: "pack opening",
+  keys: ["packOpeningHotkeysEnabled", "packOpeningHotkeys"],
   render: renderSettings,
   validateSave: validateShortcuts,
+});
+groupControls({
+  host: tooltipHotkeySettings.host,
+  name: "hover tooltip hotkeys",
+  keys: ["hoverTooltipHotkeysEnabled", "hoverTooltipHotkeys"],
+  render: renderSettings,
+  validateSave: validateShortcuts,
+});
+groupControls({
+  host: packBehavior,
+  name: "pack openings",
+  keys: ["anyKeyDismissesFoundPack", "autoSkipOpening", "autoDismissFoundPack"],
+  render: renderSettings,
 });
 groupControls({
   host: friendTooltipSettings.host,
@@ -1061,15 +1126,15 @@ const settingsGroups = [
     path: "M4 4h7l9 9-7 7-9-9V4Z M8 8h.01 M12 12l4 4",
   },
   {
-    id: "navigation-hotkeys",
-    label: "Navigation Hotkeys",
-    host: hotkeySettings.host,
+    id: "hotkeys",
+    label: "Hotkeys",
+    host: hotkeysPanel,
     path: "M3 5h18v14H3Z M7 9h.01 M11 9h.01 M15 9h.01 M7 12h.01 M11 12h.01 M15 12h.01 M7 15h10",
   },
   {
-    id: "pack-opening-hotkeys",
+    id: "pack-openings",
     label: "Pack Openings",
-    host: packHotkeySettings.host,
+    host: packBehavior,
     path: "M6.9 5.3 15.9 2a1.5 1.5 0 0 1 1.9.9l5.1 14a1.5 1.5 0 0 1-.9 1.9l-9 3.3a1.5 1.5 0 0 1-1.9-.9L6 7.2a1.5 1.5 0 0 1 .9-1.9Z M4.5 11.5 2 16.5a1.5 1.5 0 0 0 .7 2L7 20.6 M13.2 8.4l3.6 2.8-1.1 4.5-3.7-2.9Z",
   },
   {
@@ -1105,8 +1170,10 @@ function renderSettings() {
   tradeSettings.render(draft);
   friendTooltipEnabled.checked = draft.friendTooltipEnabled;
   friendTooltipSettings.render(draft);
-  hotkeysEnabled.checked = draft.navigationHotkeysEnabled;
+  allHotkeysEnabled.checked = draft.hotkeysEnabled;
+  navigationHotkeysEnabled.checked = draft.navigationHotkeysEnabled;
   packHotkeysEnabled.checked = draft.packOpeningHotkeysEnabled;
+  hoverHotkeysEnabled.checked = draft.hoverTooltipHotkeysEnabled;
   anyKeyDismissesFoundPack.checked = draft.anyKeyDismissesFoundPack;
   autoSkipOpening.checked = draft.autoSkipOpening;
   autoDismissFoundPack.checked = draft.autoDismissFoundPack;
@@ -1150,6 +1217,7 @@ function renderSettings() {
   statSettings.render(draft.stats, draft.collectSaleRateData);
   hotkeySettings.render(draft.hotkeys);
   packHotkeySettings.render(draft.packOpeningHotkeys);
+  tooltipHotkeySettings.render(draft.hoverTooltipHotkeys);
   salesSettings.render(draft);
   for (const host of [
     general,
@@ -1161,8 +1229,11 @@ function renderSettings() {
     overlays,
     familyImpact,
     salesSettings.host,
+    hotkeysPanel,
     hotkeySettings.host,
     packHotkeySettings.host,
+    tooltipHotkeySettings.host,
+    packBehavior,
   ])
     renderGroupState(host);
 }
@@ -1198,6 +1269,7 @@ function validateShortcuts(next: Settings) {
     next.packOpeningHotkeys,
     next.pinnedAlbumHotkeys,
     new Map(albums.map(({ id, name }) => [id, name])),
+    next.hoverTooltipHotkeys,
   );
 }
 const ALBUM_ACCOUNT_SETTINGS = ["pinnedAlbums", "pinnedAlbumHotkeys"] as const;
@@ -1415,7 +1487,7 @@ async function persist(
     busy ||
     !settingsReady ||
     savingGroups.has(group.host) ||
-    !featureGroups.get(group.host)!.input.checked
+    groupDisabled(group.host)
   )
     return;
   const error = group.validate?.();
@@ -1485,7 +1557,11 @@ async function persistFeature(
 ) {
   if (!settingsReady || savingGroups.has(host)) return;
   const value = input.checked;
-  const status = host.querySelector<HTMLElement>(":scope > .savebar .status")!;
+  if (key === "packOpeningHotkeysEnabled" || key === "hotkeysEnabled")
+    renderGroupState(packBehavior);
+  const status = host.querySelector<HTMLElement>(
+    ":scope > .savebar .status, :scope > [data-feature-status]",
+  )!;
   savingGroups.add(host);
   renderGroupState(host);
   status.className = "status";
@@ -1508,6 +1584,8 @@ async function persistFeature(
   } finally {
     savingGroups.delete(host);
     renderGroupState(host);
+    if (key === "packOpeningHotkeysEnabled" || key === "hotkeysEnabled")
+      renderGroupState(packBehavior);
     backupSettings.refreshControls();
   }
 }
@@ -1535,6 +1613,25 @@ chrome.storage.onChanged.addListener((changes, area) => {
     saved[key] = next[key];
     input.checked = draft[key];
     renderGroupState(host);
+  }
+  renderGroupState(packBehavior);
+  for (const [key, render] of [
+    ["hotkeys", () => hotkeySettings.render(draft.hotkeys)],
+    [
+      "packOpeningHotkeys",
+      () => packHotkeySettings.render(draft.packOpeningHotkeys),
+    ],
+    [
+      "hoverTooltipHotkeys",
+      () => tooltipHotkeySettings.render(draft.hoverTooltipHotkeys),
+    ],
+  ] as const) {
+    const unchanged = JSON.stringify(draft[key]) === JSON.stringify(saved[key]);
+    if (unchanged && JSON.stringify(saved[key]) !== JSON.stringify(next[key])) {
+      Object.assign(draft, { [key]: structuredClone(next[key]) });
+      render();
+    }
+    Object.assign(saved, { [key]: structuredClone(next[key]) });
   }
   for (const [key, input] of [
     ["anyKeyDismissesFoundPack", anyKeyDismissesFoundPack],

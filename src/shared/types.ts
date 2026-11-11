@@ -29,6 +29,9 @@ export interface OwnedCopy {
   subjectId: string;
   state: string;
   auctionId?: string;
+  lockedInAlbum?: boolean;
+  exclusive?: boolean;
+  inTrade?: boolean;
   variant: Variant;
   serial?: number;
   acquiredAt?: string;
@@ -118,7 +121,9 @@ export interface Settings {
   friendTooltipWidth: number;
   friendTooltipHeight: number;
   friendTooltipPosition: import("./popup-layout").PopupPosition | null;
+  hotkeysEnabled: boolean;
   navigationHotkeysEnabled: boolean;
+  hoverTooltipHotkeysEnabled: boolean;
   packOpeningHotkeysEnabled: boolean;
   anyKeyDismissesFoundPack: boolean;
   autoSkipOpening: boolean;
@@ -165,6 +170,9 @@ export interface Settings {
   hotkeys: import("./hotkeys").Hotkeys;
   packOpeningHotkeys: import("./hotkeys").Hotkeys<
     import("./hotkeys").PackOpeningId
+  >;
+  hoverTooltipHotkeys: import("./hotkeys").Hotkeys<
+    import("./hotkeys").HoverTooltipId
   >;
   pinnedAlbums: Record<string, string[]>;
   pinnedAlbumHotkeys: import("./hotkeys").PinnedAlbumHotkeys;

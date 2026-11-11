@@ -68,7 +68,7 @@ Hover a supported card, or press its overlay button when enabled, to open KosMor
 - **Trade (friends):** current friends whose saved family preferences match the card. Expand a friend to see all saved families, highlighted matches, private notes, and **Social**/**Profile** links. One friend expands at a time; a single match opens automatically. This uses the same content and behavior as the companion friend tooltip.
 - **Notes:** private notes for the card, shared across its copies and finishes within your account. Save or cancel edits here; these notes are stored in the extension.
 
-Click a family badge to view that family in your collection. The footer's **Sell** button opens Kosmora's sell form for an eligible owned copy; you still complete the sale in Kosmora.
+Click a family badge to view that family in your collection. The footer's **Sell**, **Trade**, and **Gift** buttons open the corresponding Kosmora flow for an eligible owned copy. Complete the action in Kosmora.
 
 Pin the tooltip to keep it available across page navigation in the current tab. Drag its header to move it and resize it from an edge or corner. Position and dimensions save automatically. On a new page, a pinned tooltip shows **No Card Selected** until you hover a card or press its overlay button. Unpin it to return to opening beside cards. Use the header icons to refresh the selected tab, pin/unpin, or close the tooltip.
 
@@ -201,22 +201,24 @@ My Last Listing shows the saved starting price for the card. KosMore saves up to
 
 ### Navigation hotkeys
 
-Assign shortcuts for **Home**, **Collection**, **Albums**, **Atlas**, **Social**, **Market**, **My Auctions**, **My Activity**, **Alerts**, **Talents**, **Packs**, **History**, **Fusion**, **Pulsar**, **Odyssey**, and **My Profile**.
+Under **Hotkeys → Navigation**, assign shortcuts for **Home**, **Collection**, **Albums**, **Tomes**, **Families**, **Fusion**, **Gallery**, **Quests**, **Atlas**, **Social**, **Market**, **My Auctions**, **My Activity**, **Alerts**, **Talents**, **Packs**, **History**, **Pulsar**, **Odyssey**, and **My Profile**.
 
 Click a shortcut control and press a letter, number, or F1–F12, optionally with Ctrl, Alt, Shift, or Meta. Escape cancels recording; **Clear** removes a binding. Save the group to apply your choices. Duplicate bindings are rejected.
 
-Shortcuts work on Kosmora pages and pause while typing in fields or editors. Browser-reserved shortcuts may not reach KosMore.
+Shortcuts work on Kosmora pages and pause while typing in fields or editors. Browser-reserved shortcuts may not reach KosMore. **Enable all hotkeys** controls every KosMore shortcut group, including pinned albums, and preserves saved bindings.
+
+Under **Hotkeys → Hover Tooltip**, assign shortcuts for the open tooltip’s controls and tabs. **Cycle Tabs** wraps from Notes to Market. **Next Tab** and **Previous Tab** stop at the ends. Escape always closes the tooltip, even when **Close Tooltip** has no shortcut.
 
 ### Pack Openings
 
-Find **Pack Openings** just below **Navigation Hotkeys**. Its hotkeys start off and bindings start empty. You can also record arrows, Home, and End. Save the group to apply your choices.
+Find the shortcuts under **Hotkeys → Pack Opening** and the automation and display options under **Pack Openings**. Pack hotkeys start off and bindings start empty. You can also record arrows, Home, and End. Save the subgroup to apply your choices.
 
 **Show remaining pack count** starts on and shows the number of ready packs above **Open the Next Pack**.
 
 - **Next Card** tears the ready pack and steps through the reveal. A pinned tooltip follows each card as you advance. On the summary, use **Next Card**, **Previous Card**, **Focus First Card**, or **Focus Last Card** to inspect the grid with the tooltip.
 - **See Card** opens the focused card’s detail page. Press **Enter** on a focused summary card to use Kosmora’s close-up viewer.
 - **Dismiss Found Pack**, **Skip Opening**, **Later**, **Share**, and **Home** activate the corresponding controls when Kosmora offers them. **Next Pack/Back to Packs** opens the next pack or returns to Packs when the summary offers that link.
-- **Any key dismisses found pack** starts on. Turn it off to use the **Dismiss Found Pack** keybind instead.
+- **Any key dismisses found pack** starts on under **Pack Openings**. Turn it off to use the **Dismiss Found Pack** keybind instead.
 - **Auto-dismiss found pack** starts off. Turn it on to dismiss the full-screen Rogue and Mega pack alerts automatically. The found packs still appear on the summary.
 - **Auto-skip on next pack** starts off. After you activate **Next Pack** by mouse or hotkey, it presses **Skip** once when the next pack appears. Kosmora’s reveal hints must be enabled so it can warn you about special packs.
 

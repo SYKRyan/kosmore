@@ -11,8 +11,16 @@ import { parseSettings } from "../../src/shared/settings";
 const key = (code: string, modifiers: KeyboardEventInit = {}) =>
   new KeyboardEvent("keydown", { code, ...modifiers });
 const a = shortcutFromEvent(key("KeyA", { altKey: true }))!;
-it("provides all sixteen destinations without assigning shortcuts to existing users", () => {
-  expect(NAVIGATION).toHaveLength(16);
+it("provides new destinations in collection order without assigning shortcuts", () => {
+  expect(NAVIGATION).toHaveLength(20);
+  expect(NAVIGATION.slice(2, 8).map(({ path }) => path)).toEqual([
+    "/albums",
+    "/tomes",
+    "/families",
+    "/fusion",
+    "/gallery",
+    "/quests",
+  ]);
   expect(parseSettings({ schemaVersion: 1 }).hotkeys).toEqual({});
   expect(NAVIGATION.find((item) => item.id === "marketAuctions")?.path).toBe(
     "/market?tab=overview&view=auctions",
@@ -25,6 +33,30 @@ it("provides all sixteen destinations without assigning shortcuts to existing us
   expect(NAVIGATION.find((item) => item.id === "history")?.path).toBe(
     "/history",
   );
+});
+it("reserves Escape and checks tooltip shortcuts against all other groups", () => {
+  const album = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const left = shortcutFromEvent(key("ArrowLeft"), true)!;
+  expect(
+    hotkeyConflict({ home: a }, {}, {}, undefined, { close: a }),
+  ).toContain("Home and Hover Tooltip · Close Tooltip");
+  expect(
+    hotkeyConflict({}, { previousCard: left }, {}, undefined, {
+      previousTab: left,
+    }),
+  ).toContain("Pack Openings · Previous Card and Hover Tooltip · Previous Tab");
+  expect(
+    hotkeyConflict({}, {}, { player: { [album]: a } }, undefined, { pin: a }),
+  ).toContain("Hover Tooltip · Pin/Unpin and Pinned album");
+  expect(
+    parseSettings({
+      schemaVersion: 1,
+      hoverTooltipHotkeys: {
+        close: { ...a, code: "Escape" },
+        previousTab: left,
+      },
+    }).hoverTooltipHotkeys,
+  ).toEqual({ previousTab: left });
 });
 it("parses only valid shortcuts and deterministically discards duplicate or unknown entries", () => {
   expect(

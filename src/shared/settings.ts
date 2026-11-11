@@ -2,6 +2,7 @@ import type { Settings } from "./types";
 import { defaultStats, parseStats } from "./stat-catalog";
 import {
   parseHotkeys,
+  parseHoverTooltipHotkeys,
   parsePackOpeningHotkeys,
   parsePinnedAlbumHotkeys,
 } from "./hotkeys";
@@ -39,7 +40,9 @@ export const defaults = (): Settings => ({
   friendTooltipWidth: 320,
   friendTooltipHeight: 560,
   friendTooltipPosition: null,
+  hotkeysEnabled: true,
   navigationHotkeysEnabled: true,
+  hoverTooltipHotkeysEnabled: true,
   packOpeningHotkeysEnabled: false,
   anyKeyDismissesFoundPack: true,
   autoSkipOpening: false,
@@ -85,6 +88,7 @@ export const defaults = (): Settings => ({
   stats: defaultStats(),
   hotkeys: {},
   packOpeningHotkeys: {},
+  hoverTooltipHotkeys: {},
   pinnedAlbums: {},
   pinnedAlbumHotkeys: {},
 });
@@ -98,6 +102,11 @@ export function parseSettings(value: unknown): Settings {
   d.packOpeningHotkeys = parsePackOpeningHotkeys(
     v.packOpeningHotkeys,
     d.hotkeys,
+  );
+  d.hoverTooltipHotkeys = parseHoverTooltipHotkeys(
+    v.hoverTooltipHotkeys,
+    d.hotkeys,
+    d.packOpeningHotkeys,
   );
   d.popupPosition = parsePopupPosition(v.popupPosition);
   d.friendTooltipPosition = parsePopupPosition(v.friendTooltipPosition);
@@ -141,7 +150,9 @@ export function parseSettings(value: unknown): Settings {
     "useFamilyBlacklist",
     "showSalesFamilyOverlay",
     "friendTooltipEnabled",
+    "hotkeysEnabled",
     "navigationHotkeysEnabled",
+    "hoverTooltipHotkeysEnabled",
     "packOpeningHotkeysEnabled",
     "anyKeyDismissesFoundPack",
     "autoSkipOpening",
@@ -228,6 +239,7 @@ export function parseSettings(value: unknown): Settings {
     d.pinnedAlbums,
     d.hotkeys,
     d.packOpeningHotkeys,
+    d.hoverTooltipHotkeys,
   );
   return d;
 }

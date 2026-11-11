@@ -2,6 +2,11 @@ export const NAVIGATION = [
   { id: "home", label: "Home", path: "/home" },
   { id: "collection", label: "Collection", path: "/collection" },
   { id: "albums", label: "Albums", path: "/albums" },
+  { id: "tomes", label: "Tomes", path: "/tomes" },
+  { id: "families", label: "Families", path: "/families" },
+  { id: "fusion", label: "Fusion", path: "/fusion" },
+  { id: "gallery", label: "Gallery", path: "/gallery" },
+  { id: "quests", label: "Quests", path: "/quests" },
   { id: "atlas", label: "Atlas", path: "/atlas" },
   { id: "social", label: "Social", path: "/social" },
   { id: "marketBuy", label: "Market", path: "/market" },
@@ -23,7 +28,6 @@ export const NAVIGATION = [
   { id: "talents", label: "Talents", path: "/talents" },
   { id: "packs", label: "Packs", path: "/packs" },
   { id: "history", label: "History", path: "/history" },
-  { id: "fusion", label: "Fusion", path: "/fusion" },
   { id: "pulsar", label: "Pulsar", path: "/games" },
   { id: "odyssey", label: "Odyssey", path: "/odyssey" },
   { id: "profile", label: "My Profile", path: null },
@@ -43,6 +47,28 @@ export const PACK_OPENING = [
   { id: "home", label: "Home" },
 ] as const;
 export type PackOpeningId = (typeof PACK_OPENING)[number]["id"];
+export const HOVER_TOOLTIP = [
+  {
+    id: "close",
+    label: "Close Tooltip",
+    help: "Escape always closes the tooltip, even when this shortcut is unset.",
+  },
+  { id: "pin", label: "Pin/Unpin" },
+  { id: "refresh", label: "Refresh" },
+  { id: "sell", label: "Sell" },
+  { id: "gift", label: "Gift" },
+  { id: "trade", label: "Trade" },
+  { id: "settings", label: "Settings" },
+  { id: "listedFor", label: "Listed For" },
+  { id: "marketTab", label: "Market Tab" },
+  { id: "historyTab", label: "My Listing History Tab" },
+  { id: "tradeTab", label: "Trade Tab" },
+  { id: "notesTab", label: "Notes Tab" },
+  { id: "cycleTabs", label: "Cycle Tabs" },
+  { id: "previousTab", label: "Previous Tab" },
+  { id: "nextTab", label: "Next Tab" },
+] as const;
+export type HoverTooltipId = (typeof HOVER_TOOLTIP)[number]["id"];
 export interface Shortcut {
   code: string;
   ctrl: boolean;
@@ -54,7 +80,11 @@ export type Hotkeys<Id extends string = NavigationId> = Partial<
   Record<Id, Shortcut>
 >;
 export type PinnedAlbumHotkeys = Record<string, Hotkeys<string>>;
-export type ShortcutAction<Id extends string> = { id: Id; label: string };
+export type ShortcutAction<Id extends string> = {
+  id: Id;
+  label: string;
+  help?: string;
+};
 export function validShortcutCode(code: unknown, pack = false): code is string {
   return (
     typeof code === "string" &&
@@ -99,6 +129,7 @@ export function hotkeyConflict(
   packHotkeys: Hotkeys<PackOpeningId> = {},
   albumHotkeys: PinnedAlbumHotkeys = {},
   albumNames?: ReadonlyMap<string, string>,
+  tooltipHotkeys: Hotkeys<HoverTooltipId> = {},
 ): string | undefined {
   const used = new Map<string, string>();
   const entries = [
@@ -106,6 +137,10 @@ export function hotkeyConflict(
     ...PACK_OPENING.map(({ id, label }) => ({
       label: `Pack Openings · ${label}`,
       shortcut: packHotkeys[id],
+    })),
+    ...HOVER_TOOLTIP.map(({ id, label }) => ({
+      label: `Hover Tooltip · ${label}`,
+      shortcut: tooltipHotkeys[id],
     })),
   ];
   const conflict = checkConflicts(entries, used);
@@ -139,12 +174,15 @@ export function parsePinnedAlbumHotkeys(
   pins: Record<string, string[]>,
   navigation: Hotkeys,
   pack: Hotkeys<PackOpeningId>,
+  tooltip: Hotkeys<HoverTooltipId> = {},
 ): PinnedAlbumHotkeys {
   if (!value || typeof value !== "object") return {};
   const accounts = value as Record<string, unknown>;
-  const global = [...Object.values(navigation), ...Object.values(pack)].map(
-    shortcutKey,
-  );
+  const global = [
+    ...Object.values(navigation),
+    ...Object.values(pack),
+    ...Object.values(tooltip),
+  ].map(shortcutKey);
   return Object.fromEntries(
     Object.entries(pins).flatMap(([account, ids]) => {
       if (!Object.hasOwn(accounts, account)) return [];
@@ -168,6 +206,20 @@ export function parsePackOpeningHotkeys(
     value,
     PACK_OPENING,
     new Set(Object.values(navigation).map(shortcutKey)),
+    true,
+  );
+}
+export function parseHoverTooltipHotkeys(
+  value: unknown,
+  navigation: Hotkeys,
+  pack: Hotkeys<PackOpeningId>,
+): Hotkeys<HoverTooltipId> {
+  return parseBindings(
+    value,
+    HOVER_TOOLTIP,
+    new Set(
+      [...Object.values(navigation), ...Object.values(pack)].map(shortcutKey),
+    ),
     true,
   );
 }

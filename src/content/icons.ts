@@ -70,7 +70,7 @@ export function headerIcon(
 }
 
 export function cardIcon(
-  kind: "auction" | "sale" | "history" | "friend" | "quest",
+  kind: "auction" | "sale" | "history" | "friend" | "quest" | "trade" | "gift",
   size = 14,
 ): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -89,15 +89,17 @@ export function cardIcon(
   const path = document.createElementNS(svg.namespaceURI, "path");
   path.setAttribute(
     "d",
-    kind === "auction"
-      ? "M20 13 13 20a2 2 0 0 1-3 0l-8-8V3h9l9 8a2 2 0 0 1 0 2Z M7 7h.01"
-      : kind === "sale"
-        ? "m14 13-8.5 8.5a2.12 2.12 0 0 1-3-3L11 10 M16 16l6-6 M8 8l6-6 M9 7l8 8 M21 11l-8-8"
-        : kind === "history"
-          ? "M3 11a9 9 0 1 1 2.7 7 M3 4v7h7 M12 7v5l3 2"
-          : kind === "quest"
-            ? "m12 2 2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6Z"
-            : "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+    {
+      auction:
+        "M20 13 13 20a2 2 0 0 1-3 0l-8-8V3h9l9 8a2 2 0 0 1 0 2Z M7 7h.01",
+      sale: "m14 13-8.5 8.5a2.12 2.12 0 0 1-3-3L11 10 M16 16l6-6 M8 8l6-6 M9 7l8 8 M21 11l-8-8",
+      history: "M3 11a9 9 0 1 1 2.7 7 M3 4v7h7 M12 7v5l3 2",
+      quest: "m12 2 2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6Z",
+      friend:
+        "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M22 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+      trade: "M3 8h17m-4-4 4 4-4 4M21 16H4m4-4-4 4 4 4",
+      gift: "M4 10h16v11H4zM3 7h18v3H3zM12 7v14M12 7H8.5A2.5 2.5 0 1 1 11 4.5zM12 7h3.5A2.5 2.5 0 1 0 13 4.5z",
+    }[kind],
   );
   svg.append(path);
   return svg;

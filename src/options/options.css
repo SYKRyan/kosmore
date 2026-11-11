@@ -276,7 +276,7 @@ h2 {
   gap: 12px;
   margin-inline-end: var(--settings-heading-inset);
 }
-.settings-group-heading h2 {
+.settings-group-heading :is(h2, h3) {
   flex: 1;
   min-width: 0;
 }
@@ -300,7 +300,7 @@ h2 {
   border: 0;
 }
 .panel[id]
-  > :is(.settings-group-content, .settings-group-independent, .savebar) {
+  > :is(.settings-group-content, .settings-group-independent, .savebar, .hotkeys-subtitle, [data-feature-status]) {
   margin-inline: var(--settings-heading-inset);
 }
 .settings-group-state {
@@ -400,6 +400,31 @@ input.section-switch:checked::before {
   color: #e7ddf0;
   font-size: 13px;
   font-weight: 600;
+}
+.hotkey-subgroups {
+  display: grid;
+  gap: 14px;
+  margin-block-start: 14px;
+}
+.hotkey-subgroups h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+.hotkey-subgroups .settings-group-heading h3 {
+  margin: 0;
+}
+.hotkey-subgroups .settings-group-heading {
+  margin-inline-end: 0;
+  margin-block-end: 10px;
+}
+.hotkey-subgroups .settings-subgroup {
+  scroll-margin-top: 20px;
+}
+.hotkey-help {
+  margin: 4px 0 0;
+}
+#hotkeys > [data-feature-status]:empty {
+  display: none;
 }
 .settings-subgroup .rule {
   margin: 14px 0;

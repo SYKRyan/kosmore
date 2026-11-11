@@ -46,14 +46,21 @@ import {
   LISTING_WRITES,
 } from "../shared/page-relay";
 import { settingsForPage } from "../shared/page-settings";
-import { isTyping, shortcutFromEvent, shortcutKey } from "../shared/hotkeys";
+import {
+  HOVER_TOOLTIP,
+  isTyping,
+  shortcutFromEvent,
+  shortcutKey,
+} from "../shared/hotkeys";
 import { RemainingPacks } from "./remaining-packs";
+import { startGiftHandoff } from "./gift-handoff";
 
 function pageSettings() {
   return settingsForPage(settings, location.pathname);
 }
 
 const client = new GameClient();
+startGiftHandoff(client);
 const listingReads = new Map<string, AbortController>();
 const canceledListingReads = new Set<string>();
 const friendTooltip = new FriendTooltip(client, () => {
@@ -833,21 +840,51 @@ document.addEventListener(
   },
   true,
 );
+const heldTooltipKeys = new Set<string>();
+window.addEventListener(
+  "keyup",
+  (event) => heldTooltipKeys.delete(event.code),
+  true,
+);
+window.addEventListener("blur", () => heldTooltipKeys.clear());
 window.addEventListener(
   "keydown",
   (event) => {
+    const view = popup;
+    const open = view?.host.matches(":popover-open");
     if (
+      !settings.hotkeysEnabled ||
       event.defaultPrevented ||
-      !popup?.host.matches(":popover-open") ||
+      (!open && !(event.repeat && heldTooltipKeys.has(event.code))) ||
       isTyping(event) ||
       (location.pathname === "/packs/open" &&
         document.querySelector(".ko-summary .ko-drop"))
     )
       return;
     const dialog = topDialog();
-    if (dialog && !dialog.contains(popup.host)) return;
-    const shortcut = shortcutFromEvent(event);
-    if (!shortcut || !popup.activateAlbumShortcut(shortcutKey(shortcut))) return;
+    if (dialog && (!view || !dialog.contains(view.host))) return;
+    if (event.repeat) {
+      if (heldTooltipKeys.has(event.code)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+      return;
+    }
+    heldTooltipKeys.delete(event.code);
+    if (!view || !open) return;
+    const shortcut = shortcutFromEvent(event, true);
+    if (!shortcut) return;
+    const key = shortcutKey(shortcut);
+    const action = settings.hoverTooltipHotkeysEnabled
+      ? HOVER_TOOLTIP.find(({ id }) => {
+          const binding = settings.hoverTooltipHotkeys[id];
+          return binding && shortcutKey(binding) === key;
+        })
+      : undefined;
+    if (action) {
+      if (!view.activateShortcut(action.id)) return;
+      heldTooltipKeys.add(event.code);
+    } else if (!view.activateAlbumShortcut(key)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   },
@@ -981,6 +1018,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
     navigationHotkeys.settingsChanged();
     if (previousPackHotkeys && !settings.packOpeningHotkeysEnabled)
       packOpeningHotkeys.reset();
+    else if (!settings.hotkeysEnabled) packOpeningHotkeys.cancelHotkeyActions();
+    if (!settings.hotkeysEnabled || !settings.hoverTooltipHotkeysEnabled)
+      heldTooltipKeys.clear();
     overlays.setSettings(settings);
     salesOverlays.setSettings(settings);
     fusionFamily.setSettings(settings);
