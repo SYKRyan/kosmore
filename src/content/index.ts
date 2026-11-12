@@ -917,6 +917,11 @@ window.addEventListener(
   (event) => popup?.restoreCanceledWheel(event),
   { capture: true, passive: true },
 );
+for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"] as const)
+  window.addEventListener(type, (event) => popup?.restoreCanceledTouch(event), {
+    capture: true,
+    passive: true,
+  });
 window.addEventListener("scroll", () => popup?.position(), {
   passive: true,
   capture: true,

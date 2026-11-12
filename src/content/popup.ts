@@ -152,6 +152,7 @@ export class Popup {
   private openingCopyAction = false;
   private pending = false;
   private closed = false;
+  private scrollTouch?: Touch;
   private placement?: PopupPlacement;
   private pinButton = button("", () => this.togglePin(), "icon pin-button");
   private reposition: ResizeObserver;
@@ -419,6 +420,31 @@ export class Popup {
   }
   restoreCanceledWheel(event: WheelEvent) {
     if (!event.deltaY || event.ctrlKey || event.shiftKey) return;
+    this.restoreCanceledScroll(event, event.deltaY, event.deltaMode);
+  }
+  restoreCanceledTouch(event: TouchEvent) {
+    if (event.type === "touchstart") {
+      this.scrollTouch =
+        event.touches.length === 1 ? event.touches[0] : undefined;
+      return;
+    }
+    if (event.type !== "touchmove" || event.touches.length !== 1) {
+      this.scrollTouch = undefined;
+      return;
+    }
+    const previous = this.scrollTouch;
+    const touch = event.touches[0];
+    if (touch.identifier !== previous?.identifier) return;
+    this.scrollTouch = touch;
+    const deltaY = previous.clientY - touch.clientY;
+    if (Math.abs(deltaY) <= Math.abs(previous.clientX - touch.clientX)) return;
+    this.restoreCanceledScroll(event, deltaY);
+  }
+  private restoreCanceledScroll(
+    event: Event,
+    deltaY: number,
+    deltaMode: number = WheelEvent.DOM_DELTA_PIXEL,
+  ) {
     const scrollers = event
       .composedPath()
       .filter(
@@ -428,8 +454,8 @@ export class Popup {
           this.shadow.contains(node),
       );
     if (!scrollers.length) return;
-    // Give native scrolling first refusal. The game's overlay can cancel the
-    // default action in a capture listener before the wheel reaches this popup.
+    // The game's overlay can cancel scrolling before the event reaches the popup.
+    // Check after dispatch so uncanceled gestures keep native scrolling.
     requestAnimationFrame(() => {
       if (!event.defaultPrevented || this.closed) return;
       for (const scroller of scrollers) {
@@ -439,13 +465,13 @@ export class Popup {
         )
           continue;
         const unit =
-          event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          deltaMode === WheelEvent.DOM_DELTA_PAGE
             ? scroller.clientHeight
-            : event.deltaMode === WheelEvent.DOM_DELTA_LINE
+            : deltaMode === WheelEvent.DOM_DELTA_LINE
               ? parseFloat(getComputedStyle(scroller).lineHeight) || 16
               : 1;
         const previous = scroller.scrollTop;
-        scroller.scrollTop += event.deltaY * unit;
+        scroller.scrollTop += deltaY * unit;
         if (scroller.scrollTop !== previous) break;
       }
     });

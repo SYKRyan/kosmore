@@ -2675,6 +2675,91 @@ test("tooltip content scrolls over fusion results when the page locks the wheel"
   await expect(page.getByTestId("fusion-summary")).toBeVisible();
 });
 
+test("mobile tooltip scrolls over Fusion results when the page cancels touch scrolling", async () => {
+  await enableTooltipButtons();
+  await pulsarSettings({
+    fullScreenCenteredOnOpen: true,
+    outsideClickClosesTooltipOnly: true,
+  });
+  const phone = await context.newPage();
+  try {
+    await phone.setViewportSize({ width: 390, height: 600 });
+    const touch = await context.newCDPSession(phone);
+    await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+    await phone.route("https://kosmora.io/fusion?result=fixture", (route) =>
+      route.fulfill({ contentType: "text/html", body: fixture("page") }),
+    );
+    await phone.goto("https://kosmora.io/fusion?result=fixture");
+    await phone.evaluate(() => {
+      const result = document.createElement("dialog");
+      result.setAttribute("aria-label", "Fusion results");
+      result.style.height = "360px";
+      result.innerHTML =
+        "<h2>Fusion complete</h2>" +
+        document.querySelector("main a")!.outerHTML +
+        '<div style="height:600px"></div>';
+      document.body.append(result);
+      result.showModal();
+      document.addEventListener(
+        "touchmove",
+        (event) => {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        },
+        { capture: true, passive: false },
+      );
+    });
+    const sendTouch = (
+      type: "touchStart" | "touchMove" | "touchEnd",
+      point?: { x: number; y: number },
+    ) =>
+      touch.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: point ? [point] : [],
+      });
+    const tap = async (x: number, y: number) => {
+      await sendTouch("touchStart", { x, y });
+      await sendTouch("touchEnd");
+    };
+    const button = phone.getByRole("button", {
+      name: "Open card tooltip for Northern Lights",
+    });
+    await expect(button).toBeVisible();
+    const trigger = (await button.boundingBox())!;
+    await tap(trigger.x + trigger.width / 2, trigger.y + trigger.height / 2);
+
+    const popup = phone.locator("#kosmore-root");
+    await expect(popup).toHaveAttribute("data-full-screen", "");
+    await expect(popup.locator(".sales li")).toHaveCount(5);
+    const content = popup.locator(".body");
+    await expect
+      .poll(() => content.evaluate((el) => el.scrollHeight - el.clientHeight))
+      .toBeGreaterThan(0);
+    const bounds = (await content.boundingBox())!;
+    const x = bounds.x + 24;
+    const y = bounds.y + bounds.height / 2;
+    const swipe = async (offset: number) => {
+      await sendTouch("touchStart", { x, y });
+      await sendTouch("touchMove", { x, y: y + offset / 2 });
+      await sendTouch("touchMove", { x, y: y + offset });
+      await sendTouch("touchEnd");
+    };
+    await swipe(-120);
+    const scrollTop = () => content.evaluate((el) => el.scrollTop);
+    await expect.poll(scrollTop).toBeGreaterThan(0);
+    const afterSwipe = await scrollTop();
+    await swipe(120);
+    await expect.poll(scrollTop).toBeLessThan(afterSwipe);
+    const result = phone.getByRole("dialog", { name: "Fusion results" });
+    expect(await result.evaluate((el) => el.scrollTop)).toBe(0);
+    await tap(12, 12);
+    await expect(popup).toHaveCount(0);
+    await expect(result).toBeVisible();
+  } finally {
+    await phone.close();
+  }
+});
+
 test("auto-skip on next pack works by mouse and hotkey and leaves rare-pack warnings in place", async () => {
   await worker.evaluate(async () => {
     const key = "kosmore.settings";
