@@ -23,6 +23,7 @@ import {
   SALE_MINIMUMS,
   type SaleRarity,
   validDiscountThreshold,
+  validFusionPriceThreshold,
   validSaleAdjustment,
   validSalePrice,
 } from "./sales-prices";
@@ -103,6 +104,13 @@ function backupSettings(value: unknown): Settings {
       throw new Error("Family blacklist entries must be family names.");
     normalizeFamilyTokens(names, "in the family blacklist");
   }
+  if (
+    Object.hasOwn(raw, "fusionPriceThreshold") &&
+    !validFusionPriceThreshold(raw.fusionPriceThreshold)
+  )
+    throw new Error(
+      "The Fusion price threshold must be a nonnegative amount with up to six decimal places.",
+    );
   for (const [key, field] of Object.entries(raw)) {
     if (!Object.hasOwn(standard, key))
       throw new Error(

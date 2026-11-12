@@ -38,6 +38,7 @@ import { MarketOutcomes } from "./market-outcomes";
 import { HistoryResolver, listenToPageRelay } from "./sale-rate-feed";
 import { saleObservations } from "./sale-observation-store";
 import { FusionFamilyImpact } from "./fusion-family";
+import { FusionNextBatch } from "./fusion-next-batch";
 import { TooltipButtons } from "./tooltip-buttons";
 import {
   RELAY_LISTED,
@@ -76,6 +77,8 @@ const salesOverlays = new SalesOverlays(client);
 salesOverlays.start();
 const fusionFamily = new FusionFamilyImpact(client);
 fusionFamily.start();
+const fusionNextBatch = new FusionNextBatch(client);
+fusionNextBatch.start();
 const tooltipButtons = new TooltipButtons(openFromButton);
 tooltipButtons.start();
 const marketOutcomes = new MarketOutcomes(saleObservations);
@@ -127,7 +130,9 @@ function syncRelayPreferences() {
         collectSaleRateData: settings.collectSaleRateData,
         packInventory: settings.showRemainingPackCount,
         packOpenings: pageSettings().enabled,
-        fusion: family && settings.showFusionFamilyOverlay,
+        fusion:
+          (family && settings.showFusionFamilyOverlay) ||
+          (settings.fusionEnabled && settings.fusionNextBatchEnabled),
         vortex: family && settings.showVortexFamilyOverlay,
         familyMilestones:
           family &&
@@ -218,6 +223,7 @@ const preferencesReady = Promise.all([
   overlays.setSettings(settings);
   salesOverlays.setSettings(settings);
   fusionFamily.setSettings(settings);
+  fusionNextBatch.setSettings(settings);
   tooltipButtons.setSettings(settings);
   if (!pageSettings().enabled) hide();
   else if (pinnedState.pinned && !popup && !current) createView(null);
@@ -993,7 +999,8 @@ const recheckAccount = () => {
     popup ||
     overlays.enabled() ||
     salesOverlays.enabled() ||
-    fusionFamily.enabled()
+    fusionFamily.enabled() ||
+    fusionNextBatch.running
   )
     void client.account().catch(() => {});
 };
@@ -1030,6 +1037,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     overlays.setSettings(settings);
     salesOverlays.setSettings(settings);
     fusionFamily.setSettings(settings);
+    fusionNextBatch.setSettings(settings);
     tooltipButtons.setSettings(settings);
     if (!pageSettings().enabled) hide();
     else if (popup) {

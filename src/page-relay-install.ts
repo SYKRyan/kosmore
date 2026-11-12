@@ -343,7 +343,14 @@ export function installPageRelay(win: Window = window) {
                   .json()
                   .then((data: unknown) => {
                     if (enabled() && (!auction || epoch === observationEpoch))
-                      relay({ type: RELAY_DATA, path: url.pathname, data });
+                      relay({
+                        type: RELAY_DATA,
+                        path: url.pathname,
+                        data,
+                        ...(url.pathname === "/api/fusion/cards" && {
+                          fusionQuery: url.search,
+                        }),
+                      });
                   })
                   .catch(() => {});
               };

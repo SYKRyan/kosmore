@@ -170,6 +170,30 @@ it("exports usable defaults from a new installation and names files by local tim
     "KosMore-backup-2026-11-05-090807.json",
   );
 });
+it("defaults Fusion settings in older backups and validates a saved price threshold", () => {
+  const source = backup();
+  const legacy = JSON.parse(serializeBackup(source));
+  for (const key of Object.keys(legacy.settings))
+    if (key.startsWith("fusion")) delete legacy.settings[key];
+  expect(validateBackup(legacy).settings).toMatchObject({
+    fusionEnabled: true,
+    fusionNextBatchEnabled: true,
+    fusionRespectFamilyImpact: true,
+    fusionRespectBlacklist: true,
+    fusionRespectPriceThreshold: false,
+    fusionExcludeFullArts: true,
+    fusionExcludeShiny: true,
+    fusionExcludeNumberOnes: true,
+    fusionPriceThreshold: 0,
+  });
+  source.settings.fusionPriceThreshold = 5.000001;
+  source.settings.fusionExcludeNumberOnes = false;
+  expect(parseBackup(serializeBackup(source)).settings).toEqual(
+    source.settings,
+  );
+  source.settings.fusionPriceThreshold = 0.0000001;
+  expect(() => validateBackup(source)).toThrow("Fusion price threshold");
+});
 it("imports pre-tooltip-hotkey backups without changing existing shortcut groups", async () => {
   const source = backup();
   source.settings.hotkeysEnabled = false;

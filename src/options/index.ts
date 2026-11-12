@@ -29,6 +29,7 @@ import {
   SETTINGS_KEY,
 } from "../shared/settings";
 import { request, type Session } from "../shared/messages";
+import { validFusionPriceThreshold } from "../shared/sales-prices";
 import { messageOf, type Album, type Settings } from "../shared/types";
 const app = document.getElementById("app")!;
 type FeatureKey =
@@ -43,6 +44,7 @@ type FeatureKey =
   | "hoverTooltipHotkeysEnabled"
   | "packOpeningHotkeysEnabled"
   | "showRemainingPackCount"
+  | "fusionEnabled"
   | "cardOverlaysEnabled"
   | "familyImpactOverlaysEnabled"
   | "salesOverlaysEnabled"
@@ -546,18 +548,19 @@ function checkboxSetting(
   hint: string,
   update: (checked: boolean) => void,
   host: HTMLElement = overlays,
-  before: Element | null = null,
+  role: "checkbox" | "switch" = "checkbox",
 ) {
   const row = el("div", "row"),
-    input = el("input"),
+    input = el("input", role === "switch" ? "section-switch" : ""),
     text = el("label", "label settings-toggle", label);
   input.type = "checkbox";
   input.id = id;
+  if (role === "switch") input.setAttribute("role", role);
   text.prepend(input);
-  row.append(text, el("span", "hint", hint));
+  row.append(text);
+  if (hint) row.append(el("span", "hint", hint));
   input.addEventListener("change", () => update(input.checked));
-  host.insertBefore(el("div", "rule"), before);
-  host.insertBefore(row, before);
+  host.append(el("div", "rule"), row);
   return input;
 }
 const anyKeyDismissesFoundPack = checkboxSetting(
@@ -603,6 +606,92 @@ const showRemainingPackCount = checkboxSetting(
   },
   packDisplaySettings,
 );
+const fusion = el("section", "panel");
+fusion.append(el("h2", "", "Fusion"));
+const fusionEnabled = sectionToggle(fusion, "fusionEnabled", "Enable Fusion");
+const fusionFilters = el("fieldset", "fusion-subsettings");
+fusionFilters.id = "fusion-next-batch-filters";
+fusionFilters.setAttribute("aria-label", "Next Batch filters");
+const fusionNextBatch = checkboxSetting(
+  "fusionNextBatchEnabled",
+  "Enable Next Batch button",
+  "Fill available slots in the Fusion tray with eligible cards.",
+  (checked) => {
+    draft.fusionNextBatchEnabled = checked;
+    syncFusionFields();
+  },
+  fusion,
+);
+fusionNextBatch.setAttribute("aria-controls", fusionFilters.id);
+fusion.append(fusionFilters);
+const fusionToggles = [
+  [
+    "fusionRespectFamilyImpact",
+    "Respect Family Impact",
+    "Skip cards that would lower a family tier.",
+  ],
+  [
+    "fusionRespectBlacklist",
+    "Respect Blacklist",
+    "Skip cards in any family on your saved blacklist.",
+  ],
+  [
+    "fusionRespectPriceThreshold",
+    "Respect Price Threshold",
+    "Skip a finish with any completed sale above the threshold in its 30-day history.",
+  ],
+  ["fusionExcludeFullArts", "Exclude Full Arts", ""],
+  ["fusionExcludeShiny", "Exclude Shiny", ""],
+  ["fusionExcludeNumberOnes", "Exclude #1s", ""],
+] as const;
+const fusionFilterInputs = fusionToggles.map(([key, label, hint]) => {
+  const input = checkboxSetting(
+    key,
+    label,
+    hint,
+    (checked) => {
+      draft[key] = checked;
+      syncFusionFields();
+    },
+    fusionFilters,
+    "switch",
+  );
+  return { key, input };
+});
+const fusionPriceRow = el("div", "row settings-subsetting");
+const fusionPriceLabel = el("label", "label", "Price threshold (Kosmo)");
+const fusionPrice = el("input");
+fusionPrice.id = "fusionPriceThreshold";
+fusionPrice.type = "number";
+fusionPrice.min = "0";
+fusionPrice.step = "0.000001";
+fusionPriceLabel.htmlFor = fusionPrice.id;
+fusionPriceRow.append(fusionPriceLabel, fusionPrice);
+const fusionPriceFilter = fusionFilters.querySelector(
+  "#fusionRespectPriceThreshold",
+)!;
+fusionPriceFilter.setAttribute("aria-controls", fusionPrice.id);
+fusionPriceFilter.closest(".row")!.append(fusionPriceRow);
+fusionPrice.addEventListener("input", () => {
+  draft.fusionPriceThreshold = fusionPrice.valueAsNumber;
+});
+const fusionKeys = [
+  "fusionNextBatchEnabled",
+  ...fusionToggles.map(([key]) => key),
+  "fusionPriceThreshold",
+] as const;
+function syncFusionFields() {
+  fusionFilters.disabled = !draft.fusionNextBatchEnabled;
+  fusionPrice.disabled =
+    !draft.fusionNextBatchEnabled || !draft.fusionRespectPriceThreshold;
+}
+function renderFusionSettings() {
+  fusionNextBatch.checked = draft.fusionNextBatchEnabled;
+  for (const { key, input } of fusionFilterInputs) input.checked = draft[key];
+  if (validFusionPriceThreshold(draft.fusionPriceThreshold))
+    fusionPrice.value = String(draft.fusionPriceThreshold);
+  syncFusionFields();
+}
 function overlayPriceToggle(
   parent: HTMLInputElement,
   id: string,
@@ -973,6 +1062,22 @@ groupControls({
   render: renderSettings,
 });
 groupControls({
+  host: fusion,
+  name: "fusion settings",
+  keys: [...fusionKeys],
+  render: renderFusionSettings,
+  validate: () => {
+    if (validFusionPriceThreshold(draft.fusionPriceThreshold)) return;
+    if (fusionPrice.disabled) {
+      draft.fusionPriceThreshold = saved.fusionPriceThreshold;
+      renderFusionSettings();
+      return;
+    }
+    fusionPrice.focus();
+    return "Enter a nonnegative price threshold with up to six decimal places.";
+  },
+});
+groupControls({
   host: friendTooltipSettings.host,
   name: "friend tooltip settings",
   keys: [...FRIEND_TOOLTIP_KEYS],
@@ -1138,6 +1243,12 @@ const settingsGroups = [
     path: "M6.9 5.3 15.9 2a1.5 1.5 0 0 1 1.9.9l5.1 14a1.5 1.5 0 0 1-.9 1.9l-9 3.3a1.5 1.5 0 0 1-1.9-.9L6 7.2a1.5 1.5 0 0 1 .9-1.9Z M4.5 11.5 2 16.5a1.5 1.5 0 0 0 .7 2L7 20.6 M13.2 8.4l3.6 2.8-1.1 4.5-3.7-2.9Z",
   },
   {
+    id: "fusion",
+    label: "Fusion",
+    host: fusion,
+    path: "M3 4h5v7H3Z M16 4h5v7h-5Z M6 11v3l6 4 6-4v-3 M12 16v6 M9 19h6",
+  },
+  {
     id: "backup-restore",
     label: "Backup & Restore",
     host: backupSettings.host,
@@ -1180,6 +1291,8 @@ function renderSettings() {
   showRemainingPackCount.checked = draft.showRemainingPackCount;
   overlaysEnabled.checked = draft.cardOverlaysEnabled;
   familyImpactEnabled.checked = draft.familyImpactOverlaysEnabled;
+  fusionEnabled.checked = draft.fusionEnabled;
+  renderFusionSettings();
   salesEnabled.checked = draft.salesOverlaysEnabled;
   statsEnabled.checked = draft.statBoxesEnabled;
   collectSaleRate.checked = draft.collectSaleRateData;
@@ -1234,6 +1347,7 @@ function renderSettings() {
     packHotkeySettings.host,
     tooltipHotkeySettings.host,
     packBehavior,
+    fusion,
   ])
     renderGroupState(host);
 }
@@ -1697,5 +1811,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
     Object.assign(saved, { [key]: structuredClone(next[key]) });
   }
   familyBlacklistSettings.render(draft);
+  for (const key of fusionKeys) {
+    if (draft[key] === saved[key]) Object.assign(draft, { [key]: next[key] });
+    Object.assign(saved, { [key]: next[key] });
+  }
+  renderFusionSettings();
   backupSettings.refreshControls();
 });

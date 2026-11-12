@@ -144,17 +144,17 @@ function C(t) {
 	}
 }
 // src/shared/popup-layout.ts
-var te = [
+var w = [
 	"market",
 	"history",
 	"trade",
 	"notes"
 ];
-function w(e) {
-	return te.some((t) => t === e);
+function T(e) {
+	return w.some((t) => t === e);
 }
-var T = "kosmore.popup.", E = "kosmore.friendPopup.";
-function D(e) {
+var E = "kosmore.popup.", D = "kosmore.friendPopup.";
+function O(e) {
 	if (!e || typeof e != "object") return null;
 	let t = e;
 	return [t.left, t.top].every((e) => typeof e == "number" && Number.isFinite(e) && e >= 0 && e <= 1e5) ? {
@@ -162,7 +162,7 @@ function D(e) {
 		top: Math.round(t.top)
 	} : null;
 }
-function O(e) {
+function te(e) {
 	if (!e || typeof e != "object") return {
 		pinned: !1,
 		position: null
@@ -170,8 +170,8 @@ function O(e) {
 	let t = e;
 	return {
 		pinned: t.pinned === !0,
-		position: D(t.position),
-		...w(t.tab) ? { tab: t.tab } : {}
+		position: O(t.position),
+		...T(t.tab) ? { tab: t.tab } : {}
 	};
 }
 function k(e, t = {
@@ -186,7 +186,7 @@ function k(e, t = {
 		"width",
 		"height",
 		"tab"
-	].includes(e)) && (n.tab === void 0 || w(n.tab)) && (n.pinned === void 0 || typeof n.pinned == "boolean") && (n.position === void 0 || D(n.position) !== null) && (n.width === void 0 || Number.isFinite(n.width) && n.width >= t.minWidth && n.width <= 1200) && (n.height === void 0 || Number.isFinite(n.height) && n.height >= t.minHeight && n.height <= 1600);
+	].includes(e)) && (n.tab === void 0 || T(n.tab)) && (n.pinned === void 0 || typeof n.pinned == "boolean") && (n.position === void 0 || O(n.position) !== null) && (n.width === void 0 || Number.isFinite(n.width) && n.width >= t.minWidth && n.width <= 1200) && (n.height === void 0 || Number.isFinite(n.height) && n.height >= t.minHeight && n.height <= 1600);
 }
 // src/shared/messages.ts
 var A = (e) => typeof e == "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(e);
@@ -294,10 +294,10 @@ var M = [
 		description: "Share of this card's observed listings that sold, for the selected variants. Kosmora does not report unsold listings, so KosMore records the listings the Market shows you and settles them from sale histories.",
 		source: "observed",
 		preview: { value: "67% · 3" },
-		read: (e) => N(e)
+		read: (e) => ne(e)
 	}
 ];
-function N(e) {
+function ne(e) {
 	if (!e.saleRates) return {
 		value: "—",
 		title: "Loading card details…"
@@ -314,12 +314,12 @@ function N(e) {
 		title: n
 	};
 }
-var P = () => M.map(({ id: e }) => ({
+var N = () => M.map(({ id: e }) => ({
 	id: e,
 	enabled: !0
 }));
-function ne(e) {
-	if (!Array.isArray(e)) return P();
+function re(e) {
+	if (!Array.isArray(e)) return N();
 	let t = new Map(M.map((e) => [e.id, e])), n = /* @__PURE__ */ new Set(), r = [];
 	for (let i of e) {
 		if (!i || typeof i != "object") continue;
@@ -329,10 +329,10 @@ function ne(e) {
 			enabled: typeof a != "boolean" || a
 		}));
 	}
-	return [...r, ...P().filter((e) => !n.has(e.id))];
+	return [...r, ...N().filter((e) => !n.has(e.id))];
 }
 // src/shared/hotkeys.ts
-var re = [
+var ie = [
 	{
 		id: "home",
 		label: "Home",
@@ -433,7 +433,7 @@ var re = [
 		label: "My Profile",
 		path: null
 	}
-], ie = [
+], ae = [
 	{
 		id: "focusFirstCard",
 		label: "Focus First Card"
@@ -478,7 +478,7 @@ var re = [
 		id: "home",
 		label: "Home"
 	}
-], ae = [
+], oe = [
 	{
 		id: "close",
 		label: "Close Tooltip",
@@ -541,38 +541,38 @@ var re = [
 		label: "Next Tab"
 	}
 ];
-function oe(e, t = !1) {
+function se(e, t = !1) {
 	return typeof e == "string" && (/^(Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-2]))$/.test(e) || t && /^(Arrow(?:Up|Down|Left|Right)|Home|End)$/.test(e));
 }
-function F(e) {
+function P(e) {
 	return `${e.ctrl}-${e.alt}-${e.shift}-${e.meta}-${e.code}`;
 }
-function I(e, t, n, r, i = {}) {
+function F(e, t, n, r, i = {}) {
 	if (!e || typeof e != "object") return {};
 	let a = e, o = [
 		...Object.values(n),
 		...Object.values(r),
 		...Object.values(i)
-	].map(F);
+	].map(P);
 	return Object.fromEntries(Object.entries(t).flatMap(([e, t]) => {
 		if (!Object.hasOwn(a, e)) return [];
-		let n = B(a[e], t.map((e) => ({
+		let n = z(a[e], t.map((e) => ({
 			id: e,
 			label: e
 		})), new Set(o));
 		return Object.keys(n).length ? [[e, n]] : [];
 	}));
 }
-function L(e) {
-	return B(e, re);
+function I(e) {
+	return z(e, ie);
 }
-function R(e, t) {
-	return B(e, ie, new Set(Object.values(t).map(F)), !0);
+function L(e, t) {
+	return z(e, ae, new Set(Object.values(t).map(P)), !0);
 }
-function z(e, t, n) {
-	return B(e, ae, new Set([...Object.values(t), ...Object.values(n)].map(F)), !0);
+function R(e, t, n) {
+	return z(e, oe, new Set([...Object.values(t), ...Object.values(n)].map(P)), !0);
 }
-function B(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
+function z(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
 	let i = {};
 	if (!e || typeof e != "object") return i;
 	let a = e;
@@ -580,7 +580,7 @@ function B(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
 		let t = a[e.id];
 		if (!t || typeof t != "object") continue;
 		let o = t;
-		if (!oe(o.code, r) || ![
+		if (!se(o.code, r) || ![
 			o.ctrl,
 			o.alt,
 			o.shift,
@@ -592,48 +592,51 @@ function B(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
 			alt: o.alt,
 			shift: o.shift,
 			meta: o.meta
-		}, c = F(s);
+		}, c = P(s);
 		n.has(c) || (n.add(c), i[e.id] = s);
 	}
 	return i;
 }
 // src/shared/sales-prices.ts
-var V = {
+var B = {
 	Common: 1,
 	Uncommon: 1,
 	Rare: 1,
 	Epic: 20,
 	Legendary: 100,
 	Mythic: 500
-}, H = 1000000n;
-function U(e) {
+}, V = 1000000n;
+function H(e) {
 	let t = e.match(/^(-?)(\d*)(?:\.(\d{0,6}))?$/);
 	if (!t || !(t[2] || t[3])) return;
-	let n = BigInt(t[2]) * H + BigInt((t[3] ?? "").padEnd(6, "0"));
+	let n = BigInt(t[2]) * V + BigInt((t[3] ?? "").padEnd(6, "0"));
 	return t[1] ? -n : n;
 }
-function W(e) {
+function U(e) {
 	let t = e.toLocaleString("en-US", {
 		useGrouping: !1,
 		maximumFractionDigits: 6
 	});
-	if (Number(t) === e) return U(t);
+	if (Number(t) === e) return H(t);
+}
+function W(e) {
+	return e === 0 || G(e);
 }
 function G(e, t = 0) {
-	return typeof e == "number" && Number.isFinite(e) && e > 0 && e >= t && W(e) !== void 0;
-}
-function K(e) {
-	return typeof e == "number" && Number.isSafeInteger(e) && e >= 1;
-}
-function se(e) {
-	if (typeof e != "number" || !Number.isFinite(e)) return;
-	let t = U(String(e)), n = BigInt(2 ** 53 - 1);
-	if (t !== void 0 && t >= -n && t <= n) return t;
+	return typeof e == "number" && Number.isFinite(e) && e > 0 && e >= t && U(e) !== void 0;
 }
 function ce(e) {
-	return se(e) !== void 0;
+	return typeof e == "number" && Number.isSafeInteger(e) && e >= 1;
 }
-function le(e, t = "per friend") {
+function le(e) {
+	if (typeof e != "number" || !Number.isFinite(e)) return;
+	let t = H(String(e)), n = BigInt(2 ** 53 - 1);
+	if (t !== void 0 && t >= -n && t <= n) return t;
+}
+function ue(e) {
+	return le(e) !== void 0;
+}
+function de(e, t = "per friend") {
 	let n = [];
 	for (let r of e) {
 		let e = r.trim().replace(/\s+/g, " ");
@@ -645,7 +648,7 @@ function le(e, t = "per friend") {
 	return n;
 }
 // src/shared/settings.ts
-var q = "kosmore.settings", ue = () => ({
+var K = "kosmore.settings", fe = () => ({
 	schemaVersion: 1,
 	enabled: !0,
 	disableHoverTooltipInPulsar: !1,
@@ -683,6 +686,15 @@ var q = "kosmore.settings", ue = () => ({
 	autoSkipOpening: !1,
 	autoDismissFoundPack: !1,
 	showRemainingPackCount: !0,
+	fusionEnabled: !0,
+	fusionNextBatchEnabled: !0,
+	fusionRespectFamilyImpact: !0,
+	fusionRespectBlacklist: !0,
+	fusionRespectPriceThreshold: !1,
+	fusionExcludeFullArts: !0,
+	fusionExcludeShiny: !0,
+	fusionExcludeNumberOnes: !0,
+	fusionPriceThreshold: 0,
 	cardOverlaysEnabled: !0,
 	disableCardOverlaysInPulsar: !1,
 	disableCardOverlaysInVortex: !1,
@@ -701,7 +713,7 @@ var q = "kosmore.settings", ue = () => ({
 	salesDiscountMode: "flat",
 	salesDiscountThreshold: 5,
 	salesCustomMinimumsEnabled: !1,
-	salesCustomMinimums: { ...V },
+	salesCustomMinimums: { ...B },
 	salesQuickPricesEnabled: !1,
 	salesQuickPrices: [],
 	statBoxesEnabled: !0,
@@ -728,32 +740,33 @@ var q = "kosmore.settings", ue = () => ({
 	showFusionFamilyOverlay: !0,
 	showTradeFamilyOverlay: !0,
 	showVortexFamilyOverlay: !0,
-	stats: P(),
+	stats: N(),
 	hotkeys: {},
 	packOpeningHotkeys: {},
 	hoverTooltipHotkeys: {},
 	pinnedAlbums: {},
 	pinnedAlbumHotkeys: {}
 });
-function J(e) {
-	let t = ue();
+function q(e) {
+	let t = fe();
 	if (!e || typeof e != "object") return t;
 	let n = e;
 	if (n.schemaVersion !== 1) return t;
-	if (t.stats = ne(n.stats), t.hotkeys = L(n.hotkeys), t.packOpeningHotkeys = R(n.packOpeningHotkeys, t.hotkeys), t.hoverTooltipHotkeys = z(n.hoverTooltipHotkeys, t.hotkeys, t.packOpeningHotkeys), t.popupPosition = D(n.popupPosition), t.friendTooltipPosition = D(n.friendTooltipPosition), Array.isArray(n.familyBlacklist) && n.familyBlacklist.every((e) => typeof e == "string")) try {
-		t.familyBlacklist = le(n.familyBlacklist, "in the family blacklist");
+	if (t.stats = re(n.stats), t.hotkeys = I(n.hotkeys), t.packOpeningHotkeys = L(n.packOpeningHotkeys, t.hotkeys), t.hoverTooltipHotkeys = R(n.hoverTooltipHotkeys, t.hotkeys, t.packOpeningHotkeys), t.popupPosition = O(n.popupPosition), t.friendTooltipPosition = O(n.friendTooltipPosition), Array.isArray(n.familyBlacklist) && n.familyBlacklist.every((e) => typeof e == "string")) try {
+		t.familyBlacklist = de(n.familyBlacklist, "in the family blacklist");
 	} catch {}
 	typeof n.enabled == "boolean" && (t.enabled = n.enabled);
-	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.tooltipTakesFocus.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.hotkeysEnabled.navigationHotkeysEnabled.hoverTooltipHotkeysEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.cardOverlaysEnabled.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.salesDiscountEnabled.salesCustomMinimumsEnabled.salesQuickPricesEnabled.statBoxesEnabled.collectSaleRateData.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
+	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.tooltipTakesFocus.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.hotkeysEnabled.navigationHotkeysEnabled.hoverTooltipHotkeysEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.fusionEnabled.fusionNextBatchEnabled.fusionRespectFamilyImpact.fusionRespectBlacklist.fusionRespectPriceThreshold.fusionExcludeFullArts.fusionExcludeShiny.fusionExcludeNumberOnes.cardOverlaysEnabled.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.salesDiscountEnabled.salesCustomMinimumsEnabled.salesQuickPricesEnabled.statBoxesEnabled.collectSaleRateData.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
+	W(n.fusionPriceThreshold) && (t.fusionPriceThreshold = n.fusionPriceThreshold);
 	for (let e of [
 		"salesLastSaleAdjustment",
 		"salesLowestListingAdjustment",
 		"salesMyLastListingAdjustment"
-	]) ce(n[e]) && (t[e] = n[e]);
-	G(n.salesDiscountAmount, 1) && (t.salesDiscountAmount = n.salesDiscountAmount), n.salesDiscountMode === "percent" && (t.salesDiscountMode = "percent"), K(n.salesDiscountThreshold) && (t.salesDiscountThreshold = n.salesDiscountThreshold), Array.isArray(n.salesQuickPrices) && (t.salesQuickPrices = n.salesQuickPrices.filter((e) => G(e)));
-	for (let e of Object.keys(V)) {
+	]) ue(n[e]) && (t[e] = n[e]);
+	G(n.salesDiscountAmount, 1) && (t.salesDiscountAmount = n.salesDiscountAmount), n.salesDiscountMode === "percent" && (t.salesDiscountMode = "percent"), ce(n.salesDiscountThreshold) && (t.salesDiscountThreshold = n.salesDiscountThreshold), Array.isArray(n.salesQuickPrices) && (t.salesQuickPrices = n.salesQuickPrices.filter((e) => G(e)));
+	for (let e of Object.keys(B)) {
 		let r = n.salesCustomMinimums?.[e];
-		G(r, V[e]) && (t.salesCustomMinimums[e] = r);
+		G(r, B[e]) && (t.salesCustomMinimums[e] = r);
 	}
 	typeof n.closeTooltipWhenAddedToAlbum == "boolean" && (t.closeTooltipWhenAddedToAlbum = n.closeTooltipWhenAddedToAlbum), typeof n.applyCloseBehaviorToPinnedTooltips == "boolean" && (t.applyCloseBehaviorToPinnedTooltips = n.applyCloseBehaviorToPinnedTooltips), typeof n.showSaleHistoryOverlay == "boolean" && (t.showSaleHistoryOverlay = n.showSaleHistoryOverlay), typeof n.showLastSalePriceOverlay == "boolean" && (t.showLastSalePriceOverlay = n.showLastSalePriceOverlay), typeof n.showActiveAuctionsOverlay == "boolean" && (t.showActiveAuctionsOverlay = n.showActiveAuctionsOverlay), typeof n.showLowestListingPriceOverlay == "boolean" && (t.showLowestListingPriceOverlay = n.showLowestListingPriceOverlay), typeof n.showOnSaleOverlay == "boolean" && (t.showOnSaleOverlay = n.showOnSaleOverlay), typeof n.showFriendInterestOverlay == "boolean" && (t.showFriendInterestOverlay = n.showFriendInterestOverlay), typeof n.showQuestOverlay == "boolean" && (t.showQuestOverlay = n.showQuestOverlay), typeof n.showFusionFamilyOverlay == "boolean" && (t.showFusionFamilyOverlay = n.showFusionFamilyOverlay), typeof n.hoverDelayMs == "number" && Number.isFinite(n.hoverDelayMs) && (t.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(n.hoverDelayMs))));
 	for (let [e, r, i] of [
@@ -822,17 +835,17 @@ function J(e) {
 		writable: !0,
 		value: [...new Set(r.filter((e) => typeof e == "string" && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(e)))].slice(0, 200)
 	});
-	return t.pinnedAlbumHotkeys = I(n.pinnedAlbumHotkeys, t.pinnedAlbums, t.hotkeys, t.packOpeningHotkeys, t.hoverTooltipHotkeys), t;
+	return t.pinnedAlbumHotkeys = F(n.pinnedAlbumHotkeys, t.pinnedAlbums, t.hotkeys, t.packOpeningHotkeys, t.hoverTooltipHotkeys), t;
 }
-async function de() {
-	return J((await chrome.storage.local.get(q))[q]);
+async function pe() {
+	return q((await chrome.storage.local.get(K))[K]);
 }
-async function fe(e) {
-	await chrome.storage.local.set({ [q]: J(e) });
+async function me(e) {
+	await chrome.storage.local.set({ [K]: q(e) });
 }
 // src/shared/listing-cache.ts
-var Y = "kosmore.myListingPrices", X = "kosmore.listingHistory.", Z = (e) => e > 0 && Date.now() - e < 3e5, Q = (e, t) => d.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), pe = () => new DOMException("Listing lookup canceled.", "AbortError");
-function me(e, t) {
+var J = "kosmore.myListingPrices", Y = "kosmore.listingHistory.", X = (e) => e > 0 && Date.now() - e < 3e5, Z = (e, t) => d.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), he = () => new DOMException("Listing lookup canceled.", "AbortError");
+function ge(e, t) {
 	let n = new Map(t.map((e) => [e.id, e])), r = new Map(e.map((e) => [e.id, e])), i = /* @__PURE__ */ new Map(), a = [];
 	for (let t of e) n.has(t.id) ? (i.set(t.id, a), a = []) : a.push(t);
 	if (!i.size) return [...e, ...t];
@@ -854,7 +867,7 @@ function me(e, t) {
 	}
 	return o.concat(a);
 }
-var he = class {
+var _e = class {
 	local;
 	session;
 	writes = Promise.resolve();
@@ -900,7 +913,7 @@ var he = class {
 		return i;
 	}
 	async readTracked(e, t) {
-		let n = t.map((t) => this.key(e, t)), r = await this.local.get(n), i = n.some((e) => r[e] === void 0) ? await (this.legacyIndex ??= this.local.get(Y).then((e) => e[Y]).catch(() => {
+		let n = t.map((t) => this.key(e, t)), r = await this.local.get(n), i = n.some((e) => r[e] === void 0) ? await (this.legacyIndex ??= this.local.get(J).then((e) => e[J]).catch(() => {
 			this.legacyIndex = void 0;
 		})) : void 0;
 		return t.map((t, a) => this.decode(r[n[a]], i?.entries?.[`${e}:${t}`], t));
@@ -986,7 +999,7 @@ var he = class {
 			i.throwIfAborted();
 			let a = [...t.keys()], o = await this.readTracked(e, a), s = {};
 			for (let [i, c] of a.entries()) {
-				let a = o[i], l = t.get(c).map((e) => this.serverRow(e)), u = me(a.listings, l), d = a.listings[0], f = !d || l.some((e) => e.id === d.id) && n >= (d.submittedAt ?? a.checkedAt), p = f ? l[0]?.id ?? d?.id : d.id, m = u.findIndex((e) => e.id === p);
+				let a = o[i], l = t.get(c).map((e) => this.serverRow(e)), u = ge(a.listings, l), d = a.listings[0], f = !d || l.some((e) => e.id === d.id) && n >= (d.submittedAt ?? a.checkedAt), p = f ? l[0]?.id ?? d?.id : d.id, m = u.findIndex((e) => e.id === p);
 				m > 0 && u.unshift(...u.splice(m, 1)), s[this.key(e, c)] = this.saveState(a, u, r, f ? Math.max(n, a.checkedAt) : a.checkedAt);
 			}
 			i.throwIfAborted(), await this.local.set(s);
@@ -995,7 +1008,7 @@ var he = class {
 	async history(e, t, n, r, i, a) {
 		let o = Date.now(), s = await this.batch(e);
 		i.throwIfAborted();
-		let c = n === "refresh", l = s && Z(s.fetchedAt) ? s : void 0, u = c ? {
+		let c = n === "refresh", l = s && X(s.fetchedAt) ? s : void 0, u = c ? {
 			selling: 180,
 			sold: 180,
 			unsold: 180
@@ -1016,7 +1029,7 @@ var he = class {
 	}
 	async invalidate(e) {
 		this.epochs.set(e, (this.epochs.get(e) ?? 0) + 1), await this.write(async () => {
-			let t = X + e, n = await this.session.get(t);
+			let t = Y + e, n = await this.session.get(t);
 			y(n[t]) && await this.session.set({ [t]: {
 				...n[t],
 				fetchedAt: 0
@@ -1026,7 +1039,7 @@ var he = class {
 	async saveBatch(e, t, n) {
 		await this.write(async () => {
 			if (this.epochs.get(e) !== n) return;
-			let r = await this.session.get(null), i = X + e, a = Object.keys(r).filter((e) => e.startsWith(X)), o = JSON.stringify(t).length * 2;
+			let r = await this.session.get(null), i = Y + e, a = Object.keys(r).filter((e) => e.startsWith(Y)), o = JSON.stringify(t).length * 2;
 			if (o > 6e6) return;
 			let s = a.filter((e) => e !== i).sort((e, t) => Number(r[e]?.fetchedAt ?? 0) - Number(r[t]?.fetchedAt ?? 0));
 			o += s.reduce((e, t) => e + JSON.stringify(r[t]).length * 2, 0);
@@ -1040,7 +1053,7 @@ var he = class {
 	}
 	async batch(e) {
 		await this.writes;
-		let t = X + e, n = (await this.session.get(t))[t];
+		let t = Y + e, n = (await this.session.get(t))[t];
 		return y(n) ? n : void 0;
 	}
 	async ensure(e, t, n, r, i = !1) {
@@ -1048,7 +1061,7 @@ var he = class {
 			let a = this.epochs.get(e);
 			if (!i) {
 				let n = await this.batch(e);
-				if (r.throwIfAborted(), n && Z(n.fetchedAt) && Q(n, t)) return n;
+				if (r.throwIfAborted(), n && X(n.fetchedAt) && Z(n, t)) return n;
 			}
 			let o = this.pending.get(e);
 			if (!o || o.controller.signal.aborted) {
@@ -1084,7 +1097,7 @@ var he = class {
 					if (o && i.fetchedAt <= o.fetchedAt && (i = {
 						...i,
 						fetchedAt: o.fetchedAt + 1
-					}), o && Z(o.fetchedAt)) {
+					}), o && X(o.fetchedAt)) {
 						for (let e of d) if (n.limits[e] > o.limits[e] && i.counts[e] <= o.counts[e] && i.counts[e] < i.totals[e]) throw Error("Your listing history stopped before all auctions were returned.");
 					}
 					return await this.saveBatch(e, i, a), i;
@@ -1095,7 +1108,7 @@ var he = class {
 				n.promise.then(r, r);
 			} else if (!o.started) for (let e of d) o.limits[e] = Math.max(o.limits[e], t[e]);
 			let s = await this.consume(o, n, r);
-			if (r.throwIfAborted(), Q(s, t)) return s;
+			if (r.throwIfAborted(), Z(s, t)) return s;
 			i = !1;
 		}
 	}
@@ -1107,7 +1120,7 @@ var he = class {
 				let r = e.readers.get(t) - 1;
 				return r ? e.readers.set(t, r) : e.readers.delete(t), e.users || e.controller.abort(), !0;
 			}, s = () => {
-				o() && i(pe());
+				o() && i(he());
 			};
 			n.addEventListener("abort", s, { once: !0 }), n.aborted ? s() : e.promise.then((e) => {
 				o() && r(e);
@@ -1118,8 +1131,8 @@ var he = class {
 	}
 };
 // src/listing-background.ts
-function ge() {
-	let e = new he(chrome.storage.local, chrome.storage.session), t = /* @__PURE__ */ new Map(), n = /* @__PURE__ */ new Set();
+function Q() {
+	let e = new _e(chrome.storage.local, chrome.storage.session), t = /* @__PURE__ */ new Map(), n = /* @__PURE__ */ new Set();
 	chrome.tabs.onRemoved.addListener((e) => {
 		for (let [n, r] of t) n.startsWith(`${e}:`) && (r.abort(), t.delete(n));
 	}), chrome.runtime.onMessage.addListener((r, i, a) => {
@@ -1193,23 +1206,23 @@ function ge() {
 	});
 }
 // src/background.ts
-ge();
+Q();
 var $ = Promise.resolve();
 chrome.tabs.onRemoved.addListener((e) => {
-	chrome.storage.session.remove([`${T}${e}`, `${E}${e}`]);
+	chrome.storage.session.remove([`${E}${e}`, `${D}${e}`]);
 }), chrome.action.onClicked.addListener(() => {
 	chrome.runtime.openOptionsPage();
 }), chrome.runtime.onMessage.addListener((e, t, n) => {
 	if (t.id !== chrome.runtime.id || !j(e)) return !1;
 	let r = t.url?.split(/[?#]/, 1)[0] === chrome.runtime.getURL("options.html"), i = !!t.tab && t.url?.startsWith("https://kosmora.io/");
 	if ((e.op === "popupState" || e.op === "popupLayout" || e.op === "friendPopupState" || e.op === "friendPopupLayout") && i && t.tab?.id !== void 0 && t.frameId === 0) {
-		let r = e.op === "friendPopupState" || e.op === "friendPopupLayout", i = `${r ? E : T}${t.tab.id}`, a = $.then(async () => {
-			let t = O((await chrome.storage.session.get(i))[i]);
+		let r = e.op === "friendPopupState" || e.op === "friendPopupLayout", i = `${r ? D : E}${t.tab.id}`, a = $.then(async () => {
+			let t = te((await chrome.storage.session.get(i))[i]);
 			if (e.op === "popupState" || e.op === "friendPopupState") return t;
 			let n = e.change;
-			if (n.tab !== void 0 && (t.tab = n.tab), n.pinned !== void 0 && (t.pinned = n.pinned), n.position && (t.position = D(n.position)), await chrome.storage.session.set({ [i]: t }), n.position || n.width !== void 0 || n.height !== void 0) {
-				let e = await de();
-				n.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = D(n.position)), n.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(n.width)), n.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(n.height)), await fe(e);
+			if (n.tab !== void 0 && (t.tab = n.tab), n.pinned !== void 0 && (t.pinned = n.pinned), n.position && (t.position = O(n.position)), await chrome.storage.session.set({ [i]: t }), n.position || n.width !== void 0 || n.height !== void 0) {
+				let e = await pe();
+				n.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = O(n.position)), n.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(n.width)), n.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(n.height)), await me(e);
 			}
 			return t;
 		});

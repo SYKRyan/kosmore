@@ -112,6 +112,7 @@ export function parseInsights(v: unknown): CardInsights {
           : {}),
         variant: variantOf(c),
         serial: typeof c.serial === "number" ? c.serial : undefined,
+        ...(c.numberOne === true && { numberOne: true }),
         acquiredAt:
           typeof c.acquired_at === "string" ? c.acquired_at : undefined,
       };
