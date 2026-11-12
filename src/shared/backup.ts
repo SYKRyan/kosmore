@@ -9,15 +9,23 @@ import { parseCardNote, type CardNote } from "./card-notes";
 import {
   NAVIGATION,
   PACK_OPENING,
+  HOVER_TOOLTIP,
   hotkeyConflict,
   validShortcutCode,
   type Hotkeys,
+  type HoverTooltipId,
   type PackOpeningId,
   type PinnedAlbumHotkeys,
 } from "./hotkeys";
 import { STAT_CATALOG } from "./stat-catalog";
 import { parsePopupPosition } from "./popup-layout";
-import { validSaleAdjustment } from "./sales-prices";
+import {
+  SALE_MINIMUMS,
+  type SaleRarity,
+  validDiscountThreshold,
+  validSaleAdjustment,
+  validSalePrice,
+} from "./sales-prices";
 import { subjectId, uuid } from "../kosmora/contracts";
 import { FINISHES, messageOf, type Finish, type Settings } from "./types";
 
@@ -135,6 +143,42 @@ function backupSettings(value: unknown): Settings {
     if (Object.hasOwn(raw, key) && !validSaleAdjustment(raw[key]))
       throw new Error(`Setting ${key} is not a valid price adjustment.`);
   if (
+    Object.hasOwn(raw, "salesDiscountAmount") &&
+    !validSalePrice(raw.salesDiscountAmount, 1)
+  )
+    throw new Error("The discount amount must be at least 1.");
+  if (
+    Object.hasOwn(raw, "salesDiscountMode") &&
+    raw.salesDiscountMode !== "flat" &&
+    raw.salesDiscountMode !== "percent"
+  )
+    throw new Error("The discount type must be Flat or Percent.");
+  if (
+    Object.hasOwn(raw, "salesDiscountThreshold") &&
+    !validDiscountThreshold(raw.salesDiscountThreshold)
+  )
+    throw new Error(
+      "The discount threshold must be a whole number of at least 1.",
+    );
+  if (
+    Object.hasOwn(raw, "salesQuickPrices") &&
+    !array(raw.salesQuickPrices, "Quick Prices").every((price) =>
+      validSalePrice(price),
+    )
+  )
+    throw new Error(
+      "Quick Prices must contain positive prices with up to six decimal places.",
+    );
+  if (Object.hasOwn(raw, "salesCustomMinimums"))
+    for (const [rarity, minimum] of Object.entries(
+      record(raw.salesCustomMinimums, "Custom rarity minimums"),
+    ))
+      if (
+        !Object.hasOwn(SALE_MINIMUMS, rarity) ||
+        !validSalePrice(minimum, SALE_MINIMUMS[rarity as SaleRarity])
+      )
+        throw new Error(`Invalid custom rarity minimum for ${rarity}.`);
+  if (
     Object.hasOwn(raw, "popupPosition") &&
     raw.popupPosition !== null &&
     !parsePopupPosition(raw.popupPosition)
@@ -174,6 +218,7 @@ function backupSettings(value: unknown): Settings {
   for (const [field, actions] of [
     ["hotkeys", NAVIGATION],
     ["packOpeningHotkeys", PACK_OPENING],
+    ["hoverTooltipHotkeys", HOVER_TOOLTIP],
   ] as const) {
     if (!Object.hasOwn(raw, field)) continue;
     const keys = record(raw[field], "Shortcuts");
@@ -181,7 +226,7 @@ function backupSettings(value: unknown): Settings {
       const shortcut = record(value, "Shortcut");
       if (
         !actions.some((item) => item.id === id) ||
-        !validShortcutCode(shortcut.code, field === "packOpeningHotkeys") ||
+        !validShortcutCode(shortcut.code, field !== "hotkeys") ||
         ![shortcut.ctrl, shortcut.alt, shortcut.shift, shortcut.meta].every(
           (flag) => typeof flag === "boolean",
         )
@@ -195,6 +240,8 @@ function backupSettings(value: unknown): Settings {
     (raw.hotkeys as Hotkeys) ?? {},
     (raw.packOpeningHotkeys as Hotkeys<PackOpeningId>) ?? {},
     validateAlbumHotkeys(raw.pinnedAlbumHotkeys, raw.pinnedAlbums),
+    undefined,
+    (raw.hoverTooltipHotkeys as Hotkeys<HoverTooltipId>) ?? {},
   );
   if (conflict) throw new Error(conflict);
   return parseSettings(raw);
@@ -425,6 +472,8 @@ function importValues(
       settings.hotkeys,
       settings.packOpeningHotkeys,
       settings.pinnedAlbumHotkeys,
+      undefined,
+      settings.hoverTooltipHotkeys,
     );
     if (conflict) throw new Error(conflict);
     writes[SETTINGS_KEY] = settings;

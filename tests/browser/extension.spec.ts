@@ -25,6 +25,7 @@ import {
 import { multiSelectFixture } from "../fixtures/multi-select";
 import { auction, auctionPage } from "../fixtures/auctions";
 import { myListing, myListingPage } from "../fixtures/my-listings";
+import type { TrackedListing } from "../../src/kosmora/my-listings";
 import {
   FUSION_FAMILIES,
   familyMilestones,
@@ -317,6 +318,14 @@ async function pulsarSettings(update: Record<string, unknown>) {
     });
   }, update);
 }
+
+const shortcutBindings = (codes: Record<string, string>) =>
+  Object.fromEntries(
+    Object.entries(codes).map(([id, code]) => [
+      id,
+      { code, ctrl: false, alt: false, shift: false, meta: false },
+    ]),
+  );
 
 async function navigatePulsar(path: string) {
   await page.evaluate((path) => {
@@ -1497,6 +1506,8 @@ test("already-added albums show a small red removal action on the right and refr
       .poll(async () => (await popup.boundingBox())?.width)
       .toBe(width);
     await expect(popup.locator(".subtitle")).toContainText("No. 42");
+    await expect(popup.locator(".footer")).toHaveCSS("padding-bottom", "3px");
+    await expect(popup.locator(".footer")).toHaveCSS("row-gap", "3px");
     const icon = (await remove.boundingBox())!,
       tile = (await remove.locator("..").boundingBox())!;
     expect(tile.x + tile.width - (icon.x + icon.width)).toBeLessThanOrEqual(8);
@@ -1512,15 +1523,31 @@ test("already-added albums show a small red removal action on the right and refr
         metric = rect(".metric"),
         footer = rect(".footer"),
         sell = rect(".sell-button"),
+        gift = rect('[aria-label="Gift card"]'),
+        settings = rect(".settings-button"),
+        brand = rect(".footer .brand"),
         status = rect(".album-add small"),
-        trash = rect(".album-remove"),
-        bounds = host.getBoundingClientRect();
+        trash = rect(".album-remove");
+      const buttons = [...root.querySelectorAll(".copy-actions button")];
+      const style = getComputedStyle(root.querySelector(".footer")!);
+      const gearStyle = getComputedStyle(root.querySelector(".settings-button")!);
       return {
         gridOffset: Math.abs(album.left - metric.left),
         columnDifference: Math.abs(album.width - metric.width),
-        sellOffset: Math.abs(
-          sell.left + sell.width / 2 - bounds.left - bounds.width / 2,
+        actionCenterOffset: Math.abs((sell.left + gift.right) / 2 - (footer.left + footer.right) / 2),
+        settingsOffset: Math.abs(footer.right - settings.right - parseFloat(style.paddingRight)),
+        settingsRowOffset: Math.abs((settings.top + settings.bottom) / 2 - (brand.top + brand.bottom) / 2),
+        gearBackground: gearStyle.backgroundColor,
+        gearBorder: gearStyle.borderTopWidth,
+        brandOffset: Math.abs(
+          brand.left + brand.width / 2 - footer.left - footer.width / 2,
         ),
+        buttonOrder: buttons.map((button) => button.textContent),
+        iconWidths: buttons.map((button) => button.querySelector("svg")?.getBoundingClientRect().width),
+        brandBelowButtons: buttons.every(
+          (button) => button.getBoundingClientRect().bottom < brand.top,
+        ),
+        singleButtonRow: buttons.every((button) => Math.abs(button.getBoundingClientRect().top - sell.top) < 1),
         statusOffset: Math.abs(
           status.top + status.height / 2 - trash.top - trash.height / 2,
         ),
@@ -1537,7 +1564,16 @@ test("already-added albums show a small red removal action on the right and refr
     });
     expect(layout.gridOffset).toBeLessThan(1);
     expect(layout.columnDifference).toBeLessThan(1);
-    expect(layout.sellOffset).toBeLessThan(1);
+    expect(layout.actionCenterOffset).toBeLessThan(1);
+    expect(layout.settingsOffset).toBeLessThan(1);
+    expect(layout.settingsRowOffset).toBeLessThan(1);
+    expect(layout.gearBackground).toBe("rgba(0, 0, 0, 0)");
+    expect(layout.gearBorder).toBe("0px");
+    expect(layout.brandOffset).toBeLessThan(1);
+    expect(layout.buttonOrder).toEqual(["Sell", "Trade", "Gift"]);
+    expect(layout.iconWidths).toEqual([20, 20, 20]);
+    expect(layout.brandBelowButtons).toBe(true);
+    expect(layout.singleButtonRow).toBe(true);
     expect(layout.statusOffset).toBeLessThan(1);
     expect(layout.footerBelowBody).toBe(true);
     expect(layout.divider).toBe(layout.footerDivider);
@@ -1958,6 +1994,7 @@ test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", 
       `chrome-extension://${extensionId}/options.html#pack-opening-hotkeys`,
     );
     const pack = options.locator("#pack-opening-hotkeys");
+    const behavior = options.locator("#pack-openings");
     const nav = options.locator("#navigation-hotkeys");
     const record = pack.getByRole("button", {
       name: "Set shortcut for Next Card",
@@ -1970,13 +2007,13 @@ test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", 
     const toggle = pack.getByRole("switch", {
       name: "Enable pack opening hotkeys",
     });
-    const anyKey = pack.getByRole("checkbox", {
+    const anyKey = behavior.getByRole("checkbox", {
       name: "Any key dismisses found pack",
     });
-    const autoSkip = pack.getByRole("checkbox", {
+    const autoSkip = behavior.getByRole("checkbox", {
       name: "Auto-skip on next pack",
     });
-    const autoDismiss = pack.getByRole("checkbox", {
+    const autoDismiss = behavior.getByRole("checkbox", {
       name: "Auto-dismiss found pack",
     });
     await expect(toggle).not.toBeChecked();
@@ -1990,6 +2027,7 @@ test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", 
     await autoSkip.check();
     await autoDismiss.check();
     await pack.getByRole("button", { name: "Cancel" }).click();
+    await behavior.getByRole("button", { name: "Cancel" }).click();
     await expect(anyKey).toBeChecked();
     await expect(autoSkip).not.toBeChecked();
     await expect(autoDismiss).not.toBeChecked();
@@ -1998,6 +2036,8 @@ test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", 
     await autoDismiss.check();
     await save.click();
     await expect(pack.locator(".savebar .status")).toContainText("Saved");
+    await behavior.getByRole("button", { name: "Save" }).click();
+    await expect(behavior.locator(".savebar .status")).toContainText("Saved");
     await options.reload();
     await expect(toggle).toBeChecked();
     await expect(anyKey).not.toBeChecked();
@@ -2051,6 +2091,262 @@ test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", 
   }
 });
 
+test("tooltip hotkeys record independently and Escape cancels the recorder", async () => {
+  await pulsarSettings({ hotkeys: shortcutBindings({ home: "KeyH" }) });
+  const options = await context.newPage();
+  try {
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#hover-tooltip-hotkeys`,
+    );
+    const group = options.locator("#hover-tooltip-hotkeys");
+    const record = group.getByRole("button", {
+      name: "Set shortcut for Close Tooltip",
+    });
+    const save = group.getByRole("button", { name: "Save", exact: true });
+    await expect(
+      group.getByText(
+        "Escape always closes the tooltip, even when this shortcut is unset.",
+      ),
+    ).toBeVisible();
+    await expect(group.locator(".shortcut-record")).toHaveCount(15);
+    await record.click();
+    await record.press("Escape");
+    await expect(record).toHaveText("Not set");
+    await record.click();
+    await record.press("h");
+    await save.click();
+    await expect(group.getByRole("status")).toContainText("both use H");
+    await record.click();
+    await record.press("x");
+    await save.click();
+    await expect(group.getByRole("status")).toContainText("Saved");
+    await options.reload();
+    await expect(record).toHaveText("X");
+    await group
+      .getByRole("button", { name: "Clear shortcut for Close Tooltip" })
+      .click();
+    await save.click();
+    await expect(group.getByRole("status")).toContainText("Saved");
+    await options.reload();
+    await expect(record).toHaveText("Not set");
+    await expect(
+      options.locator('#navigation-hotkeys [data-shortcut="home"]'),
+    ).toHaveText("H");
+  } finally {
+    await options.close();
+  }
+});
+
+test("Hotkeys switches pause live shortcuts and preserve individual settings", async () => {
+  await enableTooltipButtons();
+  await pulsarSettings({
+    packOpeningHotkeysEnabled: true,
+    hotkeys: shortcutBindings({ home: "KeyH" }),
+    hoverTooltipHotkeys: shortcutBindings({ pin: "KeyP" }),
+    pinnedAlbumHotkeys: { fixtureplayer: shortcutBindings({ [ALBUM_A]: "KeyA" }) },
+  });
+  const options = await context.newPage();
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html#hotkeys`);
+    const hotkeys = options.locator("#hotkeys");
+    const hover = options.locator("#hover-tooltip-hotkeys");
+    const master = hotkeys.getByRole("switch", { name: "Enable all hotkeys" });
+    const tooltipSwitch = hover.getByRole("switch", { name: "Enable hover tooltip hotkeys" });
+    const navigation = options.locator("#navigation-hotkeys");
+    const anyKey = options.locator("#pack-openings").getByRole("checkbox", { name: "Any key dismisses found pack" });
+    await expect(navigation.getByRole("heading", { name: "Navigation", exact: true })).toBeVisible();
+    const subtitle = hotkeys.locator(".hotkeys-subtitle");
+    await expect(subtitle).toHaveCount(1);
+    await expect(hotkeys.locator(".settings-subgroup .sub:not(:empty):not(.hotkey-help)")).toHaveCount(0);
+    const subtitleBox = (await subtitle.boundingBox())!;
+    const navigationBox = (await navigation.boundingBox())!;
+    expect(navigationBox.y - (subtitleBox.y + subtitleBox.height)).toBeGreaterThanOrEqual(12);
+    await tooltipSwitch.uncheck();
+    await expect(hover.locator(".savebar .status")).toContainText("Saved.");
+    await expect(hover.getByRole("button", { name: "Set shortcut for Pin/Unpin" })).toBeDisabled();
+    await master.uncheck();
+    await expect(hotkeys.locator("[data-feature-status]")).toContainText("Saved.");
+    await expect(navigation.getByRole("switch")).toBeDisabled();
+    await expect(tooltipSwitch).toBeDisabled();
+    await expect(anyKey).toBeDisabled();
+    await expect(options.getByRole("checkbox", { name: "Auto-skip on next pack" })).toBeEnabled();
+
+    const collection = "https://kosmora.io/collection";
+    const popup = page.locator("#kosmore-root");
+    const openCard = async () => {
+      await page.bringToFront();
+      await page.goto(collection);
+      await tooltipButton().click();
+      const copy = popup.getByLabel("Owned copy");
+      await copy.selectOption(COPY_A);
+      await copy.blur();
+    };
+    await openCard();
+    await page.keyboard.press("p");
+    await page.keyboard.press("a");
+    await page.keyboard.press("h");
+    await expect(popup).not.toHaveAttribute("data-pinned", "");
+    await expect(page).toHaveURL(collection);
+    expect(writeRequests).toBe(0);
+    await page.keyboard.press("Escape");
+    await expect(popup).toHaveCount(0);
+
+    const openingUrl = `https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1`;
+    await page.goto(openingUrl);
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator(".ko-beat-shown")).toBeVisible();
+    await page.keyboard.press("ArrowRight");
+    const prompt = page.locator(".ko-drop");
+    await expect(prompt).toBeVisible();
+    await page.keyboard.press("d");
+    await expect(page.locator("body")).not.toHaveAttribute("data-dismiss", "1");
+
+    await options.bringToFront();
+    await master.check();
+    await expect(hotkeys.locator("[data-feature-status]")).toContainText("Saved.");
+    await expect(tooltipSwitch).not.toBeChecked();
+    await expect(navigation.getByRole("switch")).toBeChecked();
+    await expect(anyKey).toBeEnabled();
+    await page.bringToFront();
+    await page.keyboard.press("d");
+    await expect(page.locator("body")).toHaveAttribute("data-dismiss", "1");
+
+    await openCard();
+    await page.keyboard.press("p");
+    await expect(popup).not.toHaveAttribute("data-pinned", "");
+    await page.keyboard.press("a");
+    await expect(popup.getByRole("button", { name: /Space & discovery.*Already added/ })).toBeDisabled();
+    expect(writeRequests).toBe(1);
+    await page.keyboard.press("h");
+    await expect(page).toHaveURL("https://kosmora.io/home");
+
+    await options.bringToFront();
+    await tooltipSwitch.check();
+    await expect(hover.locator(".savebar .status")).toContainText("Saved.");
+    await openCard();
+    await page.keyboard.press("p");
+    await expect(popup).toHaveAttribute("data-pinned", "");
+  } finally {
+    await options.close();
+  }
+});
+
+test("tooltip hotkeys reuse popup actions, respect typing and native dialogs, and navigate tabs", async () => {
+  await enableTooltipButtons();
+  await pulsarSettings({
+    hoverTooltipHotkeys: shortcutBindings({
+      close: "KeyX",
+      pin: "KeyP",
+      refresh: "KeyR",
+      settings: "KeyO",
+      listedFor: "KeyL",
+      marketTab: "KeyM",
+      historyTab: "KeyH",
+      tradeTab: "KeyT",
+      notesTab: "KeyN",
+      cycleTabs: "KeyC",
+      previousTab: "ArrowLeft",
+      nextTab: "ArrowRight",
+    }),
+  });
+  await page.goto("https://kosmora.io/collection");
+  const popup = page.locator("#kosmore-root");
+  await page.keyboard.press("p");
+  await expect(popup).toHaveCount(0);
+  await tooltipButton().click();
+  await page.keyboard.press("p");
+  await expect(popup).toHaveAttribute("data-pinned", "");
+  await page.keyboard.press("p");
+  await expect(popup).not.toHaveAttribute("data-pinned", "");
+  await page.keyboard.press("p");
+  await expect(popup).toHaveAttribute("data-pinned", "");
+  const selected = (name: string) =>
+    expect(popup.getByRole("tab", { name, exact: true })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  await popup.getByRole("tab", { name: "Market", exact: true }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await selected("Market");
+  await page.keyboard.down("ArrowRight");
+  await page.keyboard.down("ArrowRight");
+  await page.keyboard.up("ArrowRight");
+  await selected("My listing history");
+  await page.keyboard.press("ArrowLeft");
+  await selected("Market");
+  await page.keyboard.press("t");
+  await selected("Trade");
+  await page.keyboard.press("n");
+  await selected("Notes");
+  await page.keyboard.press("ArrowRight");
+  await selected("Notes");
+  await page.keyboard.press("c");
+  await selected("Market");
+  await page.keyboard.press("h");
+  await selected("My listing history");
+  await page.keyboard.press("m");
+  await selected("Market");
+  await expect(popup.getByLabel("Owned copy")).toBeVisible();
+  const fresh = page.waitForRequest("**/api/collection/42");
+  await page.keyboard.press("r");
+  await fresh;
+  await page.keyboard.press("n");
+  const notes = popup.getByRole("textbox", { name: "Card notes" });
+  await notes.press("x");
+  await expect(notes).toHaveValue("x");
+  await selected("Notes");
+
+  await page.evaluate(() => {
+    const modal = document.createElement("dialog");
+    modal.innerHTML = "<button>Native action</button>";
+    document.body.append(modal);
+    modal.showModal();
+    modal.querySelector("button")!.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "x",
+        code: "KeyX",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    modal.close();
+    modal.remove();
+  });
+  await expect(popup).toBeVisible();
+  await notes.blur();
+  await page.keyboard.press("x");
+  await expect(popup).toHaveCount(0);
+  await tooltipButton().click();
+  await page.keyboard.press("Escape");
+  await expect(popup).toHaveCount(0);
+  await tooltipButton().click();
+  const optionsOpened = context.waitForEvent("page");
+  await page.keyboard.press("o");
+  const options = await optionsOpened;
+  try {
+    await expect(options).toHaveURL(
+      `chrome-extension://${extensionId}/options.html`,
+    );
+  } finally {
+    await options.close();
+  }
+  await page.bringToFront();
+  const listed = popup.locator(".listed-for");
+  await expect(listed).toContainText("Listed For: $");
+  const marketPath = await listed.getAttribute("href");
+  await listed.evaluate((link: HTMLElement) => {
+    link.hidden = true;
+  });
+  await page.keyboard.press("l");
+  await expect(page).toHaveURL("https://kosmora.io/collection");
+  await listed.evaluate((link: HTMLElement) => {
+    link.hidden = false;
+  });
+  await page.keyboard.press("l");
+  await expect(page).toHaveURL(`https://kosmora.io${marketPath}`);
+});
+
 test("Pack Openings shows the ready-pack count above the native Next Pack button", async () => {
   const path = "**/api/packs/inventory";
   const nextId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -2095,7 +2391,9 @@ test("Pack Openings shows the ready-pack count above the native Next Pack button
       exact: true,
     });
     await expect(
-      pack.getByRole("switch", { name: "Enable pack opening hotkeys" }),
+      options
+        .locator("#pack-opening-hotkeys")
+        .getByRole("switch", { name: "Enable pack opening hotkeys" }),
     ).not.toBeChecked();
     const setting = pack.getByRole("checkbox", {
       name: "Show remaining pack count",
@@ -2375,6 +2673,91 @@ test("tooltip content scrolls over fusion results when the page locks the wheel"
   await page.mouse.wheel(0, -200);
   await expect.poll(() => content.evaluate((el) => el.scrollTop)).toBe(0);
   await expect(page.getByTestId("fusion-summary")).toBeVisible();
+});
+
+test("mobile tooltip scrolls over Fusion results when the page cancels touch scrolling", async () => {
+  await enableTooltipButtons();
+  await pulsarSettings({
+    fullScreenCenteredOnOpen: true,
+    outsideClickClosesTooltipOnly: true,
+  });
+  const phone = await context.newPage();
+  try {
+    await phone.setViewportSize({ width: 390, height: 600 });
+    const touch = await context.newCDPSession(phone);
+    await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+    await phone.route("https://kosmora.io/fusion?result=fixture", (route) =>
+      route.fulfill({ contentType: "text/html", body: fixture("page") }),
+    );
+    await phone.goto("https://kosmora.io/fusion?result=fixture");
+    await phone.evaluate(() => {
+      const result = document.createElement("dialog");
+      result.setAttribute("aria-label", "Fusion results");
+      result.style.height = "360px";
+      result.innerHTML =
+        "<h2>Fusion complete</h2>" +
+        document.querySelector("main a")!.outerHTML +
+        '<div style="height:600px"></div>';
+      document.body.append(result);
+      result.showModal();
+      document.addEventListener(
+        "touchmove",
+        (event) => {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+        },
+        { capture: true, passive: false },
+      );
+    });
+    const sendTouch = (
+      type: "touchStart" | "touchMove" | "touchEnd",
+      point?: { x: number; y: number },
+    ) =>
+      touch.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: point ? [point] : [],
+      });
+    const tap = async (x: number, y: number) => {
+      await sendTouch("touchStart", { x, y });
+      await sendTouch("touchEnd");
+    };
+    const button = phone.getByRole("button", {
+      name: "Open card tooltip for Northern Lights",
+    });
+    await expect(button).toBeVisible();
+    const trigger = (await button.boundingBox())!;
+    await tap(trigger.x + trigger.width / 2, trigger.y + trigger.height / 2);
+
+    const popup = phone.locator("#kosmore-root");
+    await expect(popup).toHaveAttribute("data-full-screen", "");
+    await expect(popup.locator(".sales li")).toHaveCount(5);
+    const content = popup.locator(".body");
+    await expect
+      .poll(() => content.evaluate((el) => el.scrollHeight - el.clientHeight))
+      .toBeGreaterThan(0);
+    const bounds = (await content.boundingBox())!;
+    const x = bounds.x + 24;
+    const y = bounds.y + bounds.height / 2;
+    const swipe = async (offset: number) => {
+      await sendTouch("touchStart", { x, y });
+      await sendTouch("touchMove", { x, y: y + offset / 2 });
+      await sendTouch("touchMove", { x, y: y + offset });
+      await sendTouch("touchEnd");
+    };
+    await swipe(-120);
+    const scrollTop = () => content.evaluate((el) => el.scrollTop);
+    await expect.poll(scrollTop).toBeGreaterThan(0);
+    const afterSwipe = await scrollTop();
+    await swipe(120);
+    await expect.poll(scrollTop).toBeLessThan(afterSwipe);
+    const result = phone.getByRole("dialog", { name: "Fusion results" });
+    expect(await result.evaluate((el) => el.scrollTop)).toBe(0);
+    await tap(12, 12);
+    await expect(popup).toHaveCount(0);
+    await expect(result).toBeVisible();
+  } finally {
+    await phone.close();
+  }
 });
 
 test("auto-skip on next pack works by mouse and hotkey and leaves rare-pack warnings in place", async () => {
@@ -2973,7 +3356,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Social Reminders",
       "Trade Reminders",
       "Sales Overlay",
-      "Navigation Hotkeys",
+      "Hotkeys",
       "Pack Openings",
       "Backup & Restore",
       "Connected Account",
@@ -2991,7 +3374,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "Social Reminders",
       "Trade Reminders",
       "Sales Overlay",
-      "Navigation Hotkeys",
+      "Hotkeys",
       "Pack Openings",
       "Backup & Restore",
       "Connected Account",
@@ -3003,7 +3386,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
     await expect(albums.getByLabel("Search albums")).toBeVisible();
     await expect(albums.locator(".album-account")).toHaveCount(0);
     for (const selector of [
-      "#navigation-hotkeys .sub + .rule + .hotkey-list",
+      "#hotkeys > .hotkeys-subtitle + .hotkey-subgroups",
       "#backup-restore .sub + .rule + .notice",
       "#connected-account .sub + .rule + .account-row",
       "#trade-reminders .rule + .row:has(#tradeNotesHoverDelayMs)",
@@ -3029,7 +3412,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
     ).not.toBeChecked();
     await expect(
       options.locator(".settings-group-heading").getByRole("switch"),
-    ).toHaveCount(11);
+    ).toHaveCount(13);
     for (const [name, id] of [
       ["Show on social page", "socialRemindersEnabled"],
       ["Show on profile page", "profileRemindersEnabled"],
@@ -3063,7 +3446,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
           const row = input.parentElement!.getBoundingClientRect(),
             control = input.getBoundingClientRect(),
             heading = input
-              .parentElement!.querySelector("h2")!
+              .parentElement!.querySelector("h2, h3")!
               .getBoundingClientRect();
           return {
             right: Math.abs(row.right - control.right),
@@ -3094,10 +3477,10 @@ test("settings groups are ordered with separate account controls and a fixed anc
             const panel = section.getBoundingClientRect();
             const body = content.getBoundingClientRect();
             const save = section
-              .querySelector(".savebar")
+              .querySelector(":scope > .savebar")
               ?.getBoundingClientRect();
             const masterSwitch = section
-              .querySelector(".settings-group-heading > input")
+              .querySelector(":scope > .settings-group-heading > input")
               ?.getBoundingClientRect();
             const icon = heading.querySelector("svg")!.getBoundingClientRect();
             return {
@@ -3158,23 +3541,29 @@ test("settings groups are ordered with separate account controls and a fixed anc
       for (const offset of salesOffsets) expect(offset).toBeLessThanOrEqual(1);
     };
     const checkActionSizes = async () => {
-      const sizes = await options
-        .locator(".save-actions > button")
-        .evaluateAll((buttons) =>
-          buttons.map((button) => {
-            const { width, height } = button.getBoundingClientRect();
-            return { width, height };
-          }),
+      const groups = await options
+        .locator(".save-actions")
+        .evaluateAll((rows) =>
+          rows.map((row) => ({
+            nested: !!row.closest(".hotkey-subgroups"),
+            sizes: [...row.children].map((button) => {
+              const { width, height } = button.getBoundingClientRect();
+              return { width, height };
+            }),
+          })),
         );
-      expect(sizes.length).toBeGreaterThan(0);
-      expect(sizes[0].width).toBeLessThanOrEqual(112);
-      for (const size of sizes) expect(size).toEqual(sizes[0]);
+      const standard = groups.find(({ nested }) => !nested)!.sizes[0];
+      for (const { nested, sizes } of groups) {
+        expect(sizes[0].width).toBeLessThanOrEqual(112);
+        for (const size of sizes)
+          expect(size).toEqual(nested ? sizes[0] : standard);
+      }
     };
     await checkSwitchLayout();
     await checkContentAlignment();
     await checkActionSizes();
-    const packIcon = options.locator("#pack-opening-hotkeys h2 svg path");
-    const navigationIcon = options.locator("#navigation-hotkeys h2 svg path");
+    const packIcon = options.locator("#pack-openings h2 svg path");
+    const navigationIcon = options.locator("#hotkeys h2 svg path");
     await expect(packIcon).not.toHaveAttribute(
       "d",
       (await navigationIcon.getAttribute("d"))!,
@@ -3190,8 +3579,8 @@ test("settings groups are ordered with separate account controls and a fixed anc
       ["Social Reminders", "social-reminders"],
       ["Trade Reminders", "trade-reminders"],
       ["Sales Overlay", "sales-overlay"],
-      ["Navigation Hotkeys", "navigation-hotkeys"],
-      ["Pack Openings", "pack-opening-hotkeys"],
+      ["Hotkeys", "hotkeys"],
+      ["Pack Openings", "pack-openings"],
       ["Backup & Restore", "backup-restore"],
       ["Connected Account", "connected-account"],
     ]) {
@@ -3236,16 +3625,12 @@ test("settings groups are ordered with separate account controls and a fixed anc
     });
     for (const width of [640, 390, 320]) {
       await options.setViewportSize({ width, height: 900 });
-      await nav
-        .getByRole("link", { name: "Navigation Hotkeys", exact: true })
-        .click();
-      await expect(options.locator("#navigation-hotkeys h2")).toBeInViewport();
+      await nav.getByRole("link", { name: "Hotkeys", exact: true }).click();
+      await expect(options.locator("#hotkeys h2")).toBeInViewport();
       await nav
         .getByRole("link", { name: "Pack Openings", exact: true })
         .click();
-      await expect(
-        options.locator("#pack-opening-hotkeys h2"),
-      ).toBeInViewport();
+      await expect(options.locator("#pack-openings h2")).toBeInViewport();
       if (width === 390)
         await options.screenshot({
           path: "test-results/screenshots/settings-pack-opening-390.png",
@@ -3582,7 +3967,7 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
       const section = options.getByRole("region", { name: group, exact: true });
       await expect(section.getByRole("status")).toContainText("Saved.");
     };
-    await set("Enable navigation hotkey", "hotkeys", false);
+    await set("Enable navigation hotkey", "navigation hotkeys", false);
     await set("Enable card overlays", "overlay settings", false);
     await expect(page.locator("[data-kosmore-card-overlays]")).toHaveCount(0);
     await expect(popup.locator(".header-signals .signal-badge")).toHaveCount(0);
@@ -3644,7 +4029,7 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
     await set("Enable pinned albums", "album shortcuts", true);
     await expect(popup.locator(".album-add")).toHaveCount(2);
     await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_A);
-    await set("Enable navigation hotkey", "hotkeys", true);
+    await set("Enable navigation hotkey", "navigation hotkeys", true);
     await page.locator("h1").click();
     await page.keyboard.press("Alt+Shift+H");
     await expect(page).toHaveURL("https://kosmora.io/home");
@@ -4016,16 +4401,152 @@ test("variant checkboxes persist across popups and options saves without closing
   await page.locator(".ko-grid-open").nth(3).hover();
   await expect(popup.getByLabel("Shiny", { exact: true })).not.toBeChecked();
 });
-test("the gavel opens the native sell form for the exact recap copy without submitting a sale", async () => {
+test("the Sell shortcut opens the native form for the exact recap copy without submitting a sale", async () => {
+  await pulsarSettings({
+    hoverTooltipHotkeys: shortcutBindings({ sell: "KeyS" }),
+  });
   await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
   await page.locator(".ko-grid-open").nth(1).hover();
   const popup = page.locator("#kosmore-root");
   await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_B);
-  await popup.getByRole("button", { name: "Sell card", exact: true }).click();
+  const sell = popup.getByRole("button", { name: "Sell card", exact: true });
+  await expect(sell).toBeEnabled();
+  await page.bringToFront();
+  await sell.focus();
+  await page.keyboard.press("s");
   await expect(page).toHaveURL(
     `https://kosmora.io/market/sell?subject=42&instance=${COPY_B}`,
   );
   expect(writeRequests).toBe(0);
+});
+test("Gift and Trade open native flows for the exact copy without submitting", async () => {
+  await pulsarSettings({
+    hoverTooltipHotkeys: shortcutBindings({ gift: "KeyG", trade: "KeyT" }),
+  });
+  const giftRoute = `https://kosmora.io/card/42?copy=${COPY_B}`;
+  await page.route(giftRoute, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><main><div class="cd-actions">
+      <button class="cd-act" onclick="document.querySelector('dialog').showModal()">
+        <svg class="gicon"><path d="M2.5 9h19v-3.5h-19Z" /></svg>Send
+      </button></div><dialog aria-label="Choose gift recipient"><input autofocus></dialog></main>`,
+    }),
+  );
+  const recap = `https://kosmora.io/packs/open?id=${OPENING}&recap=1`;
+  const popup = page.locator("#kosmore-root");
+  const openCopy = async () => {
+    await page.goto(recap);
+    await page.locator(".ko-grid-open").nth(1).hover();
+    await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_B);
+  };
+  try {
+    await openCopy();
+    await expect(
+      popup.getByRole("button", { name: "Gift card" }),
+    ).toBeEnabled();
+    await page.keyboard.press("g");
+    await expect(page).toHaveURL(giftRoute);
+    await expect(
+      page.getByRole("dialog", { name: "Choose gift recipient" }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(page.locator("dialog")).not.toBeVisible();
+
+    await openCopy();
+    await popup.getByRole("button", { name: "Trade card" }).click();
+    await expect(page).toHaveURL(
+      `https://kosmora.io/trades/new?give=${COPY_B}&card=42`,
+    );
+    await openCopy();
+    await expect(
+      popup.getByRole("button", { name: "Trade card" }),
+    ).toBeEnabled();
+    await page.keyboard.press("t");
+    await expect(page).toHaveURL(
+      `https://kosmora.io/trades/new?give=${COPY_B}&card=42`,
+    );
+    expect(writeRequests).toBe(0);
+  } finally {
+    await page.unroute(giftRoute);
+  }
+});
+
+test("Gift and Trade explain copy locks and recheck ownership before opening", async () => {
+  const inventory = "**/api/collection/42";
+  let mode: "locked" | "available" | "missing" = "locked";
+  await page.route(inventory, (route) => {
+    const source = card("42");
+    return route.fulfill({
+      json: {
+        ...source,
+        copies:
+          mode === "missing"
+            ? []
+            : [
+                {
+                  ...source.copies[0],
+                  ...(mode === "locked"
+                    ? { inAlbum: { id: ALBUM_A, kind: "album" } }
+                    : {}),
+                },
+              ],
+      },
+    });
+  });
+  try {
+    await pulsarSettings({
+      hoverTooltipHotkeys: shortcutBindings({ gift: "KeyG", trade: "KeyT" }),
+    });
+    const collection = "https://kosmora.io/collection";
+    await page.goto(collection);
+    await page.locator(".kc-article").hover();
+    const popup = page.locator("#kosmore-root");
+    const gift = popup.getByRole("button", { name: "Gift card" });
+    const trade = popup.getByRole("button", { name: "Trade card" });
+    for (const action of [gift, trade]) {
+      await expect(action).toBeDisabled();
+      await expect(action).toHaveAttribute("title", /Remove this copy/);
+    }
+    await page.keyboard.press("g");
+    await page.keyboard.press("t");
+    await expect(page).toHaveURL(collection);
+
+    mode = "available";
+    await page.reload();
+    await page.locator(".kc-article").hover();
+    await expect(gift).toBeEnabled();
+    await expect(trade).toBeEnabled();
+    mode = "missing";
+    await page.keyboard.press("t");
+    await expect(popup.getByText("You no longer own this copy.")).toBeVisible();
+    await expect(page).toHaveURL(collection);
+    expect(writeRequests).toBe(0);
+  } finally {
+    await page.unroute(inventory);
+  }
+});
+
+test("Gift stays on the selected copy if the native Send control is unavailable", async () => {
+  const giftRoute = `https://kosmora.io/card/42?copy=${COPY_B}`;
+  await page.route(giftRoute, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><main>Owned card detail</main>",
+    }),
+  );
+  try {
+    await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+    await page.locator(".ko-grid-open").nth(1).hover();
+    await page.getByRole("button", { name: "Gift card" }).click();
+    await expect(page).toHaveURL(giftRoute);
+    await expect(
+      page.getByRole("status").filter({ hasText: "Could not open Gift" }),
+    ).toBeVisible({ timeout: 17_000 });
+    expect(writeRequests).toBe(0);
+  } finally {
+    await page.unroute(giftRoute);
+  }
 });
 test("the gavel requires copy selection when ambiguous even without pinned albums", async () => {
   await worker.evaluate(async () => {
@@ -5684,12 +6205,25 @@ test("the smallest popup keeps its tabs and footer accessible by scrolling", asy
   await expect(
     popup.getByRole("button", { name: "Settings", exact: true }),
   ).toBeInViewport();
+  for (const name of ["Sell card", "Gift card", "Trade card"])
+    await expect(
+      popup.getByRole("button", { name, exact: true }),
+    ).toBeInViewport();
   expect(
     await popup.evaluate(
       (element) => element.scrollWidth <= element.clientWidth,
     ),
   ).toBe(true);
   await page.screenshot({ path: "test-results/screenshots/small-popup.png" });
+  const [options] = await Promise.all([
+    context.waitForEvent("page"),
+    popup.getByRole("button", { name: "Settings", exact: true }).click(),
+  ]);
+  try {
+    await expect(options).toHaveURL(`chrome-extension://${extensionId}/options.html`);
+  } finally {
+    await options.close();
+  }
   expect(writeRequests).toBe(0);
 });
 test("all navigation hotkeys open their destination, including both market views and the alerts dialog", async () => {
@@ -5841,7 +6375,7 @@ test("shortcut recording detects conflicts and group saves preserve other drafts
   try {
     await options.goto(`chrome-extension://${extensionId}/options.html`);
     const hotkeys = options.getByRole("region", {
-      name: "hotkeys",
+      name: "navigation hotkeys",
       exact: true,
     });
     const record = (label: string) =>
@@ -7107,8 +7641,8 @@ test("sales badges fill only their own controlled batch price fields with indepe
     const rows = page.locator(".bsell-row"),
       first = rows.nth(0),
       second = rows.nth(1);
-    const lastSale = first.getByRole("button", { name: /^Last Sale \$12/ });
-    const lowest = first.getByRole("button", { name: /^Lowest Listed \$8/ });
+    const lastSale = first.getByRole("button", { name: /^Last Sale: \$12/ });
+    const lowest = first.getByRole("button", { name: /^Lowest Listed: \$8/ });
     await expect(lastSale).toBeEnabled();
     await expect(lowest).toBeEnabled();
     await expect(first.locator("input")).toHaveValue("12.00");
@@ -7145,9 +7679,9 @@ test("sales badges fill only their own controlled batch price fields with indepe
       .fill("2");
     await settings.getByRole("button", { name: "Save", exact: true }).click();
     await expect(settings.getByRole("status")).toContainText("Saved.");
-    await first.getByRole("button", { name: /^Last Sale \$12/ }).click();
+    await first.getByRole("button", { name: /^Last Sale: \$12/ }).click();
     await expect(first.locator("input")).toHaveValue("11");
-    await second.getByRole("button", { name: /^Lowest Listed \$20/ }).click();
+    await second.getByRole("button", { name: /^Lowest Listed: \$20/ }).click();
     await expect(second.locator("input")).toHaveValue("22");
     expect(
       await page.evaluate(
@@ -7452,7 +7986,7 @@ test("card and sales overlays remain independent of the hover-tooltip switch", a
   expect(writeRequests).toBe(0);
 });
 
-test("single-sale badges share settings and respect click toggles, visibility, readonly inputs and nonpositive adjustments", async () => {
+test("single-sale badges share settings and respect click toggles, visibility, readonly inputs and minimum prices", async () => {
   const options = await context.newPage();
   try {
     await options.goto(`chrome-extension://${extensionId}/options.html`);
@@ -7473,9 +8007,9 @@ test("single-sale badges share settings and respect click toggles, visibility, r
     );
     const input = page.getByTestId("sell-start"),
       widget = page.locator("[data-kosmore-sales-overlay]");
-    await widget.getByRole("button", { name: /^Last Sale \$12/ }).click();
+    await widget.getByRole("button", { name: /^Last Sale: \$12/ }).click();
     await expect(input).toHaveValue("11");
-    await widget.getByRole("button", { name: /^Lowest Listed \$10/ }).click();
+    await widget.getByRole("button", { name: /^Lowest Listed: \$10/ }).click();
     await expect(input).toHaveValue("12");
     expect(
       await page.evaluate(
@@ -7506,8 +8040,10 @@ test("single-sale badges share settings and respect click toggles, visibility, r
       .fill("-20");
     await save.click();
     await widget.getByRole("button", { name: /^Last Sale/ }).click();
-    await expect(input).toHaveValue("12");
-    await expect(widget.getByRole("status")).toContainText("greater than 0");
+    await expect(input).toHaveValue("1");
+    await expect(widget.getByRole("status")).toContainText(
+      "Starting price set to 1 Kosmo",
+    );
     await settings
       .getByRole("switch", {
         name: "Set price when Last Sale is clicked",
@@ -7523,7 +8059,7 @@ test("single-sale badges share settings and respect click toggles, visibility, r
       widget.getByRole("button", { name: /^Last Sale/ }),
     ).toHaveCount(0);
     await widget.locator(".sale").click();
-    await expect(input).toHaveValue("12");
+    await expect(input).toHaveValue("1");
     await settings
       .getByRole("checkbox", { name: "Show Lowest Listed price", exact: true })
       .uncheck();
@@ -7560,6 +8096,425 @@ test("single-sale badges share settings and respect click toggles, visibility, r
     await options.close();
   }
 });
+test("Quick Prices retain their order and nodes through refreshes, and rarity warnings leave submission available", async () => {
+  const options = await context.newPage();
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    const settings = options.locator("#sales-overlay"),
+      quickSwitch = settings.getByRole("checkbox", {
+        name: "Quick Prices",
+        exact: true,
+      });
+    await expect(quickSwitch).not.toBeChecked();
+    const discount = settings.getByRole("checkbox", {
+      name: "Enable Discount button",
+    });
+    const amount = settings.getByLabel("Amount", { exact: true }),
+      type = settings.getByLabel("Discount type", { exact: true }),
+      threshold = settings.getByLabel("Threshold", { exact: true });
+    await expect(discount).not.toBeChecked();
+    await expect(amount).toBeVisible();
+    await expect(amount).toBeDisabled();
+    await discount.check();
+    await expect(amount).toHaveValue("25");
+    await expect(type).toHaveValue("flat");
+    await expect(threshold).toHaveValue("5");
+    const amountBox = (await amount.boundingBox())!,
+      typeBox = (await type.boundingBox())!,
+      thresholdBox = (await threshold.boundingBox())!;
+    expect(typeBox.width).toBe(amountBox.width);
+    expect(typeBox.x).toBe(amountBox.x);
+    expect(typeBox.y).toBeGreaterThan(amountBox.y + amountBox.height);
+    expect(thresholdBox.y).toBeGreaterThan(typeBox.y + typeBox.height);
+    await discount.uncheck();
+    const quick = settings.getByRole("group", { name: "Quick Prices" }),
+      priceInput = quick.getByLabel("Price", { exact: true }),
+      addPrice = quick.getByRole("button", { name: "Add price" });
+    await expect(priceInput).toBeVisible();
+    await expect(priceInput).toBeDisabled();
+    await expect(addPrice).toBeDisabled();
+    await quickSwitch.check();
+    const priceBox = (await priceInput.boundingBox())!,
+      addBox = (await addPrice.boundingBox())!;
+    expect(priceBox.x).toBe(amountBox.x);
+    expect(addBox.x + addBox.width).toBeCloseTo(priceBox.x + priceBox.width, 0);
+    expect(addBox.y).toBeGreaterThan(priceBox.y + priceBox.height);
+    for (const price of ["50", "2.25", "60"]) {
+      await priceInput.fill(price);
+      await addPrice.click();
+    }
+    await quick.getByRole("button", { name: "Move price 2 up" }).click();
+    await quick.getByRole("button", { name: "Remove price 3" }).click();
+    await settings
+      .getByRole("checkbox", { name: "Use Custom Rarity Minimums" })
+      .check();
+    const minimums = settings.getByRole("group", {
+      name: "Use Custom Rarity Minimums",
+    });
+    const commonBox = (await minimums.getByLabel("Common", { exact: true }).boundingBox())!,
+      uncommonBox = (await minimums.getByLabel("Uncommon", { exact: true }).boundingBox())!;
+    expect(uncommonBox.y).toBeGreaterThan(commonBox.y + commonBox.height);
+    const epic = minimums.getByLabel("Epic", { exact: true });
+    await expect(epic).toHaveValue("20");
+    await epic.fill("19");
+    const save = settings.getByRole("button", { name: "Save", exact: true });
+    await save.click();
+    await expect(settings.getByRole("status")).toContainText(
+      "Epic minimum of at least 20",
+    );
+    await epic.fill("40");
+    await save.click();
+    await expect(settings.getByRole("status")).toContainText("Saved");
+    await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
+    const row = page.locator(".bsell-row").first(),
+      prices = row
+        .getByRole("region", { name: "Quick Prices" })
+        .getByRole("button"),
+      start = row.getByRole("textbox", { name: /Starting price/ }),
+      refresh = row.getByRole("button", { name: "Refresh my listing history" });
+    await start.evaluate((input) => {
+      const box = document.createElement("span");
+      box.className = "bsell-input";
+      input.before(box);
+      box.append(input);
+    });
+    await page.getByTestId("submit-sales").evaluate((button) => {
+      const screen = button.closest(".bsell")!;
+      const footer = document.createElement("div");
+      footer.className = "dock action-bar bsell-bar";
+      const info = document.createElement("span");
+      info.className = "action-bar-info";
+      info.textContent = "2 cards";
+      button.removeAttribute("data-testid");
+      button.setAttribute("class", "ui-btn ui-btn-primary");
+      button.textContent = "Put on sale";
+      footer.append(info, button);
+      screen.after(footer);
+    });
+    await page.addStyleTag({
+      content: `
+        .bsell-prices { display:grid; grid-template-columns:155px 1fr; align-items:end; gap:10px }
+        .bsell-prices label { display:grid; gap:6px }
+        .bsell-prices label > span { color:#bea9d4 }
+        .bsell-bar { display:flex; flex-wrap:wrap; gap:12px }
+        .bsell-bar > .action-bar-info { flex:1 }
+      `,
+    });
+    await row.locator(".kc").evaluate((card) => card.classList.add("kc-epic"));
+    await expect(prices).toHaveText(["$2.25", "$50"]);
+    const overlay = row.locator("[data-kosmore-sales-overlay]");
+    await expect(
+      overlay.locator(".quick-prices-label:has(+ .badges + .quick-prices)"),
+    ).toHaveText("Quick Prices");
+    await prices
+      .first()
+      .evaluate((node) => node.setAttribute("data-test-original", ""));
+    await refresh.click();
+    await expect(refresh).toBeEnabled();
+    await expect(prices.first()).toHaveAttribute("data-test-original", "");
+    await settings.getByLabel("Last Sale price adjustment", { exact: true }).fill("-1");
+    await save.click();
+    await expect(settings.getByRole("status")).toContainText("Saved");
+    await expect(prices.first()).toHaveAttribute("data-test-original", "");
+    const rowWarning = overlay.locator('[data-kosmore-sales-warning="row"]');
+    const controlsOffset = () =>
+      row.evaluate((element) => {
+        const box = element.querySelector(".bsell-input")!.getBoundingClientRect();
+        const tools = element.querySelector(".suggested")!.getBoundingClientRect();
+        return tools.y - box.y;
+      });
+    await start.fill("50");
+    await expect(rowWarning).toHaveCount(0);
+    const offset = await controlsOffset();
+    await prices.first().click();
+    await expect(start).toHaveValue("20");
+    await expect(rowWarning).toHaveText("Below Epic minimum of 40");
+    await expect(rowWarning).toHaveCSS("color", "rgb(255, 130, 139)");
+    expect(await controlsOffset()).toBeCloseTo(offset, 1);
+    const startBox = (await start.boundingBox())!,
+      warningBox = (await rowWarning.boundingBox())!;
+    expect(warningBox.y).toBeGreaterThanOrEqual(startBox.y + startBox.height);
+    const submit = page.getByRole("button", { name: "Put on sale", exact: true }),
+      summary = page.locator(
+        '.bsell-bar > button + [data-kosmore-sales-warning="summary"]',
+      );
+    await expect(summary).toHaveText(
+      "Some cards are below their configured minimums",
+    );
+    const summaryBox = (await summary.boundingBox())!,
+      submitBox = (await submit.boundingBox())!;
+    await expect(summary).toHaveCSS("text-align", "end");
+    expect(summaryBox.y - submitBox.y - submitBox.height).toBeCloseTo(4, 0);
+    await prices.last().click();
+    await expect(start).toHaveValue("50");
+    await expect(rowWarning).toHaveCount(0);
+    await expect(summary).toHaveCount(0);
+    await start.fill("30");
+    await expect(rowWarning).toBeVisible();
+    await expect(summary).toBeVisible();
+    await submit.click();
+    await expect(page.locator("body")).toHaveAttribute(
+      "data-submitted",
+      "true",
+    );
+    expect(writeRequests).toBe(0);
+  } finally {
+    await options.close();
+  }
+});
+
+const savedDiscountHistoryKey = "kosmore.listingRecord.fixtureplayer.42";
+async function seedDiscountHistory(listings: TrackedListing[]) {
+  await worker.evaluate(
+    async ({ key, listings }) => {
+      await chrome.storage.local.set({
+        [key]: {
+          v: 2,
+          complete: false,
+          pruned: false,
+          hasMore: true,
+          checkedAt: 0,
+          listings,
+        },
+      });
+    },
+    { key: savedDiscountHistoryKey, listings },
+  );
+}
+
+test("Discount uses the selected copy's saved unsold listings on both sell screens without refreshing history", async () => {
+  await pulsarSettings({
+    salesDiscountEnabled: true,
+    salesDiscountMode: "percent",
+    salesDiscountThreshold: 2,
+  });
+  await seedDiscountHistory([
+    {
+      id: myListing(21).id,
+      copyId: COPY_B,
+      startPrice: "99000000",
+      group: "unsold",
+    },
+    {
+      id: myListing(20).id,
+      copyId: COPY_A,
+      startPrice: "102500000",
+      group: "unsold",
+    },
+    {
+      id: myListing(19).id,
+      copyId: COPY_A,
+      startPrice: "110000000",
+      group: "unsold",
+    },
+  ]);
+  let historyReads = 0;
+  await page.route("**/api/me/auctions?**", (route) => {
+    historyReads++;
+    return route.abort();
+  });
+  await page.goto(
+    `https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`,
+  );
+  const sharedRefresh =
+    ".history-controls > .history + .discount + .history-check";
+  await expect(page.locator(sharedRefresh)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Discount: $76.5", exact: true })
+    .click();
+  await expect(page.getByTestId("sell-start")).toHaveValue("76.5");
+  await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
+  await page.route("**/api/market/listings/batch?**", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            key: "42.v",
+            instanceId: COPY_A,
+            card: { subjectId: "42" },
+            rarity: "Rare",
+            suggestion: "100",
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/market/sell-draft", (route) =>
+    route.fulfill({ json: {} }),
+  );
+  await page.evaluate(() =>
+    fetch("/api/market/listings/batch?subjects=42.v").then((response) =>
+      response.json(),
+    ),
+  );
+  const first = page.locator(".bsell-row").first();
+  await expect(first.locator(sharedRefresh)).toBeVisible();
+  await first
+    .getByRole("button", { name: "Discount: $76.5", exact: true })
+    .click();
+  await expect(
+    first.getByRole("textbox", { name: /Starting price/ }),
+  ).toHaveValue("76.5");
+  await page.evaluate(
+    (copy) =>
+      fetch("/api/market/sell-draft", {
+        method: "PUT",
+        body: JSON.stringify({
+          items: [{ subjectId: "42", veil: true, copy }],
+        }),
+      }),
+    COPY_B,
+  );
+  await expect(first.locator(".price-badge.discount")).toHaveCount(0);
+  await expect(
+    first.getByRole("textbox", { name: /Starting price/ }),
+  ).toHaveValue("76.5");
+  expect(historyReads).toBe(0);
+});
+
+test("Discount checks the outcomes of saved submissions without a history refresh", async () => {
+  await pulsarSettings({ salesDiscountEnabled: true });
+  const listings = Array.from({ length: 6 }, (_, index) =>
+    myListing(510 + index, "42"),
+  );
+  await seedDiscountHistory(
+    listings.map(({ id, endsAt }, index) => ({
+      id,
+      copyId: COPY_A,
+      startPrice: index === 0 ? "498000000" : "325000000",
+      ...(index < 4
+        ? { submittedAt: Date.now() - (index + 1) * 3_600_000 }
+        : { group: "unsold" as const, state: "expired", endsAt }),
+    })),
+  );
+  let historyReads = 0,
+    detailReads = 0;
+  await page.route("**/api/me/auctions?**", (route) => {
+    historyReads++;
+    return route.abort();
+  });
+  await page.route("**/api/auctions/*", (route) => {
+    const listing = listings.find(({ id }) =>
+      route.request().url().endsWith(id),
+    );
+    if (!listing) return route.fallback();
+    detailReads++;
+    return route.fulfill({ json: { ...listing, copy: { id: COPY_A } } });
+  });
+  await page.goto(
+    `https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`,
+  );
+  await page
+    .getByRole("button", { name: "Discount: $473", exact: true })
+    .click();
+  await expect(page.getByTestId("sell-start")).toHaveValue("473");
+  const saved = await worker.evaluate(async (key) => {
+    return (
+      (await chrome.storage.local.get(key))[key] as {
+        listings: TrackedListing[];
+      }
+    ).listings;
+  }, savedDiscountHistoryKey);
+  expect(
+    saved
+      .slice(0, 4)
+      .every(({ state, group }) => state === "expired" && group === "unsold"),
+  ).toBe(true);
+  expect(saved[0].startPrice).toBe("498000000");
+  expect(detailReads).toBe(4);
+  expect(historyReads).toBe(0);
+});
+
+test("Discount verifies older saved expirations using Kosmora's live copy fields", async () => {
+  await pulsarSettings({ salesDiscountEnabled: true });
+  const listings = Array.from({ length: 6 }, (_, i) =>
+    myListing(460 + i, "42", {
+      startPrice: i === 0 ? "420000000" : "399000000",
+    }),
+  );
+  await seedDiscountHistory(
+    [listings[0], ...listings.slice(4)].map(({ id, startPrice, endsAt }) => ({
+      id,
+      startPrice,
+      endsAt,
+      state: "expired",
+      group: "unsold",
+    })),
+  );
+  await page.route("**/api/me/auctions?**", (route) =>
+    route.fulfill({
+      json: {
+        ...myListingPage(listings.slice(0, 4)),
+        relistAll: {
+          items: [{ auctionId: listings[0].id, instanceId: COPY_A }],
+        },
+      },
+    }),
+  );
+  let detailReads = 0;
+  await page.route("**/api/auctions/*", (route) => {
+    const index = listings.findIndex(({ id }) =>
+      route.request().url().endsWith(id),
+    );
+    if (index < 0) return route.fallback();
+    detailReads++;
+    return route.fulfill({
+      json: { ...listings[index], copy: { id: index === 2 ? COPY_B : COPY_A } },
+    });
+  });
+  await page.route("**/api/market/listings/batch?**", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            key: "42.v",
+            instanceId: COPY_A,
+            card: { subjectId: "42" },
+            rarity: "Epic",
+            suggestion: { start: "210000000" },
+          },
+        ],
+      },
+    }),
+  );
+  await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
+  await page.evaluate(() =>
+    fetch("/api/market/listings/batch?subjects=42.v").then((response) =>
+      response.json(),
+    ),
+  );
+  const row = page.locator(".bsell-row").first();
+  await row
+    .getByRole("button", { name: "Refresh my listing history", exact: true })
+    .click();
+  await row
+    .getByRole("button", { name: "Discount: $395", exact: true })
+    .click();
+  await expect(
+    row.getByRole("textbox", { name: /Starting price/ }),
+  ).toHaveValue("395");
+  await expect(
+    page.locator(".bsell-row").nth(1).locator(".discount"),
+  ).toHaveCount(0);
+  expect(detailReads).toBe(5);
+  const saved = await worker.evaluate(async (key) => {
+    const { listings } = (await chrome.storage.local.get(key))[key] as {
+      listings: { copyId?: string; group: string; startPrice: string }[];
+    };
+    return listings;
+  }, savedDiscountHistoryKey);
+  expect(saved.map(({ copyId }) => copyId)).toEqual([
+    COPY_A,
+    COPY_A,
+    COPY_B,
+    COPY_A,
+    COPY_A,
+    COPY_A,
+  ]);
+  expect(saved.every(({ group }) => group === "unsold")).toBe(true);
+  expect(saved[0].startPrice).toBe("420000000");
+});
+
 test("late sales prices cannot populate a replaced batch row or edit a new card automatically", async () => {
   let release!: () => void, started!: () => void;
   const held = new Promise<void>((resolve) => {
@@ -7602,12 +8557,12 @@ test("late sales prices cannot populate a replaced batch row or edit a new card 
       "47",
     );
     await expect(
-      first.getByRole("button", { name: /^Last Sale \$7/ }),
+      first.getByRole("button", { name: /^Last Sale: \$7/ }),
     ).toBeEnabled();
     await expect(first.locator(".price-badge.sale")).not.toContainText("$90");
     await expect(first.locator("input")).toHaveValue("12.00");
     expect(await oldInput!.evaluate((el) => el.isConnected)).toBe(false);
-    await first.getByRole("button", { name: /^Last Sale \$7/ }).click();
+    await first.getByRole("button", { name: /^Last Sale: \$7/ }).click();
     await expect(first.locator("input")).toHaveValue("7");
     await expect(
       page.locator(".bsell-row").nth(1).locator("input"),
@@ -9339,5 +10294,50 @@ test("native relists verify the exact auction once and save the accepted startin
   } finally {
     await page.unroute("**/api/auctions/" + previous.id + "/relist");
     await page.unroute("**/api/auctions/" + relisted.id);
+  }
+});
+
+test("Sell Many shows one reconnect notice when the tab outlives an extension reload", async () => {
+  await page.goto("https://kosmora.io/collection");
+  await page.locator(".kc-img").hover();
+  const popup = page.locator("#kosmore-root");
+  await expect(popup).toBeVisible();
+
+  const session = await context.newCDPSession(page);
+  const errors: string[] = [];
+  session.on("Runtime.exceptionThrown", ({ exceptionDetails }) => {
+    errors.push(
+      exceptionDetails.exception?.description ?? exceptionDetails.text,
+    );
+  });
+  try {
+    await session.send("Runtime.enable");
+    const nextWorker = context.waitForEvent("serviceworker");
+    await worker.evaluate(() => setTimeout(() => chrome.runtime.reload(), 0));
+    worker = await nextWorker;
+    await page.evaluate((markup) => {
+      history.pushState({}, "", "/market/sell/batch?s=42.v,46.f");
+      const batch = new DOMParser().parseFromString(markup, "text/html");
+      document
+        .querySelector("main")!
+        .replaceWith(batch.querySelector("main")!);
+    }, sellManyFixture(true));
+    const notice = page.locator('[data-kosmore-sales-warning="reconnect"]'),
+      refresh = page.getByRole("button", { name: "Refresh my listing history" });
+    await expect(popup).toHaveCount(0);
+    await expect(notice).toHaveText(
+      "Refresh this Kosmora tab to reconnect your listing history.",
+    );
+    await expect(refresh).toHaveCount(2);
+    for (const button of await refresh.all()) await expect(button).toBeDisabled();
+    await expect(page.getByText(/Extension context invalidated/i)).toHaveCount(0);
+    expect(errors).toEqual([]);
+
+    await page.reload();
+    await expect(page.locator("[data-kosmore-sales-overlay]")).toHaveCount(2);
+    await expect(notice).toHaveCount(0);
+    await expect(refresh.first()).toBeEnabled();
+  } finally {
+    await session.detach();
   }
 });

@@ -184,9 +184,13 @@ export class PackOpeningHotkeys {
 
   reset() {
     this.url = location.href;
+    this.cancelHotkeyActions();
+    this.clearFocus();
+  }
+
+  cancelHotkeyActions() {
     this.reveal = undefined;
     this.cancelBatch();
-    this.clearFocus();
   }
 
   restoreCardFocus() {
@@ -235,6 +239,7 @@ export class PackOpeningHotkeys {
     const settings = this.settings();
     if (
       location.pathname !== OPENING_PATH ||
+      !settings.hotkeysEnabled ||
       !settings.packOpeningHotkeysEnabled ||
       event.target === window ||
       event.defaultPrevented ||

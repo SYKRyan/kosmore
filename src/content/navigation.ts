@@ -29,15 +29,15 @@ export class NavigationHotkeys {
     private client: KosmoraClient,
     private beforeNavigate: () => void,
   ) {}
+  private enabled() {
+    const { hotkeysEnabled, navigationHotkeysEnabled } = this.settings();
+    return hotkeysEnabled && navigationHotkeysEnabled;
+  }
   start() {
     document.addEventListener(
       "keydown",
       (event) => {
-        if (
-          !this.settings().navigationHotkeysEnabled ||
-          event.defaultPrevented ||
-          isTyping(event)
-        )
+        if (!this.enabled() || event.defaultPrevented || isTyping(event))
           return;
         const shortcut = shortcutFromEvent(event);
         if (!shortcut) return;
@@ -58,7 +58,7 @@ export class NavigationHotkeys {
     window.addEventListener("hashchange", () => this.openPendingAlerts());
   }
   settingsChanged() {
-    if (!this.settings().navigationHotkeysEnabled) {
+    if (!this.enabled()) {
       this.request++;
       this.profileRequest?.abort();
       this.cancelAlerts?.();
@@ -87,7 +87,7 @@ export class NavigationHotkeys {
           sequence !== this.request ||
           location.href !== from ||
           abort.signal.aborted ||
-          !this.settings().navigationHotkeysEnabled
+          !this.enabled()
         )
           return;
         path = `/u/${encodeURIComponent(account.handle)}`;
@@ -108,7 +108,7 @@ export class NavigationHotkeys {
   }
   private openPendingAlerts() {
     this.cancelAlerts?.();
-    if (!this.settings().navigationHotkeysEnabled) return;
+    if (!this.enabled()) return;
     if (location.pathname !== "/market" || location.hash !== ALERTS_HASH)
       return;
     const observer = new MutationObserver(() => attempt());
@@ -119,7 +119,7 @@ export class NavigationHotkeys {
     };
     const attempt = () => {
       if (
-        !this.settings().navigationHotkeysEnabled ||
+        !this.enabled() ||
         location.pathname !== "/market" ||
         location.hash !== ALERTS_HASH
       ) {

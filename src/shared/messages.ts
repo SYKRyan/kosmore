@@ -3,7 +3,14 @@ import {
   type RecordedListing,
 } from "../kosmora/listing-capture";
 import type { Account } from "./types";
-import { validListingLimits, type ListingLimits } from "../kosmora/my-listings";
+import {
+  listingCopyId,
+  SAVED_LISTING_LIMIT,
+  validListingLimits,
+  validListingMetadata,
+  type ListingLimits,
+  type ListingMetadata,
+} from "../kosmora/my-listings";
 import { isPopupLayoutChange, type PopupLayoutChange } from "./popup-layout";
 export type Request =
   | {
@@ -26,6 +33,13 @@ export type Request =
       accountKey: string;
       subjectId: string;
       records: RecordedListing[];
+    }
+  | {
+      requestId: string;
+      op: "listingMetadata";
+      accountKey: string;
+      subjectId: string;
+      metadata: [auctionId: string, ListingMetadata][];
     }
   | { requestId: string; op: "listingCancel"; target: string }
   | { requestId: string; op: "popupState" }
@@ -75,6 +89,7 @@ export function isRequest(x: unknown): x is Request {
       "listingInvalidate",
       "listingHistory",
       "listingRecord",
+      "listingMetadata",
     ].includes(r.op) &&
       "accountKey" in r &&
       "subjectId" in r &&
@@ -85,6 +100,17 @@ export function isRequest(x: unknown): x is Request {
         (Array.isArray(r.records) &&
           r.records.length <= 500 &&
           r.records.every(validRecordedListing))) &&
+      (r.op !== "listingMetadata" ||
+        (Array.isArray(r.metadata) &&
+          r.metadata.length <= SAVED_LISTING_LIMIT &&
+          r.metadata.every(
+            (pair) =>
+              Array.isArray(pair) &&
+              pair.length === 2 &&
+              typeof pair[0] === "string" &&
+              listingCopyId(pair[0]) === pair[0] &&
+              validListingMetadata(pair[1]),
+          ))) &&
       (r.op !== "listingHistory" ||
         (["more", "refresh"].includes(r.mode) &&
           (r.limits === undefined || validListingLimits(r.limits))))) ||

@@ -2,11 +2,18 @@ import type { Settings } from "./types";
 import { defaultStats, parseStats } from "./stat-catalog";
 import {
   parseHotkeys,
+  parseHoverTooltipHotkeys,
   parsePackOpeningHotkeys,
   parsePinnedAlbumHotkeys,
 } from "./hotkeys";
 import { parsePopupPosition } from "./popup-layout";
-import { validSaleAdjustment } from "./sales-prices";
+import {
+  SALE_MINIMUMS,
+  type SaleRarity,
+  validDiscountThreshold,
+  validSaleAdjustment,
+  validSalePrice,
+} from "./sales-prices";
 import { normalizeFamilyTokens } from "./friend-reminders";
 export const SETTINGS_KEY = "kosmore.settings";
 export const defaults = (): Settings => ({
@@ -39,7 +46,9 @@ export const defaults = (): Settings => ({
   friendTooltipWidth: 320,
   friendTooltipHeight: 560,
   friendTooltipPosition: null,
+  hotkeysEnabled: true,
   navigationHotkeysEnabled: true,
+  hoverTooltipHotkeysEnabled: true,
   packOpeningHotkeysEnabled: false,
   anyKeyDismissesFoundPack: true,
   autoSkipOpening: false,
@@ -58,6 +67,14 @@ export const defaults = (): Settings => ({
   showSalesMyLastListing: true,
   salesMyLastListingSetsPrice: true,
   salesMyLastListingAdjustment: 0,
+  salesDiscountEnabled: false,
+  salesDiscountAmount: 25,
+  salesDiscountMode: "flat",
+  salesDiscountThreshold: 5,
+  salesCustomMinimumsEnabled: false,
+  salesCustomMinimums: { ...SALE_MINIMUMS },
+  salesQuickPricesEnabled: false,
+  salesQuickPrices: [],
   statBoxesEnabled: true,
   collectSaleRateData: true,
   pinnedAlbumsEnabled: true,
@@ -85,6 +102,7 @@ export const defaults = (): Settings => ({
   stats: defaultStats(),
   hotkeys: {},
   packOpeningHotkeys: {},
+  hoverTooltipHotkeys: {},
   pinnedAlbums: {},
   pinnedAlbumHotkeys: {},
 });
@@ -98,6 +116,11 @@ export function parseSettings(value: unknown): Settings {
   d.packOpeningHotkeys = parsePackOpeningHotkeys(
     v.packOpeningHotkeys,
     d.hotkeys,
+  );
+  d.hoverTooltipHotkeys = parseHoverTooltipHotkeys(
+    v.hoverTooltipHotkeys,
+    d.hotkeys,
+    d.packOpeningHotkeys,
   );
   d.popupPosition = parsePopupPosition(v.popupPosition);
   d.friendTooltipPosition = parsePopupPosition(v.friendTooltipPosition);
@@ -141,7 +164,9 @@ export function parseSettings(value: unknown): Settings {
     "useFamilyBlacklist",
     "showSalesFamilyOverlay",
     "friendTooltipEnabled",
+    "hotkeysEnabled",
     "navigationHotkeysEnabled",
+    "hoverTooltipHotkeysEnabled",
     "packOpeningHotkeysEnabled",
     "anyKeyDismissesFoundPack",
     "autoSkipOpening",
@@ -155,6 +180,9 @@ export function parseSettings(value: unknown): Settings {
     "salesLowestListingSetsPrice",
     "showSalesMyLastListing",
     "salesMyLastListingSetsPrice",
+    "salesDiscountEnabled",
+    "salesCustomMinimumsEnabled",
+    "salesQuickPricesEnabled",
     "statBoxesEnabled",
     "collectSaleRateData",
     "pinnedAlbumsEnabled",
@@ -166,6 +194,20 @@ export function parseSettings(value: unknown): Settings {
     "salesMyLastListingAdjustment",
   ] as const)
     if (validSaleAdjustment(v[key])) d[key] = v[key];
+  if (validSalePrice(v.salesDiscountAmount, 1))
+    d.salesDiscountAmount = v.salesDiscountAmount;
+  if (v.salesDiscountMode === "percent") d.salesDiscountMode = "percent";
+  if (validDiscountThreshold(v.salesDiscountThreshold))
+    d.salesDiscountThreshold = v.salesDiscountThreshold;
+  if (Array.isArray(v.salesQuickPrices))
+    d.salesQuickPrices = v.salesQuickPrices.filter((price) =>
+      validSalePrice(price),
+    );
+  for (const rarity of Object.keys(SALE_MINIMUMS) as SaleRarity[]) {
+    const minimum = v.salesCustomMinimums?.[rarity];
+    if (validSalePrice(minimum, SALE_MINIMUMS[rarity]))
+      d.salesCustomMinimums[rarity] = minimum;
+  }
   if (typeof v.closeTooltipWhenAddedToAlbum === "boolean")
     d.closeTooltipWhenAddedToAlbum = v.closeTooltipWhenAddedToAlbum;
   if (typeof v.applyCloseBehaviorToPinnedTooltips === "boolean")
@@ -228,6 +270,7 @@ export function parseSettings(value: unknown): Settings {
     d.pinnedAlbums,
     d.hotkeys,
     d.packOpeningHotkeys,
+    d.hoverTooltipHotkeys,
   );
   return d;
 }

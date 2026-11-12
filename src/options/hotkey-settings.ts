@@ -71,33 +71,24 @@ export function shortcutControls(
 }
 
 export class HotkeySettings<Id extends string> {
-  readonly host = el("section", "panel");
+  readonly host = el("section", "settings-subgroup");
   private list = el("div", "hotkey-list");
   private hint = el("p", "sub");
   constructor(
     title: string,
     private actions: readonly ShortcutAction<Id>[],
     private change: (hotkeys: Hotkeys<Id>) => void,
-    private pack = false,
+    private extendedKeys = false,
   ) {
     this.hint.setAttribute("aria-live", "polite");
-    this.host.append(
-      el("h2", "", title),
-      el(
-        "p",
-        "sub",
-        `Choose a shortcut, then press ${pack ? "a letter, number, F-key, arrow key, Home, or End" : "a letter, number, or F-key"} with optional Ctrl, Alt, Shift, or Meta. Escape cancels recording. Shortcuts work ${pack ? "while opening packs" : "on Kosmora pages"} and pause while typing. Browser-reserved shortcuts may not reach KosMore.`,
-      ),
-    );
-    if (!pack) this.host.append(el("div", "rule"));
-    this.host.append(this.list, this.hint);
+    this.host.append(el("h3", "", title), this.list, this.hint);
   }
   render(hotkeys: Hotkeys<Id>) {
     this.list.replaceChildren();
     this.hint.textContent = "";
     for (const item of this.actions) {
       const row = el("div", "hotkey-row"),
-        label = el("span", "hotkey-label", item.label);
+        label = el("div", "hotkey-label", item.label);
       const actions = shortcutControls(
         item.id,
         item.label,
@@ -110,8 +101,16 @@ export class HotkeySettings<Id extends string> {
           this.change(next);
         },
         this.hint,
-        this.pack,
+        this.extendedKeys,
       );
+      if (item.help) {
+        const help = el("p", "sub hotkey-help", item.help);
+        help.id = `shortcut-help-${item.id}`;
+        label.append(help);
+        actions
+          .querySelector(".shortcut-record")
+          ?.setAttribute("aria-describedby", help.id);
+      }
       row.append(label, actions);
       this.list.append(row);
     }

@@ -1,15 +1,21 @@
 import { contextKey, resolveCard } from "./dom";
 import type { CardContext } from "../shared/types";
+import { SALE_MINIMUMS, type SaleRarity } from "../shared/sales-prices";
+import { listingCopyId } from "./my-listings";
 
 export interface SalesTarget {
   input: HTMLInputElement;
   after: HTMLElement;
   context: CardContext;
   key: string;
+  rarity?: SaleRarity;
+  copyId?: string;
 }
+const RARITIES = Object.keys(SALE_MINIMUMS) as SaleRarity[];
 const BATCH_INPUT =
   ".bsell-prices .bsell-input input,.bsell-prices label input";
 const SELL_INPUT = 'form.sell-form input[data-testid="sell-start"]';
+export const SALES_SUMMARY_WARNING = '[data-kosmore-sales-warning="summary"]';
 export function salesTarget(
   input: HTMLInputElement,
   doc: Document = document,
@@ -33,7 +39,7 @@ export function salesTarget(
       input.closest(".deal")?.querySelector(".deal-visual .kc-article") ?? null;
   }
   const context = card && resolveCard(card, doc);
-  if (!after || !context) return;
+  if (!after || !card || !context) return;
   if (
     url.pathname === "/market/sell" &&
     url.searchParams.has("subject") &&
@@ -41,7 +47,56 @@ export function salesTarget(
       context.subjectId
   )
     return;
-  return { input, after, context, key: contextKey(context) };
+  const article = card.matches(".kc-article")
+    ? card
+    : card.querySelector(".kc-article");
+  const face = card.querySelector(".kc");
+  const metadata = card
+    .querySelector(".bsell-meta")
+    ?.textContent?.split("·")[0]
+    ?.trim();
+  const label = article
+    ?.getAttribute("aria-label")
+    ?.split(",")
+    .map((part) => part.trim());
+  const rarity =
+    RARITIES.find((name) =>
+      face?.classList.contains(`kc-${name.toLowerCase()}`),
+    ) ??
+    RARITIES.find(
+      (name) =>
+        metadata?.toLowerCase() === name.toLowerCase() ||
+        label
+          ?.slice(1)
+          .some((part) => part.toLowerCase() === name.toLowerCase()),
+    );
+  const copyId = listingCopyId(
+    url.pathname === "/market/sell"
+      ? (url.searchParams.get("instance") ?? context.copyId)
+      : card.closest(".bsell-row")?.getAttribute("data-instance-id"),
+  );
+  return { input, after, context, key: contextKey(context), rarity, copyId };
+}
+
+export function salesSubmitButton(): HTMLButtonElement | undefined {
+  if (location.pathname === "/market/sell")
+    return (
+      document.querySelector<HTMLButtonElement>(
+        'form.sell-form button[type="submit"]',
+      ) ?? undefined
+    );
+  const batch = document.querySelector(".bsell");
+  return (
+    document.querySelector<HTMLButtonElement>(
+      ".bsell-bar > button.ui-btn-primary",
+    ) ??
+    batch?.querySelector<HTMLButtonElement>('[data-testid="submit-sales"]') ??
+    [...(batch?.querySelectorAll("button") ?? [])].find((button) =>
+      /^(?:list for sale|put (?:cards )?on sale)\b/i.test(
+        button.textContent?.trim() ?? "",
+      ),
+    )
+  );
 }
 export function salesTargets(
   doc: Document = document,

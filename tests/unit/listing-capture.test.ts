@@ -40,12 +40,14 @@ it("matches successful batch results by instance ID even when the response chang
   ).toEqual([
     {
       auctionId: auction(12).id,
+      copyId: second,
       subjectId: "46",
       startPrice: "2000000",
       submittedAt: 100,
     },
     {
       auctionId: auction(11).id,
+      copyId: first,
       subjectId: "42",
       startPrice: "1000000",
       submittedAt: 100,

@@ -31,7 +31,7 @@ import {
 } from "./shared/page-relay";
 import {
   RELAY_SALE_BATCH,
-  saleSelectionKeys,
+  saleSelection,
   type SaleBatchMessage,
 } from "./shared/sale-family-selection";
 
@@ -203,7 +203,8 @@ export function installPageRelay(win: Window = window) {
             preferences?.listingPrices !== false)) ||
           (method === "PUT" &&
             url.pathname === "/api/market/sell-draft" &&
-            preferences?.saleFamily !== false))
+            (preferences?.saleFamily !== false ||
+              preferences?.listingPrices !== false)))
       ) {
         const page = win.location.href,
           nextRevision = ++revision;
@@ -224,15 +225,23 @@ export function installPageRelay(win: Window = window) {
               preferences?.listingPrices !== false
             )
               rememberSubjects(value);
-            if (preferences?.saleFamily === false) return;
-            const keys = saleSelectionKeys(value, source);
-            if (keys)
+            const selection = saleSelection(value, source);
+            if (!selection) return;
+            const { keys, copies } = selection;
+            const includeCopies =
+              preferences?.listingPrices !== false && copies.length > 0;
+            if (
+              preferences?.saleFamily !== false ||
+              includeCopies ||
+              (source === "draft" && preferences?.listingPrices !== false)
+            )
               relay({
                 type: RELAY_SALE_BATCH,
                 page,
                 revision: nextRevision,
                 source,
                 keys,
+                ...(includeCopies ? { copies } : {}),
               });
           })
           .catch(() => {});

@@ -1,11 +1,7 @@
-export type PopupTab = "market" | "history" | "trade" | "notes";
+export const POPUP_TABS = ["market", "history", "trade", "notes"] as const;
+export type PopupTab = (typeof POPUP_TABS)[number];
 function isPopupTab(value: unknown): value is PopupTab {
-  return (
-    value === "market" ||
-    value === "history" ||
-    value === "trade" ||
-    value === "notes"
-  );
+  return POPUP_TABS.some((tab) => tab === value);
 }
 export interface PopupPosition {
   left: number;

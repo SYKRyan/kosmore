@@ -411,9 +411,10 @@ listings and saves the results for the next visit.
 Navigation hotkeys
 ------------------
 
-Assign shortcuts for Home, Collection, Albums, Atlas, Social, Market, My
-Auctions, My Activity, Alerts, Talents, Packs, History, Fusion, Pulsar,
-Odyssey, and My Profile.
+Under Hotkeys → Navigation, assign shortcuts for Home, Collection,
+Albums, Tomes, Families, Fusion, Gallery, Quests, Atlas, Social, Market,
+My Auctions, My Activity, Alerts, Talents, Packs, History, Pulsar, Odyssey,
+and My Profile.
 
 Click a shortcut control and press a letter, number, or F1–F12, optionally
 with Ctrl, Alt, Shift, or Meta. Escape cancels recording; Clear removes a
@@ -422,13 +423,22 @@ rejected.
 
 Shortcuts work on Kosmora pages and pause while typing in fields or editors.
 Browser-reserved shortcuts may not reach KosMore.
+Enable all hotkeys controls every KosMore shortcut group, including pinned
+albums, and preserves saved bindings.
+
+Under Hotkeys → Hover Tooltip, assign shortcuts for the open tooltip’s
+controls and tabs. Cycle Tabs wraps from Notes to Market. Next Tab and
+Previous Tab stop at the ends. Escape always closes the tooltip, even when
+Close Tooltip has no shortcut. Sell, Trade, and Gift open the corresponding
+Kosmora flow for the eligible owned copy you selected.
 
 Pack Openings
 --------------------
 
-Find Pack Openings just below Navigation Hotkeys. Its hotkeys start off
-and bindings start empty. You can also record arrows, Home, and End.
-Save the group to apply your choices.
+Find the shortcuts under Hotkeys → Pack Opening and the automation and
+display options under Pack Openings. Pack hotkeys start off and bindings
+start empty. You can also record arrows, Home, and End. Save the subgroup
+to apply your choices.
 
 Show remaining pack count starts on and shows the number of ready packs
 above Open the Next Pack.
@@ -442,8 +452,8 @@ above Open the Next Pack.
 - Dismiss Found Pack, Skip Opening, Later, Share, and Home activate the
   corresponding controls when Kosmora offers them. Next Pack/Back to Packs
   opens the next pack or returns to Packs when the summary offers that link.
-- Any key dismisses found pack starts on. Turn it off to use the Dismiss
-  Found Pack keybind instead.
+- Any key dismisses found pack starts on under Pack Openings. Turn it off to
+  use the Dismiss Found Pack keybind instead.
 - Auto-dismiss found pack starts off. Turn it on to dismiss full-screen
   Rogue and Mega pack alerts automatically. The found packs still appear
   on the summary.

@@ -39,11 +39,19 @@ import { formatKosmo } from "../kosmora/contracts";
 import { HOST_ID, topDialog } from "../kosmora/dom";
 import { el, button, note } from "./ui";
 import { sellPath } from "../kosmora/selling";
+import {
+  tradePath,
+  transferProblem,
+  type TransferAction,
+} from "../kosmora/copy-actions";
+import { giftPath } from "./gift-handoff";
+import type { HoverTooltipId } from "../shared/hotkeys";
 import { readTradeMatches, type TradeMatches } from "../shared/trade-matches";
 import { CardNotes } from "./card-notes";
 import type { FriendTooltip } from "./friend-tooltip";
 import {
   resizedBounds,
+  POPUP_TABS,
   type PopupBounds,
   type PopupLayoutChange,
   type PopupTab,
@@ -103,7 +111,23 @@ export class Popup {
   private tradePending = false;
   private albumArea = el("section", "pinned-albums");
   private filterStatus = el("p", "note error filter-status");
-  private sellButton = button("", () => void this.sell(), "sell-button");
+  private sellButton = button(
+    "",
+    () => void this.openCopyAction("sell"),
+    "sell-button",
+  );
+  private giftButton = button(
+    "Gift",
+    () => void this.openCopyAction("gift"),
+    "transfer-button",
+  );
+  private tradeButton = button(
+    "Trade",
+    () => void this.openCopyAction("trade"),
+    "transfer-button",
+  );
+  private closeButton: HTMLButtonElement;
+  private settingsButton: HTMLButtonElement;
   private status = el("p", "album-status");
   private histories: HistoryState = {};
   private staleHistories = new Set<Finish>();
@@ -125,9 +149,10 @@ export class Popup {
     else this.albumRequest?.abort();
   });
   private showAllSales = false;
-  private selling = false;
+  private openingCopyAction = false;
   private pending = false;
   private closed = false;
+  private scrollTouch?: Touch;
   private placement?: PopupPlacement;
   private pinButton = button("", () => this.togglePin(), "icon pin-button");
   private reposition: ResizeObserver;
@@ -208,7 +233,7 @@ export class Popup {
         "icon refresh-button",
       ),
       this.pinButton,
-      button("", onClose, "icon"),
+      (this.closeButton = button("", onClose, "icon")),
     );
     const refreshButton = (this.refreshButton =
       actions.firstElementChild as HTMLButtonElement);
@@ -228,23 +253,17 @@ export class Popup {
     this.sellButton.setAttribute("aria-label", "Sell card");
     this.sellButton.title = "Loading owned copies…";
     this.sellButton.disabled = true;
-    const gavel = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    gavel.setAttribute("viewBox", "0 0 24 24");
-    gavel.setAttribute("width", "20");
-    gavel.setAttribute("height", "20");
-    gavel.setAttribute("fill", "none");
-    gavel.setAttribute("stroke", "currentColor");
-    gavel.setAttribute("stroke-width", "1.7");
-    gavel.setAttribute("stroke-linecap", "round");
-    gavel.setAttribute("stroke-linejoin", "round");
-    gavel.setAttribute("aria-hidden", "true");
-    const path = document.createElementNS(gavel.namespaceURI, "path");
-    path.setAttribute(
-      "d",
-      "m14 13-8.5 8.5a2.12 2.12 0 0 1-3-3L11 10 M16 16l6-6 M8 8l6-6 M9 7l8 8 M21 11l-8-8",
-    );
-    gavel.append(path);
-    this.sellButton.append(gavel, el("span", "", "Sell"));
+    for (const [control, action] of [
+      [this.giftButton, "Gift"],
+      [this.tradeButton, "Trade"],
+    ] as const) {
+      control.setAttribute("aria-label", `${action} card`);
+      control.title = "Loading owned copies…";
+      control.disabled = true;
+    }
+    this.sellButton.append(cardIcon("sale", 20), el("span", "", "Sell"));
+    this.tradeButton.prepend(cardIcon("trade", 20));
+    this.giftButton.prepend(cardIcon("gift", 20));
     const titleActions = el("div", "title-actions");
     titleActions.append(this.headerSignals);
     const headerDetails = el("div", "header-details"),
@@ -268,7 +287,7 @@ export class Popup {
     const tabs = el("div", "tabs");
     tabs.setAttribute("role", "tablist");
     tabs.setAttribute("aria-label", "Card insights");
-    const names: PopupTab[] = ["market", "history", "trade", "notes"];
+    const names = POPUP_TABS;
     const buttons = [
       this.marketTab,
       this.historyTab,
@@ -326,17 +345,19 @@ export class Popup {
     tabWorkspace.append(tabs, tabContent);
     body.append(this.albumArea, this.statArea, tabWorkspace);
     const footer = el("footer", "footer");
-    const settingsButton = button(
+    const settingsButton = (this.settingsButton = button(
       "",
       () => openSettings(),
-      "icon settings-button",
-    );
+      "settings-button",
+    ));
     settingsButton.setAttribute("aria-label", "Settings");
     settingsButton.title = "Settings";
     settingsButton.append(tooltipIcon("settings"));
+    const copyActions = el("div", "copy-actions");
+    copyActions.append(this.sellButton, this.tradeButton, this.giftButton);
     footer.append(
+      copyActions,
       el("span", "brand", "✦ KosMore"),
-      this.sellButton,
       settingsButton,
     );
     const empty = el("div", "empty-state", "No Card Selected");
@@ -399,6 +420,31 @@ export class Popup {
   }
   restoreCanceledWheel(event: WheelEvent) {
     if (!event.deltaY || event.ctrlKey || event.shiftKey) return;
+    this.restoreCanceledScroll(event, event.deltaY, event.deltaMode);
+  }
+  restoreCanceledTouch(event: TouchEvent) {
+    if (event.type === "touchstart") {
+      this.scrollTouch =
+        event.touches.length === 1 ? event.touches[0] : undefined;
+      return;
+    }
+    if (event.type !== "touchmove" || event.touches.length !== 1) {
+      this.scrollTouch = undefined;
+      return;
+    }
+    const previous = this.scrollTouch;
+    const touch = event.touches[0];
+    if (touch.identifier !== previous?.identifier) return;
+    this.scrollTouch = touch;
+    const deltaY = previous.clientY - touch.clientY;
+    if (Math.abs(deltaY) <= Math.abs(previous.clientX - touch.clientX)) return;
+    this.restoreCanceledScroll(event, deltaY);
+  }
+  private restoreCanceledScroll(
+    event: Event,
+    deltaY: number,
+    deltaMode: number = WheelEvent.DOM_DELTA_PIXEL,
+  ) {
     const scrollers = event
       .composedPath()
       .filter(
@@ -408,8 +454,8 @@ export class Popup {
           this.shadow.contains(node),
       );
     if (!scrollers.length) return;
-    // Give native scrolling first refusal. The game's overlay can cancel the
-    // default action in a capture listener before the wheel reaches this popup.
+    // The game's overlay can cancel scrolling before the event reaches the popup.
+    // Check after dispatch so uncanceled gestures keep native scrolling.
     requestAnimationFrame(() => {
       if (!event.defaultPrevented || this.closed) return;
       for (const scroller of scrollers) {
@@ -419,19 +465,64 @@ export class Popup {
         )
           continue;
         const unit =
-          event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          deltaMode === WheelEvent.DOM_DELTA_PAGE
             ? scroller.clientHeight
-            : event.deltaMode === WheelEvent.DOM_DELTA_LINE
+            : deltaMode === WheelEvent.DOM_DELTA_LINE
               ? parseFloat(getComputedStyle(scroller).lineHeight) || 16
               : 1;
         const previous = scroller.scrollTop;
-        scroller.scrollTop += event.deltaY * unit;
+        scroller.scrollTop += deltaY * unit;
         if (scroller.scrollTop !== previous) break;
       }
     });
   }
   get isPinned() {
     return !!this.placement;
+  }
+  activateShortcut(action: HoverTooltipId): boolean {
+    const controls = {
+      close: this.closeButton,
+      pin: this.pinButton,
+      refresh: this.refreshButton,
+      sell: this.sellButton,
+      gift: this.giftButton,
+      trade: this.tradeButton,
+      settings: this.settingsButton,
+      listedFor: this.listedFor,
+      marketTab: this.marketTab,
+      historyTab: this.historyTab,
+      tradeTab: this.tradeTab,
+      notesTab: this.notesTab,
+    };
+    let target: HTMLButtonElement | HTMLAnchorElement;
+    if (
+      action === "cycleTabs" ||
+      action === "nextTab" ||
+      action === "previousTab"
+    ) {
+      if (!this.context) return false;
+      const current = POPUP_TABS.indexOf(this.selectedTab);
+      const next =
+        action === "cycleTabs"
+          ? (current + 1) % POPUP_TABS.length
+          : current + (action === "nextTab" ? 1 : -1);
+      // Consume a boundary press so the tab strip's native arrow handling cannot wrap it.
+      if (next < 0 || next >= POPUP_TABS.length) return true;
+      target = controls[`${POPUP_TABS[next]}Tab`];
+    } else target = controls[action];
+
+    if (
+      target.matches(':disabled, [aria-disabled="true"]') ||
+      (target instanceof HTMLAnchorElement && !target.hasAttribute("href")) ||
+      !target.getClientRects().length ||
+      getComputedStyle(target).visibility !== "visible"
+    )
+      return false;
+    const tabFocused = this.shadow.activeElement?.matches('[role="tab"]');
+    target.click();
+    if (tabFocused && target.matches('[role="tab"]'))
+      target.focus({ preventScroll: true });
+    return true;
   }
   activateAlbumShortcut(key: string): boolean {
     if (
@@ -1666,7 +1757,10 @@ export class Popup {
   private renderSell() {
     const copy = this.selectedCopy();
     this.sellButton.disabled =
-      !copy || copy.state !== "available" || this.pending || this.selling;
+      !copy ||
+      copy.state !== "available" ||
+      this.pending ||
+      this.openingCopyAction;
     this.sellButton.title = !this.details
       ? "Loading owned copies…"
       : !this.details.copies.length
@@ -1676,19 +1770,39 @@ export class Popup {
           : copy.state !== "available"
             ? "This copy is not available to sell."
             : "Open the sell form for this owned copy";
+    for (const [action, control] of [
+      ["gift", this.giftButton],
+      ["trade", this.tradeButton],
+    ] as const) {
+      const problem = !this.details
+        ? "Loading owned copies…"
+        : !this.details.copies.length
+          ? `Own a copy of this card to ${action} it.`
+          : !copy
+            ? `Choose an owned copy to ${action} it.`
+            : transferProblem(copy, action);
+      control.disabled =
+        !!problem || !this.account || this.pending || this.openingCopyAction;
+      control.title = problem ?? `Open the ${action} form for this owned copy`;
+    }
   }
-  private async sell() {
+  private async openCopyAction(action: "sell" | TransferAction) {
     if (!this.context) return;
     const copy = this.selectedCopy();
-    if (!copy || !this.account || this.selling || this.pending) return;
+    if (!copy || !this.account || this.openingCopyAction || this.pending)
+      return;
+    const accountKey = this.account.key;
     const sourceUrl = location.href;
-    this.selling = true;
+    this.openingCopyAction = true;
     this.status.className = "album-status";
-    this.status.textContent = "Opening sell form…";
+    this.status.textContent = `Opening ${action} form…`;
     if (!this.status.isConnected) this.albumArea.append(this.status);
     this.renderSell();
     try {
-      if ((await this.client.account()).key !== this.account.key)
+      if (
+        (await this.client.account(undefined, action !== "sell")).key !==
+        accountKey
+      )
         throw new Error("Your Kosmora account changed. Reopen the popup.");
       const fresh = await this.client.insights(
         this.context.subjectId,
@@ -1697,14 +1811,26 @@ export class Popup {
       );
       const owned = fresh.copies.find((c) => c.id === copy.id);
       if (!owned) throw new Error("You no longer own this copy.");
+      if (action !== "sell") {
+        const problem = transferProblem(owned, action);
+        if (problem) throw new Error(problem);
+      }
       // The click requests navigation independently of the hover popup's lifetime.
       // Respect a later page navigation while the ownership check was pending.
-      if (location.href === sourceUrl) location.assign(sellPath(owned));
+      if (location.href === sourceUrl) {
+        const path =
+          action === "sell"
+            ? sellPath(owned)
+            : action === "trade"
+              ? tradePath(owned)
+              : giftPath(owned, accountKey);
+        location.assign(path);
+      }
     } catch (error) {
       this.status.className = "album-status error";
       this.status.textContent = messageOf(error);
     } finally {
-      this.selling = false;
+      this.openingCopyAction = false;
       if (!this.closed) this.renderSell();
     }
   }

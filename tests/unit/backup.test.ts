@@ -96,6 +96,22 @@ function values(): StoredValues {
           meta: false,
         },
       },
+      hoverTooltipHotkeys: {
+        close: {
+          code: "KeyX",
+          ctrl: false,
+          alt: false,
+          shift: false,
+          meta: false,
+        },
+        nextTab: {
+          code: "ArrowDown",
+          ctrl: false,
+          alt: false,
+          shift: false,
+          meta: false,
+        },
+      },
       stats: [...defaults().stats]
         .reverse()
         .map((entry, index) => ({ ...entry, enabled: index !== 0 })),
@@ -154,6 +170,38 @@ it("exports usable defaults from a new installation and names files by local tim
     "KosMore-backup-2026-11-05-090807.json",
   );
 });
+it("imports pre-tooltip-hotkey backups without changing existing shortcut groups", async () => {
+  const source = backup();
+  source.settings.hotkeysEnabled = false;
+  source.settings.hoverTooltipHotkeysEnabled = false;
+  source.settings.hotkeys.fusion = {
+    code: "KeyF",
+    ctrl: false,
+    alt: false,
+    shift: false,
+    meta: false,
+  };
+  const legacy = JSON.parse(serializeBackup(source));
+  delete legacy.settings.hoverTooltipHotkeys;
+  delete legacy.settings.hotkeysEnabled;
+  delete legacy.settings.hoverTooltipHotkeysEnabled;
+  for (const mode of ["merge", "replace"] as const) {
+    const destination = memory();
+    await applyImport(prepareImport(legacy, mode, {}), destination.storage);
+    expect(destination.data()[SETTINGS_KEY]).toMatchObject({
+      hotkeys: source.settings.hotkeys,
+      packOpeningHotkeys: source.settings.packOpeningHotkeys,
+      pinnedAlbumHotkeys: source.settings.pinnedAlbumHotkeys,
+      hoverTooltipHotkeys: {},
+      hotkeysEnabled: true,
+      hoverTooltipHotkeysEnabled: true,
+    });
+  }
+  expect(parseBackup(serializeBackup(source)).settings).toEqual(
+    source.settings,
+  );
+});
+
 it("imports older family settings and round-trips independent family impact choices", async () => {
   for (const mode of ["merge", "replace"] as const) {
     const old = JSON.parse(serializeBackup(backup()));
@@ -164,6 +212,7 @@ it("imports older family settings and round-trips independent family impact choi
     delete old.settings.socialRemindersEnabled;
     delete old.settings.socialRemindersPinned;
     delete old.settings.packOpeningHotkeys;
+    delete old.settings.hoverTooltipHotkeys;
     delete old.settings.packOpeningHotkeysEnabled;
     delete old.settings.anyKeyDismissesFoundPack;
     delete old.settings.autoSkipOpening;
@@ -184,6 +233,7 @@ it("imports older family settings and round-trips independent family impact choi
       socialRemindersEnabled: true,
       socialRemindersPinned: false,
       packOpeningHotkeys: {},
+      hoverTooltipHotkeys: {},
       packOpeningHotkeysEnabled: false,
       anyKeyDismissesFoundPack: true,
       autoSkipOpening: false,

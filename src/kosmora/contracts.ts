@@ -67,6 +67,13 @@ export function parseInsights(v: unknown): CardInsights {
     pop = d.popularity ? object(d.popularity) : undefined;
   if (!Array.isArray(d.copies))
     throw new Error("Owned copies are unavailable.");
+  const offeredCopies = new Set(
+    (Array.isArray(d.trades) ? d.trades : []).flatMap((trade) =>
+      trade && typeof trade === "object" && typeof trade.copy === "string"
+        ? [trade.copy.toLowerCase()]
+        : [],
+    ),
+  );
   let families: CardInsights["families"] = null;
   try {
     families = parseCardFamilies(d.families);
@@ -98,6 +105,11 @@ export function parseInsights(v: unknown): CardInsights {
         subjectId: id,
         state: text(c.state),
         auctionId: c.auction_id == null ? undefined : uuid(c.auction_id),
+        ...(c.inAlbum ? { lockedInAlbum: true } : {}),
+        ...(c.exclusive === true ? { exclusive: true } : {}),
+        ...(typeof c.id === "string" && offeredCopies.has(c.id.toLowerCase())
+          ? { inTrade: true }
+          : {}),
         variant: variantOf(c),
         serial: typeof c.serial === "number" ? c.serial : undefined,
         acquiredAt:

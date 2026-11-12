@@ -20,12 +20,17 @@ import {
 } from "./trade-interest";
 import { activeAuctionSummary, type AuctionListing } from "./auctions";
 import {
+  auctionCopyId,
+  auctionListingOutcome,
+  failedListingPrice,
+  listingCopyId,
   listingPath,
   parseListingBatch,
   type ListingBatch,
   type TrackedListing,
   type TrackedListingHistory,
   type ListingLimits,
+  type ListingMetadata,
 } from "./my-listings";
 import type { HistoryMode } from "../shared/listing-cache";
 import type { Result } from "../shared/messages";
@@ -305,9 +310,8 @@ export class GameClient implements KosmoraClient {
     fresh = false,
     onMatch?: () => void,
   ) {
-    return (
-      await this.auctionSummary(id, name, signal, fresh, "full", onMatch)
-    ).count;
+    return (await this.auctionSummary(id, name, signal, fresh, "full", onMatch))
+      .count;
   }
   onListingsChanged(listener: () => void) {
     this.listingListenersChanged.add(listener);
@@ -356,6 +360,88 @@ export class GameClient implements KosmoraClient {
     );
   }
 
+  async discountListingPrice(
+    subject: string,
+    copyId: string,
+    threshold: number,
+    listings: TrackedListing[],
+    signal: AbortSignal,
+  ) {
+    const account = await this.account(signal, false);
+    const version = this.accountVersion;
+    const metadata = new Map<string, ListingMetadata>();
+    const detailSignal = setRequestPriority(
+      AbortSignal.any([signal]),
+      "background",
+    );
+    const price = await failedListingPrice(
+      listings,
+      copyId,
+      threshold,
+      async (auctionId) => {
+        const id = uuid(auctionId).toLowerCase();
+        try {
+          const detail = await this.ownedListingDetail(
+            id,
+            account.key,
+            detailSignal,
+          );
+          if (!detail || subjectId(detail.card.subjectId) !== subject) return;
+          const copyId = auctionCopyId(detail.auction, detail.card);
+          const outcome = auctionListingOutcome(detail.auction);
+          if (!copyId && !outcome) return;
+          const verified = { copyId, outcome };
+          metadata.set(id, verified);
+          return verified;
+        } catch (error) {
+          if (
+            error instanceof ApiError &&
+            (error.status === 404 || error.status === 403)
+          )
+            return;
+          throw error;
+        }
+      },
+    );
+    signal.throwIfAborted();
+    if (version !== this.accountVersion) return;
+    if (metadata.size)
+      await this.listingRequest(
+        "listingMetadata",
+        account.key,
+        subject,
+        signal,
+        { metadata: [...metadata] },
+      );
+    return price;
+  }
+
+  private async ownedListingDetail(
+    id: string,
+    accountKey: string,
+    signal: AbortSignal,
+  ) {
+    const path = `/auctions/${id}`;
+    const detail = await this.cached(
+      this.listingDetailReads,
+      id,
+      (shared) => this.read(path, shared),
+      signal,
+      false,
+      [path],
+    );
+    const data = object(detail);
+    const auction = object(data.auction ?? data);
+    if (
+      uuid(auction.id).toLowerCase() !== id ||
+      auction.yours === false ||
+      typeof auction.seller !== "string" ||
+      auction.seller.toLowerCase() !== accountKey
+    )
+      return;
+    return { auction, card: object(auction.card) };
+  }
+
   async captureListings(confirmations: unknown) {
     const previous = this.lastAccount;
     const account = await this.account();
@@ -387,35 +473,22 @@ export class GameClient implements KosmoraClient {
           subjectId: row.subjectId,
           startPrice: row.startPrice,
           submittedAt: row.submittedAt,
+          copyId: listingCopyId(row.copyId),
         };
         if (
           !previous ||
           row.submittedAt < this.accountVerifiedSince ||
           !validRecordedListing(record)
         ) {
-          const path = `/auctions/${id}`;
-          const detail = await this.cached(
-            this.listingDetailReads,
-            id,
-            (shared) => this.read(path, shared).catch(() => undefined),
-            signal,
-            false,
-            [path],
-          );
-          const data = object(detail);
-          const auction = object(data.auction ?? data);
-          if (
-            uuid(auction.id).toLowerCase() !== id ||
-            auction.yours === false ||
-            typeof auction.seller !== "string" ||
-            auction.seller.toLowerCase() !== account.key
-          )
-            continue;
+          const detail = await this.ownedListingDetail(id, account.key, signal);
+          if (!detail) continue;
+          const { auction, card } = detail;
           record = {
             id,
-            subjectId: subjectId(object(auction.card).subjectId),
+            subjectId: subjectId(card.subjectId),
             startPrice: amount(auction.startPrice),
             submittedAt: row.submittedAt,
+            copyId: auctionCopyId(auction, card) ?? record.copyId,
           };
         }
         if (validRecordedListing(record)) records.push(record);
@@ -463,23 +536,23 @@ export class GameClient implements KosmoraClient {
     signal?.throwIfAborted();
     const version = this.accountVersion,
       requestId = crypto.randomUUID();
+    // An unloaded extension can throw before sendMessage returns a promise.
+    const send = async (message: Record<string, unknown>) =>
+      chrome.runtime.sendMessage(message);
     return new Promise((resolve, reject) => {
       const cancel = () => {
-        void chrome.runtime
-          .sendMessage({
-            requestId: crypto.randomUUID(),
-            op: "listingCancel",
-            target: requestId,
-          })
-          .catch(() => {});
         reject(
           signal?.reason ??
             new DOMException("Listing lookup canceled.", "AbortError"),
         );
+        void send({
+          requestId: crypto.randomUUID(),
+          op: "listingCancel",
+          target: requestId,
+        }).catch(() => {});
       };
       signal?.addEventListener("abort", cancel, { once: true });
-      void chrome.runtime
-        .sendMessage({ requestId, op, accountKey, subjectId: id, ...extra })
+      void send({ requestId, op, accountKey, subjectId: id, ...extra })
         .then((raw: unknown) => {
           if (signal?.aborted) return;
           if (version !== this.accountVersion)
@@ -529,7 +602,8 @@ export class GameClient implements KosmoraClient {
         ? "observe"
         : "presence";
     return (
-      (await this.auctionSummary(id, name, signal, false, mode, onMatch)).count > 0
+      (await this.auctionSummary(id, name, signal, false, mode, onMatch))
+        .count > 0
     );
   }
   private marketPage(path: string, signal: AbortSignal, fresh: boolean) {

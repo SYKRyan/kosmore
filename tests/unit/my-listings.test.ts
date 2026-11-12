@@ -1,16 +1,83 @@
 import { expect, it } from "vitest";
 import {
+  failedListingPrice,
   parseListingBatch,
   initialListingLimits,
   listingComplete,
   type ListingLimits,
   type ListingBatch,
+  type TrackedListing,
 } from "../../src/kosmora/my-listings";
 import {
   ListingCacheService,
   LISTING_PRICE_KEY,
 } from "../../src/shared/listing-cache";
 import { myListing } from "../fixtures/my-listings";
+import { COPY_A, COPY_B } from "../fixtures/data";
+
+it("counts only consecutive confirmed failures for the same physical copy", async () => {
+  const row = (
+    id: number,
+    overrides: Partial<TrackedListing> = {},
+  ): TrackedListing => ({
+    id: String(id),
+    startPrice: String(id * 1_000_000),
+    copyId: COPY_A,
+    group: "unsold",
+    ...overrides,
+  });
+  const listings = [
+    row(5, { copyId: COPY_B }),
+    row(4),
+    row(3),
+    row(2, { group: "sold" }),
+    row(1),
+  ];
+  expect(await failedListingPrice(listings, COPY_A, 2)).toBe("4000000");
+  expect(await failedListingPrice(listings, COPY_A, 3)).toBeUndefined();
+  expect(await failedListingPrice(listings, COPY_B, 2)).toBeUndefined();
+  expect(
+    await failedListingPrice(
+      [row(6, { group: "selling" }), ...listings],
+      COPY_A,
+      2,
+    ),
+  ).toBeUndefined();
+  expect(
+    await failedListingPrice(
+      [row(6, { state: "cancelled" }), ...listings],
+      COPY_A,
+      2,
+    ),
+  ).toBe("4000000");
+});
+
+it("checks a saved submission's outcome before counting a discount", async () => {
+  const [submitted, ...expired] = Array.from(
+    { length: 5 },
+    (_, i): TrackedListing => ({
+      id: String(i),
+      startPrice: "498000000",
+      copyId: COPY_A,
+      ...(i > 0 ? { state: "expired", group: "unsold" } : {}),
+    }),
+  );
+  const endsAt = "2026-11-10T01:00:00.000Z";
+  const rows = [submitted, ...expired];
+  const lookups: string[] = [];
+  expect(
+    await failedListingPrice(rows, COPY_A, 5, async (id) => {
+      lookups.push(id);
+      return { outcome: { state: "expired", group: "unsold", endsAt } };
+    }),
+  ).toBe("498000000");
+  expect(lookups).toEqual([submitted.id]);
+  expect(
+    await failedListingPrice(rows, COPY_A, 5, async () => ({
+      outcome: { state: "sold", group: "sold", endsAt },
+    })),
+  ).toBeUndefined();
+});
 class MemoryStore {
   data: Record<string, unknown> = {};
   async get(key: string | string[] | null) {

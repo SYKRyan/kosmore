@@ -275,6 +275,43 @@ test("sale family impact combines finishes and fits sale rows with price overlay
   await page.setViewportSize({ width: 1440, height: 1000 });
 });
 
+test("single-sale minimum warning stays centered between Family Impact and submit", async () => {
+  await worker.evaluate(async () => {
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        schemaVersion: 1,
+        salesOverlaysEnabled: true,
+        salesCustomMinimumsEnabled: true,
+        salesCustomMinimums: { Rare: 20 },
+      },
+    });
+  });
+  await page.goto("https://kosmora.io/market/sell?subject=307");
+  const form = page.locator(".sell-form"),
+    price = page.getByTestId("sell-start"),
+    impact = form.locator("[data-kosmore-fusion-family]"),
+    warning = form.locator(
+      '[data-kosmore-fusion-family] + [data-kosmore-sales-warning="summary"]:has(+ button[type="submit"])',
+    );
+  await page.addStyleTag({
+    content: ".sell-form label.fld-big > span { color: #bea9d4 }",
+  });
+  await expect(form.locator('[data-kosmore-sales-warning="row"]')).toHaveCSS(
+    "color",
+    "rgb(255, 130, 139)",
+  );
+  await expect(warning).toHaveText(
+    "This card is below its configured minimum",
+  );
+  await expect(warning).toHaveCSS("text-align", "center");
+  await expect(impact).toHaveCSS("margin-bottom", "2px");
+  await price.fill("20");
+  await expect(warning).toHaveCount(0);
+  await expect(impact).toHaveCSS("margin-bottom", "10px");
+  await price.fill("19");
+  await expect(warning).toBeVisible();
+});
+
 for (const width of [1440, 390])
   test(`sale family calculating badge stays gray and holds layout before Safe at ${width}px`, async () => {
     let release!: () => void;

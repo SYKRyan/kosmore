@@ -3,6 +3,7 @@ import {
   type RecordedListing,
 } from "../kosmora/listing-capture";
 import {
+  applyListingMetadata,
   initialListingLimits,
   LISTING_FRESH_MS,
   LISTING_GROUPS,
@@ -14,6 +15,7 @@ import {
   validPersonalListing,
   type ListingBatch,
   type ListingLimits,
+  type ListingMetadata,
   type PersonalListing,
   type TrackedListing,
   type TrackedListingHistory,
@@ -76,10 +78,19 @@ function mergeServerRows(
   for (const row of incoming) {
     for (const earlier of before.get(row.id) ?? []) merged.push(earlier);
     const known = saved.get(row.id);
+    const settled =
+      known && (known.group === "sold" || known.group === "unsold");
     merged.push({
       ...known,
       ...row,
+      ...(settled &&
+        row.group === "selling" && {
+          group: known.group,
+          state: known.state,
+          endsAt: known.endsAt,
+        }),
       startPrice: known?.startPrice ?? row.startPrice,
+      copyId: row.copyId ?? known?.copyId,
     });
   }
   return merged.concat(tail);
@@ -127,8 +138,8 @@ export class ListingCacheService {
       validRecordedListing(previous.latest) &&
       previous.latest.subjectId === subject
     ) {
-      const { id, startPrice, submittedAt } = previous.latest;
-      state.listings.push({ id, startPrice, submittedAt });
+      const { id, startPrice, submittedAt, copyId } = previous.latest;
+      state.listings.push({ id, startPrice, submittedAt, copyId });
       if (
         previous.verifiedId &&
         previous.verifiedId !== id &&
@@ -203,8 +214,34 @@ export class ListingCacheService {
     endsAt,
     finish,
     state,
+    copyId,
+    group,
   }: PersonalListing): TrackedListing {
-    return { id, startPrice, endsAt, finish, state };
+    return { id, startPrice, endsAt, finish, state, copyId, group };
+  }
+  async attachMetadata(
+    account: string,
+    subject: string,
+    metadata: Map<string, ListingMetadata>,
+    signal: AbortSignal,
+  ) {
+    return this.write(async () => {
+      signal.throwIfAborted();
+      const [state] = await this.readTracked(account, [subject]);
+      let changed = false;
+      const listings = state.listings.map((row) => {
+        const details = metadata.get(row.id.toLowerCase());
+        const updated = details ? applyListingMetadata(row, details) : row;
+        if (updated !== row) changed = true;
+        return updated;
+      });
+      signal.throwIfAborted();
+      if (changed)
+        await this.local.set({
+          [this.key(account, subject)]: { ...state, listings },
+        });
+      return changed;
+    });
   }
   async record(account: string, records: RecordedListing[]) {
     const groups = new Map<string, RecordedListing[]>();
@@ -221,12 +258,15 @@ export class ListingCacheService {
       for (const [i, subject] of subjects.entries()) {
         const state = states[i],
           rows = [...state.listings];
-        for (const { id, startPrice, submittedAt } of groups.get(subject)!) {
+        for (const { id, startPrice, submittedAt, copyId } of groups.get(
+          subject,
+        )!) {
           const existing = rows.findIndex((row) => row.id === id);
           if (existing >= 0) {
             rows[existing] = {
               ...rows[existing],
               submittedAt: rows[existing].submittedAt ?? submittedAt,
+              copyId: rows[existing].copyId ?? copyId,
             };
             continue;
           }
@@ -239,6 +279,7 @@ export class ListingCacheService {
             id,
             startPrice,
             submittedAt,
+            copyId,
           });
         }
         updates[this.key(account, subject)] = this.saveState(state, rows);

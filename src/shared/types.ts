@@ -1,3 +1,5 @@
+import type { DiscountMode, SaleRarity } from "./sales-prices";
+
 export type Finish = "plain" | "veil" | "fullart";
 export const FINISHES: Finish[] = ["plain", "veil", "fullart"];
 export const FINISH_LABEL: Record<Finish, string> = {
@@ -29,6 +31,9 @@ export interface OwnedCopy {
   subjectId: string;
   state: string;
   auctionId?: string;
+  lockedInAlbum?: boolean;
+  exclusive?: boolean;
+  inTrade?: boolean;
   variant: Variant;
   serial?: number;
   acquiredAt?: string;
@@ -118,7 +123,9 @@ export interface Settings {
   friendTooltipWidth: number;
   friendTooltipHeight: number;
   friendTooltipPosition: import("./popup-layout").PopupPosition | null;
+  hotkeysEnabled: boolean;
   navigationHotkeysEnabled: boolean;
+  hoverTooltipHotkeysEnabled: boolean;
   packOpeningHotkeysEnabled: boolean;
   anyKeyDismissesFoundPack: boolean;
   autoSkipOpening: boolean;
@@ -137,6 +144,14 @@ export interface Settings {
   showSalesMyLastListing: boolean;
   salesMyLastListingSetsPrice: boolean;
   salesMyLastListingAdjustment: number;
+  salesDiscountEnabled: boolean;
+  salesDiscountAmount: number;
+  salesDiscountMode: DiscountMode;
+  salesDiscountThreshold: number;
+  salesCustomMinimumsEnabled: boolean;
+  salesCustomMinimums: Record<SaleRarity, number>;
+  salesQuickPricesEnabled: boolean;
+  salesQuickPrices: number[];
   statBoxesEnabled: boolean;
   collectSaleRateData: boolean;
   pinnedAlbumsEnabled: boolean;
@@ -165,6 +180,9 @@ export interface Settings {
   hotkeys: import("./hotkeys").Hotkeys;
   packOpeningHotkeys: import("./hotkeys").Hotkeys<
     import("./hotkeys").PackOpeningId
+  >;
+  hoverTooltipHotkeys: import("./hotkeys").Hotkeys<
+    import("./hotkeys").HoverTooltipId
   >;
   pinnedAlbums: Record<string, string[]>;
   pinnedAlbumHotkeys: import("./hotkeys").PinnedAlbumHotkeys;
@@ -210,6 +228,13 @@ export interface KosmoraClient {
     id: string,
     signal?: AbortSignal,
   ): Promise<import("../kosmora/my-listings").TrackedListing | undefined>;
+  discountListingPrice(
+    subject: string,
+    copyId: string,
+    threshold: number,
+    listings: import("../kosmora/my-listings").TrackedListing[],
+    signal: AbortSignal,
+  ): Promise<string | undefined>;
   possibleInterest(
     familyIds: string[],
     signal?: AbortSignal,

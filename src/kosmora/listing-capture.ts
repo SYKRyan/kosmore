@@ -1,8 +1,10 @@
 import { amount, object, subjectId, uuid } from "./contracts";
+import { listingCopyId } from "./my-listings";
 
 export interface ListingConfirmation {
   auctionId: string;
   submittedAt: number;
+  copyId?: string;
   subjectId?: string;
   startPrice?: string;
 }
@@ -12,6 +14,7 @@ export interface RecordedListing {
   subjectId: string;
   startPrice: string;
   submittedAt: number;
+  copyId?: string;
 }
 
 export function validRecordedListing(value: unknown): value is RecordedListing {
@@ -21,6 +24,7 @@ export function validRecordedListing(value: unknown): value is RecordedListing {
       uuid(row.id) === row.id &&
       subjectId(row.subjectId) === row.subjectId &&
       amount(row.startPrice) === row.startPrice &&
+      (row.copyId === undefined || listingCopyId(row.copyId) === row.copyId) &&
       typeof row.submittedAt === "number" &&
       Number.isSafeInteger(row.submittedAt) &&
       row.submittedAt > 0
@@ -81,15 +85,14 @@ export function listingConfirmations(
       const row = object(raw);
       if (row.ok === false || (batch && row.ok !== true)) return [];
       const auctionId = uuid(row.auctionId).toLowerCase();
-      const instance = batch ? row.instanceId : body.instanceId;
-      const instanceId =
-        typeof instance === "string" ? instance.toLowerCase() : "";
+      const copyId = listingCopyId(row.instanceId ?? body.instanceId);
       return [
         {
           auctionId,
           submittedAt,
-          subjectId: subjects.get(instanceId),
-          startPrice: prices.get(instanceId),
+          copyId,
+          subjectId: copyId && subjects.get(copyId),
+          startPrice: copyId && prices.get(copyId),
         },
       ];
     } catch {
