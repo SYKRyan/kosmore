@@ -11,8 +11,8 @@ A browser extension that adds card insights, shortcuts, and private reminders to
 - **Friend tooltip:** expand matching friends' saved families and notes in a separate popup with Social and Profile links.
 - **Social and profile reminders:** keep private family preferences and notes for players, with an optional pinned profile editor.
 - **Trade reminders:** see preferred families, saved notes, and a rarity breakdown of your available matching cards while proposing a trade.
-- **Sales Overlay:** compare Last Sale, Lowest Listed, and My Last Listing prices on single and batch selling screens, with independent click-to-fill adjustments.
-- **Navigation hotkeys:** assign keyboard shortcuts to 16 Kosmora destinations.
+- **Sales Overlay:** compare market and listing prices, fill starting prices from presets or discounts, and flag prices below your rarity minimums.
+- **Hotkeys:** assign shortcuts for 20 Kosmora destinations and for controls in the card tooltip.
 - **Pack opening hotkeys:** open packs, inspect cards, and use summary actions with configurable shortcuts.
 - **Backup & restore:** export and import settings, album shortcuts, family preferences, and private notes across browsers or computers.
 - **Account-aware data:** keep album shortcuts and private reminders associated with the correct Kosmora account.
@@ -121,7 +121,7 @@ Sale observations stay in this browser, are limited to 20,000 listings with 35-d
 Add indicators to visible cards and tooltip headers. Each indicator can be configured independently:
 
 - **Active auctions:** a red sale tag for current listings, with an optional lowest listed price. The price uses the highest bid, or the starting price when a listing has no bids, across all finishes. The badge links to the card's Market search.
-- **For Sale:** a black-and-white label when you have a copy listed on the Market.
+- **For Sale:** a black-and-white label when you have a copy listed on the Market. In albums, the label is larger and centered on the card art.
 - **Sale history:** a gavel for final sale prices in the last 30 days, with an optional last sale price across all finishes.
 - **Interested friends:** a purple friend indicator when the card's families match preferences you saved for current friends.
 - **Quest:** a gold Quest badge when the card belongs to any quest, whether you follow it or not.
@@ -193,21 +193,24 @@ Show price helpers beneath the starting-price field on both the single sell scre
 - **Show Lowest Listed price:** display the lowest current listing price across all finishes, using the highest bid or the starting price when there are no bids.
 - **Show My Last Listing price:** display your newest confirmed original starting price for the card, across finishes, labeled **My Last Listing:**. This uses your listing history rather than a winning bid or final sale price.
 - **Set price when clicked:** each price has its own subsetting to fill that card's starting-price field when clicked.
-- **Price adjustment:** add or subtract a fixed amount of Kosmo from the clicked price. For example, `-1` prices one Kosmo lower. The default is `0`, and adjustments support up to six decimal places. The resulting starting price must be greater than zero.
+- **Price adjustment:** add or subtract a fixed amount of Kosmo from the clicked price. For example, `-1` prices one Kosmo lower. The default is `0`, and adjustments support up to six decimal places.
+- **Enable Discount button:** set a flat Kosmo amount or a percentage and choose how many consecutive unsold listings qualify. When saved history confirms that streak for the selected copy, **Discount** offers a lower starting price based on that copy’s most recent unsold listing. Refresh listing history if the relevant auctions are missing.
+- **Quick Prices:** add, reorder, or remove presets in settings. Click a preset on either sell screen to fill that card’s starting price.
+- **Use Custom Rarity Minimums:** set your own minimum for each rarity at or above Kosmora’s minimum. KosMore warns beside the affected price and near the submit button. You can still submit a price that meets Kosmora’s minimum.
 
-The price visibility options are checkboxes; click-to-fill options are nested switches. Clicking a price fills only that card's starting price. Review and submit listings using Kosmora's usual sale controls.
+Discount, Quick Prices, and Custom Rarity Minimums are off by default. Price buttons fill only that card’s starting price and respect Kosmora’s minimum for its rarity. Review and submit listings using Kosmora’s usual sale controls.
 
 My Last Listing shows the saved starting price for the card. KosMore saves up to 100 listings per account and card. Use the refresh icon on either sale screen or in tooltip History to check your newest 180 auctions across all statuses. **Load more** in History searches older listings and saves the results for the next visit.
 
-### Navigation hotkeys
+### Hotkeys
 
 Under **Hotkeys → Navigation**, assign shortcuts for **Home**, **Collection**, **Albums**, **Tomes**, **Families**, **Fusion**, **Gallery**, **Quests**, **Atlas**, **Social**, **Market**, **My Auctions**, **My Activity**, **Alerts**, **Talents**, **Packs**, **History**, **Pulsar**, **Odyssey**, and **My Profile**.
 
-Click a shortcut control and press a letter, number, or F1–F12, optionally with Ctrl, Alt, Shift, or Meta. Escape cancels recording; **Clear** removes a binding. Save the group to apply your choices. Duplicate bindings are rejected.
+Click a shortcut control and press a letter, number, or F1–F12, optionally with Ctrl, Alt, Shift, or Meta. Escape cancels recording and **Clear** removes a binding. Save the subgroup to apply your choices. KosMore checks for duplicate bindings across its shortcut groups.
 
 Shortcuts work on Kosmora pages and pause while typing in fields or editors. Browser-reserved shortcuts may not reach KosMore. **Enable all hotkeys** controls every KosMore shortcut group, including pinned albums, and preserves saved bindings.
 
-Under **Hotkeys → Hover Tooltip**, assign shortcuts for the open tooltip’s controls and tabs. **Cycle Tabs** wraps from Notes to Market. **Next Tab** and **Previous Tab** stop at the ends. Escape always closes the tooltip, even when **Close Tooltip** has no shortcut.
+Under **Hotkeys → Hover Tooltip**, assign shortcuts to pin, refresh, or close the open tooltip, open Settings or the Market listing search, use Sell, Trade, or Gift, or switch tabs. You can also bind arrows, Home, and End. **Cycle Tabs** wraps from Notes to Market. **Next Tab** and **Previous Tab** stop at the ends. Escape also closes the tooltip.
 
 ### Pack Openings
 
@@ -215,7 +218,7 @@ Find the shortcuts under **Hotkeys → Pack Opening** and the automation and dis
 
 **Show remaining pack count** starts on and shows the number of ready packs above **Open the Next Pack**.
 
-- **Next Card** tears the ready pack and steps through the reveal. A pinned tooltip follows each card as you advance. On the summary, use **Next Card**, **Previous Card**, **Focus First Card**, or **Focus Last Card** to inspect the grid with the tooltip.
+- **Next Card** tears the ready pack and steps through the reveal. A pinned tooltip follows each card as you advance. On the summary, use **Next Card**, **Previous Card**, **Focus First Card**, or **Focus Last Card** to inspect the grid with the tooltip. The selected card keeps focus while summary badges finish loading.
 - **See Card** opens the focused card’s detail page. Press **Enter** on a focused summary card to use Kosmora’s close-up viewer.
 - **Dismiss Found Pack**, **Skip Opening**, **Later**, **Share**, and **Home** activate the corresponding controls when Kosmora offers them. **Next Pack/Back to Packs** opens the next pack or returns to Packs when the summary offers that link.
 - **Any key dismisses found pack** starts on under **Pack Openings**. Turn it off to use the **Dismiss Found Pack** keybind instead.

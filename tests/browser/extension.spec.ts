@@ -3525,7 +3525,9 @@ test("settings groups are ordered with separate account controls and a fixed anc
         });
       expect(packHintOffset).toBeLessThanOrEqual(1);
       const salesOffsets = await options
-        .locator("#sales-overlay .settings-subsetting-text")
+        .locator(
+          "#sales-overlay > .settings-group-content > .settings-subsetting-text",
+        )
         .evaluateAll((rows) =>
           rows.map((row) => {
             const label = row.previousElementSibling!.querySelector("label")!;
