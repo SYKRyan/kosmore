@@ -9,6 +9,9 @@ import { parseFamilyChoices } from "./families";
 import {
   parseFamilyCounts,
   parseFamilyCountsPage,
+  parseFusionCards,
+  parseFusionCopies,
+  parseFusionRules,
   parseMilestones,
 } from "./fusion";
 import { parseFriends } from "./friends";
@@ -731,6 +734,26 @@ export class GameClient implements KosmoraClient {
   }
   invalidateFamilyCounts() {
     this.familyCountReads.clear();
+  }
+
+  async fusionRules(signal: AbortSignal) {
+    return parseFusionRules(await this.read("/fusion", signal));
+  }
+
+  async fusionCards(rarity: string, subjects: string[], signal: AbortSignal) {
+    const query = new URLSearchParams({
+      rarity,
+      ids: subjects.join(","),
+      limit: String(subjects.length),
+    });
+    return parseFusionCards(await this.read(`/fusion/cards?${query}`, signal));
+  }
+
+  async fusionCopies(id: string, signal: AbortSignal) {
+    const query = new URLSearchParams({ subject: subjectId(id) });
+    return parseFusionCopies(
+      await this.read(`/fusion/copies?${query}`, signal),
+    );
   }
 
   /** Cards collected per family, for fusion family impact. */

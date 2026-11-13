@@ -36,6 +36,7 @@ export interface OwnedCopy {
   inTrade?: boolean;
   variant: Variant;
   serial?: number;
+  numberOne?: boolean;
   acquiredAt?: string;
 }
 export interface CardInsights {
@@ -131,6 +132,15 @@ export interface Settings {
   autoSkipOpening: boolean;
   autoDismissFoundPack: boolean;
   showRemainingPackCount: boolean;
+  fusionEnabled: boolean;
+  fusionNextBatchEnabled: boolean;
+  fusionRespectFamilyImpact: boolean;
+  fusionRespectBlacklist: boolean;
+  fusionRespectPriceThreshold: boolean;
+  fusionExcludeFullArts: boolean;
+  fusionExcludeShiny: boolean;
+  fusionExcludeNumberOnes: boolean;
+  fusionPriceThreshold: number;
   cardOverlaysEnabled: boolean;
   disableCardOverlaysInPulsar: boolean;
   disableCardOverlaysInVortex: boolean;

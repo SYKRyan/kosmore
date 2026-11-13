@@ -728,6 +728,20 @@ input.section-switch:checked::before {
   max-inline-size: 100%;
   gap: 10px;
 }
+.settings-dialog.panel {
+  margin: auto;
+  width: min(460px, calc(100% - 32px));
+  color: inherit;
+  background: #17112d;
+}
+.settings-dialog::backdrop {
+  background: #080617b3;
+}
+.settings-dialog .save-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-top: 22px;
+}
 .settings-action {
   flex: none;
   inline-size: 112px;
@@ -812,11 +826,24 @@ input.section-switch:checked::before {
 .settings-subsetting:has(input:disabled, select:disabled) {
   opacity: 0.55;
 }
-.sales-subsettings {
+.sales-subsettings,
+.fusion-subsettings {
   border: 0;
   margin: 0;
   min-inline-size: 0;
   padding: 0;
+}
+.fusion-subsettings {
+  padding-inline-start: calc(17px + var(--settings-label-gap));
+}
+.fusion-subsettings .settings-subsetting {
+  padding-inline-start: calc(var(--settings-switch-width) + var(--settings-label-gap));
+}
+.fusion-subsettings:disabled {
+  opacity: 0.55;
+}
+.fusion-subsettings input[type="number"] {
+  width: min(100%, 12rem);
 }
 .sales-discount-mode {
   margin-inline-start: var(--settings-label-gap);

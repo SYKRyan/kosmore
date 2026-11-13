@@ -1,4 +1,4 @@
-import { count, object, subjectId, text } from "./contracts";
+import { count, object, subjectId, text, uuid } from "./contracts";
 
 /** One card in the Fusion page's grid (`GET /api/fusion/cards`). */
 export interface FusionCard {
@@ -6,6 +6,8 @@ export interface FusionCard {
   rarity: string;
   /** Copies you own. Fusing the last one takes the card out of its family. */
   quantity: number;
+  usable?: number;
+  numberOne?: boolean;
   family: { id: string; name: string } | null;
 }
 
@@ -24,6 +26,12 @@ export function parseFusionCards(value: unknown): FusionCard[] {
           subjectId: subjectId(card.subjectId),
           rarity: text(card.rarity),
           quantity: count(entry.quantity),
+          ...(typeof entry.usable === "number" && {
+            usable: count(entry.usable),
+          }),
+          ...(typeof card.numberOne === "boolean" && {
+            numberOne: card.numberOne,
+          }),
           family: family
             ? { id: text(family.id), name: text(family.name) }
             : null,
@@ -33,6 +41,26 @@ export function parseFusionCards(value: unknown): FusionCard[] {
       return [];
     }
   });
+}
+
+export function parseFusionCopies(value: unknown) {
+  const { copies } = object(value);
+  if (!Array.isArray(copies))
+    throw new Error("Kosmora returned an unfamiliar Fusion copy list.");
+  return copies.map((value) => {
+    const copy = object(value);
+    return {
+      id: uuid(copy.id).toLowerCase(),
+      numberOne: copy.numberOne === true,
+    };
+  });
+}
+
+export function parseFusionRules(value: unknown) {
+  const maxBatches = count(object(value).maxBatches);
+  if (!maxBatches)
+    throw new Error("Kosmora returned an invalid Fusion tray limit.");
+  return { recipes: parseRecipes(value), maxBatches };
 }
 
 /** Family tier thresholds from `GET /api/families`, ascending. */

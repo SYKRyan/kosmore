@@ -52,6 +52,7 @@ export interface RelayMessage {
   type: typeof RELAY_DATA;
   path: string;
   data: unknown;
+  fusionQuery?: string;
 }
 
 export function isRelayMessage(value: unknown): value is RelayMessage {
