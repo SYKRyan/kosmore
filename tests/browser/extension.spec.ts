@@ -3472,7 +3472,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
             const heading = section.querySelector("h2")!;
             const content = section.querySelector(".settings-group-content")!;
             const controls = content.querySelectorAll(
-              ":scope > :is(.sub, .notice, .row, .hotkey-list, .backup-actions, label, input, .account-row)",
+              ":scope > :is(.sub, .notice, .row, .hotkey-list, .backup-actions, label, input, .account-row):not([hidden])",
             );
             const text = document.createRange();
             text.selectNodeContents(heading.lastChild!);
@@ -3547,7 +3547,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
     };
     const checkActionSizes = async () => {
       const groups = await options
-        .locator(".save-actions")
+        .locator("#app .save-actions")
         .evaluateAll((rows) =>
           rows.map((row) => ({
             nested: !!row.closest(".hotkey-subgroups"),
@@ -9968,12 +9968,8 @@ test("Fusion settings use the group controls and update an open native picker", 
   await withFusionBatch(async () => {
     await page.goto("https://kosmora.io/fusion");
     const next = page.getByRole("button", { name: "Next Batch", exact: true });
-    await expect(next).toBeEnabled();
-    await expect(next.locator(".kosmore-star")).toHaveText("✦");
-    await expect(page.locator(".fu-tools > button")).toHaveText([
-      "✦ Next Batch",
-      "Clear",
-    ]);
+    await expect(page.locator(".fu-grid")).toHaveAttribute("aria-busy", "false");
+    await expect(next).toHaveCount(0);
     const options = await context.newPage();
     try {
       await options.goto(
@@ -9992,7 +9988,58 @@ test("Fusion settings use the group controls and update an open native picker", 
       });
       const filters = group.getByRole("group", { name: "Next Batch filters" });
       const save = group.getByRole("button", { name: "Save", exact: true });
+      const warningText =
+        'This feature has been reviewed by the developer. Although approved for use, it may result in "sus points" on your account. Use at your own risk.';
+      const warning = group.locator("strong").filter({ hasText: warningText });
+      const dialog = options.getByRole("dialog", {
+        name: "Enable Fusion Batches?",
+      });
+      const dismiss = dialog.getByRole("button", {
+        name: "Nevermind",
+        exact: true,
+      });
+      async function confirmEnable(accept: boolean) {
+        await master.click();
+        await expect(dialog).toBeVisible();
+        await expect(dialog).toHaveAccessibleDescription(warningText);
+        await expect(dismiss).toBeFocused();
+        await expect(next).toHaveCount(0);
+        if (accept)
+          await dialog
+            .getByRole("button", { name: "Enabled Fusion Batches", exact: true })
+            .click();
+        else
+          await dismiss.click();
+        await expect(dialog).toBeHidden();
+      }
+      await expect(master).not.toBeChecked();
+      await expect(enabled).toBeDisabled();
+      await expect(warning).toBeHidden();
+      await confirmEnable(false);
+      await expect(master).not.toBeChecked();
+      await expect(master).toBeFocused();
+      await expect(warning).toBeHidden();
+      await expect(next).toHaveCount(0);
+      await master.press("Space");
+      await expect(dialog).toBeVisible();
+      await dialog.screenshot({
+        path: "test-results/screenshots/fusion-confirmation.png",
+      });
+      await options.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+      await expect(master).not.toBeChecked();
+      await confirmEnable(true);
       await expect(master).toBeChecked();
+      await expect(warning).toBeVisible();
+      await expect(
+        group.locator(".settings-group-heading + fieldset > p:first-child > strong"),
+      ).toHaveText(warningText);
+      await expect(next).toBeEnabled();
+      await expect(next.locator(".kosmore-star")).toHaveText("✦");
+      await expect(page.locator(".fu-tools > button")).toHaveText([
+        "✦ Next Batch",
+        "Clear",
+      ]);
       await expect(enabled).toBeChecked();
       await expect(
         group.getByText("Fill available slots in the Fusion tray with eligible cards."),
@@ -10036,9 +10083,14 @@ test("Fusion settings use the group controls and update an open native picker", 
       await expect(group.getByRole("status")).toContainText("Saved");
       await master.uncheck();
       await expect(next).toHaveCount(0);
+      await expect(warning).toBeHidden();
       await expect(save).toBeDisabled();
-      await master.check();
+      await confirmEnable(true);
       await expect(next).toBeVisible();
+      await expect(warning).toBeVisible();
+      await options.reload();
+      await expect(master).toBeChecked();
+      await expect(warning).toBeVisible();
       await expect(price).toHaveValue("5.000001");
       await enabled.uncheck();
       await save.click();
@@ -10056,6 +10108,7 @@ test("Fusion Next Batch fills every open slot, filters exact copies and loads la
         schemaVersion: 1,
         enabled: false,
         familyImpactOverlaysEnabled: false,
+        fusionEnabled: true,
         familyBlacklist: ["MAMA Awards"],
         fusionRespectPriceThreshold: true,
         fusionPriceThreshold: 5,
@@ -10120,6 +10173,7 @@ test("Fusion Next Batch uses the player's tray capacity for each rarity", async 
         schemaVersion: 1,
         enabled: false,
         familyImpactOverlaysEnabled: false,
+        fusionEnabled: true,
         fusionRespectFamilyImpact: false,
         fusionExcludeFullArts: false,
         fusionExcludeShiny: false,
@@ -10201,6 +10255,7 @@ test("Fusion Next Batch cancels a pending scan when the player changes the tray"
         schemaVersion: 1,
         enabled: false,
         familyImpactOverlaysEnabled: false,
+        fusionEnabled: true,
       },
     }),
   );
@@ -10254,6 +10309,7 @@ test("Fusion Next Batch removes an unverified copy when the player takes over", 
         schemaVersion: 1,
         enabled: false,
         familyImpactOverlaysEnabled: false,
+        fusionEnabled: true,
       },
     }),
   );

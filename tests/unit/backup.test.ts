@@ -176,7 +176,7 @@ it("defaults Fusion settings in older backups and validates a saved price thresh
   for (const key of Object.keys(legacy.settings))
     if (key.startsWith("fusion")) delete legacy.settings[key];
   expect(validateBackup(legacy).settings).toMatchObject({
-    fusionEnabled: true,
+    fusionEnabled: false,
     fusionNextBatchEnabled: true,
     fusionRespectFamilyImpact: true,
     fusionRespectBlacklist: true,

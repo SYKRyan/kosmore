@@ -55,7 +55,7 @@ export const defaults = (): Settings => ({
   autoSkipOpening: false,
   autoDismissFoundPack: false,
   showRemainingPackCount: true,
-  fusionEnabled: true,
+  fusionEnabled: false,
   fusionNextBatchEnabled: true,
   fusionRespectFamilyImpact: true,
   fusionRespectBlacklist: true,

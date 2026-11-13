@@ -365,7 +365,12 @@ function syncTooltipSizing() {
     if (field === "popupWidth" || field === "popupHeight")
       input.disabled = draft.fullScreenCenteredOnOpen;
 }
-function sectionToggle(host: HTMLElement, key: FeatureKey, label: string) {
+function sectionToggle(
+  host: HTMLElement,
+  key: FeatureKey,
+  label: string,
+  confirmEnable?: (enable: () => void) => void,
+) {
   const heading = host.querySelector("h2, h3")!;
   const row = el("div", "settings-group-heading"),
     input = el("input", "section-switch");
@@ -377,9 +382,21 @@ function sectionToggle(host: HTMLElement, key: FeatureKey, label: string) {
   input.checked = draft[key];
   input.disabled = true;
   featureGroups.set(host, { key, input });
-  input.addEventListener("change", () => {
+  const commit = () => {
     draft[key] = input.checked;
     void persistFeature(host, key, input);
+  };
+  input.addEventListener("change", () => {
+    if (input.checked && !draft[key] && confirmEnable) {
+      input.checked = false;
+      confirmEnable(() => {
+        if (input.disabled || draft[key]) return;
+        input.checked = true;
+        commit();
+      });
+      return;
+    }
+    commit();
   });
   heading.replaceWith(row);
   const state = el("span", "settings-group-state", "Disabled");
@@ -399,6 +416,7 @@ function renderGroupState(host: HTMLElement) {
   if (content) content.disabled = disabled || saving || !settingsReady;
   if (host === packBehavior)
     anyKeyDismissesFoundPack.disabled = !draft.hotkeysEnabled;
+  if (host === fusion) fusionWarning.hidden = disabled;
   for (const input of host.querySelectorAll<HTMLInputElement>(
     ".settings-group-independent input",
   ))
@@ -608,7 +626,52 @@ const showRemainingPackCount = checkboxSetting(
 );
 const fusion = el("section", "panel");
 fusion.append(el("h2", "", "Fusion"));
-const fusionEnabled = sectionToggle(fusion, "fusionEnabled", "Enable Fusion");
+const fusionWarningText =
+  'This feature has been reviewed by the developer. Although approved for use, it may result in "sus points" on your account. Use at your own risk.';
+const fusionDialog = el("dialog", "panel settings-dialog");
+const fusionDialogTitle = el("h2", "", "Enable Fusion Batches?");
+fusionDialogTitle.id = "fusion-dialog-title";
+const fusionDialogWarning = el("p", "notice", fusionWarningText);
+fusionDialogWarning.id = "fusion-dialog-warning";
+fusionDialog.setAttribute("aria-labelledby", fusionDialogTitle.id);
+fusionDialog.setAttribute("aria-describedby", fusionDialogWarning.id);
+const fusionDialogActions = el("div", "save-actions");
+const fusionDismiss = button("Nevermind", () => fusionDialog.close(), "ghost");
+fusionDismiss.autofocus = true;
+fusionDialogActions.append(
+  fusionDismiss,
+  button(
+    "Enabled Fusion Batches",
+    () => fusionDialog.close("enable"),
+    "primary",
+  ),
+);
+fusionDialog.append(
+  fusionDialogTitle,
+  fusionDialogWarning,
+  fusionDialogActions,
+);
+document.body.append(fusionDialog);
+const fusionEnabled = sectionToggle(
+  fusion,
+  "fusionEnabled",
+  "Enable Fusion",
+  (enable) => {
+    fusionDialog.returnValue = "";
+    fusionDialog.addEventListener(
+      "close",
+      () => {
+        if (fusionDialog.returnValue === "enable") enable();
+      },
+      { once: true },
+    );
+    fusionDialog.showModal();
+  },
+);
+const fusionWarning = el("p", "sub");
+fusionWarning.hidden = true;
+fusionWarning.append(el("strong", "", fusionWarningText));
+fusion.append(fusionWarning);
 const fusionFilters = el("fieldset", "fusion-subsettings");
 fusionFilters.id = "fusion-next-batch-filters";
 fusionFilters.setAttribute("aria-label", "Next Batch filters");

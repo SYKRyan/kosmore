@@ -686,7 +686,7 @@ var K = "kosmore.settings", fe = () => ({
 	autoSkipOpening: !1,
 	autoDismissFoundPack: !1,
 	showRemainingPackCount: !0,
-	fusionEnabled: !0,
+	fusionEnabled: !1,
 	fusionNextBatchEnabled: !0,
 	fusionRespectFamilyImpact: !0,
 	fusionRespectBlacklist: !0,
