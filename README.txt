@@ -31,6 +31,8 @@ to Kosmora.
   the card tooltip.
 - Pack opening hotkeys: open packs, inspect cards, and use summary actions
   with configurable shortcuts.
+- Fusion batches: opt in to fill the Fusion tray with eligible copies using
+  your saved filters.
 - Backup & restore: export and import settings, album shortcuts, family
   preferences, and private notes across browsers or computers.
 - Account-aware data: keep album shortcuts and private reminders associated
@@ -472,6 +474,37 @@ above Open the Next Pack.
   mouse or hotkey, it presses Skip once when the next pack appears.
   Kosmora's reveal hints must be enabled so it can warn you about
   special packs.
+
+Fusion
+------
+
+Fusion batches are off by default. In Settings → Fusion, turn on the group
+and choose Enabled Fusion Batches in the confirmation dialog. Choose
+Nevermind to leave it off. The warning stays visible in Settings while the
+group is on.
+
+This feature has been reviewed by the developer. Although approved for use,
+it may result in "sus points" on your account. Use at your own risk.
+
+On Kosmora’s Fusion page, ✦ Next Batch appears beside Clear. It keeps your
+picks and fills as many open slots as possible using your recipe and tray
+limit for the selected rarity. It follows the active search and filters and
+loads more results when needed. The star spins during selection unless
+reduced motion is enabled. Review your picks and use Kosmora’s Fuse button
+when ready.
+
+Enable Next Batch button starts checked. Adjust the filters below it and
+click Save to apply your choices.
+
+- Respect Family Impact starts on. Skip picks that would lower a family
+  tier, taking the whole tray into account.
+- Respect Blacklist starts on. Skip cards that belong to any family on the
+  list saved under Family Impact Overlay → Blacklist.
+- Respect Price Threshold starts off. When on, skip a copy if any completed
+  sale returned for its finish in the last 30 days exceeds the threshold.
+  The threshold starts at 0 Kosmo.
+- Exclude Full Arts, Exclude Shiny, and Exclude #1s each start on. Use the
+  switches to control which copies can be picked.
 
 Backup & restore
 ----------------
