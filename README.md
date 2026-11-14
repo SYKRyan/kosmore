@@ -1,5 +1,3 @@
-# KosMore
-
 **RECENT RATE LIMITS & UPCOMING CHANGES**
 ---
 The developer of Kosmora has enabled strict rate limits that are preventing the extension from working as expected. We have been coordinating and have identified a solution that works for everyone involved.
@@ -8,6 +6,8 @@ The developer has been kind enough to offer developer specific endpoints that sh
 
 I appreciate your patience while these changes are implemented.
 ---
+
+# KosMore
 
 A browser extension that adds card insights, shortcuts, and private reminders to Kosmora.
 
