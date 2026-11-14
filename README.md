@@ -1,5 +1,14 @@
 # KosMore
 
+**RECENT RATE LIMITS & UPCOMING CHANGES**
+---
+The developer of Kosmora has enabled strict rate limits that are preventing the extension from working as expected. We have been coordinating and have identified a solution that works for everyone involved.
+
+The developer has been kind enough to offer developer specific endpoints that should help avoid rate limits and increase the overall performance of third-party extensions like KosMore. Coming soon, KosMore will be providing it's own backend cache and will use a dedicated developer API rather than relying on the signed in user's Kosmora token and the native API. 
+
+I appreciate your patience while these changes are implemented.
+---
+
 A browser extension that adds card insights, shortcuts, and private reminders to Kosmora.
 
 - **Card tooltips:** view market analytics, your listing history, matching friends, and private notes while browsing, including pack reveals, trade pickers, and Market Activity.
