@@ -1,3 +1,10 @@
+import {
+  FAMILIES_TTL,
+  FRIENDS_TTL,
+  type NativeReadCache,
+} from "../shared/native-read-cache";
+import { type CardView } from "../shared/services";
+import { request } from "../shared/messages";
 import { validRecordedListing, type RecordedListing } from "./listing-capture";
 import { ReadCache } from "../shared/cache";
 import {
@@ -9,38 +16,29 @@ import { parseFamilyChoices } from "./families";
 import {
   parseFamilyCounts,
   parseFamilyCountsPage,
-  parseFusionCards,
-  parseFusionCopies,
-  parseFusionRules,
   parseMilestones,
 } from "./fusion";
 import { parseFriends } from "./friends";
-import { parseQuestSubjects } from "./quests";
 import {
   parseInterestPage,
   interestCounts,
   type InterestEntry,
 } from "./trade-interest";
-import { activeAuctionSummary, type AuctionListing } from "./auctions";
 import {
-  auctionCopyId,
-  auctionListingOutcome,
-  failedListingPrice,
   listingCopyId,
-  listingPath,
+  auctionListingOutcome,
+  initialListingLimits,
   parseListingBatch,
-  type ListingBatch,
+  type PersonalListing,
   type TrackedListing,
   type TrackedListingHistory,
-  type ListingLimits,
-  type ListingMetadata,
 } from "./my-listings";
-import type { HistoryMode } from "../shared/listing-cache";
 import type { Result } from "../shared/messages";
 import type {
   Account,
   Album,
   CardContext,
+  CardInsights,
   KosmoraClient,
   OpeningCard,
   OwnedCopy,
@@ -48,8 +46,6 @@ import type {
   MarketHistory,
 } from "../shared/types";
 import {
-  amount,
-  count,
   object,
   parseAccount,
   parseAlbums,
@@ -72,41 +68,97 @@ export class ApiError extends Error {
 }
 export class GameClient implements KosmoraClient {
   private reads = new ReadCache(40, 300_000);
-  private cardReads = new ReadCache(150, 30_000);
-  private priceReads = new ReadCache(450, 300_000);
+  private familyCatalog = new ReadCache(1, FAMILIES_TTL);
+  private pendingViews = new Map<string, Promise<Record<string, CardView>>>();
+  private cardViews = new Map<string, CardView>();
+  private observedAuctions = new Map<string, PersonalListing>();
+  private observedOwners = new Map<string, string>();
+  private observedCards = new Map<string, CardInsights>();
+  private observedHistory = new Map<string, MarketHistory>();
+  private observedInterest = new Map<string, InterestEntry[]>();
   private albumReads = new ReadCache(100, 10_000);
-  private packReads = new ReadCache(1, 30_000);
-  private nativePackIds?: { ids: string[]; at: number };
-  private consumedPacks = new Set<string>();
+  private packReads = new ReadCache(1, 0);
   private nativeOpenings = new Map<string, OpeningCard[]>();
-  private openingReads = new ReadCache(40, 30_000);
   private accountReads = new ReadCache(1, 2_000);
-  private auctionReads = new ReadCache(100, 60_000);
-  private auctionPresenceReads = new ReadCache(100, 60_000);
-  private historyPresenceReads = new ReadCache(450, 300_000);
-  private marketPages = new ReadCache(0, 0);
-  private auctionProgress = new Map<string, Set<() => void>>();
-  private listingDetailReads = new ReadCache(256, 300_000);
   private listingListenersChanged = new Set<() => void>();
-  private collectionReads = new ReadCache(60, 30_000);
   private familyCountReads = new ReadCache(40, 300_000);
   private scheduler = new RequestScheduler(3);
   private accountVersion = 0;
   private collectSaleRateData = true;
-  private saleRateEpoch = 0;
-  private collectionAbort = new AbortController();
+  onVerifiedAccount?: (account: Account) => void;
   private accountListeners = new Set<() => void>();
-  private listingListeners = new Set<(listings: AuctionListing[]) => void>();
   private historyListeners = new Set<
     (subjectId: string, history: MarketHistory, loadedAt: number) => void
   >();
   private lastAccount?: Account;
-  private accountVerifiedSince = 0;
+  private accountObservedAt = 0;
+  private identityHint?: string;
+  private inventory?: { key: string; at: number; ids: string[] };
+
+  get displayAccount() {
+    return this.lastAccount;
+  }
+
+  observeIdentity(raw: unknown) {
+    let next: Account | undefined;
+    try {
+      next = parseAccount(raw);
+    } catch {
+      /* Signed out or incomplete identity. */
+    }
+    if (
+      !next ||
+      (this.lastAccount && next.key !== this.lastAccount.key) ||
+      (this.identityHint && next.key !== this.identityHint)
+    ) {
+      const hadAccount = !!this.lastAccount;
+      this.accountReads.clear();
+      this.lastAccount = undefined;
+      this.clearPrivateReads();
+      if (hadAccount) for (const listener of this.accountListeners) listener();
+    }
+    this.identityHint = next?.key;
+    // Page messages can invalidate identity. Only an isolated-world check unlocks private data.
+    if (next && next.key === this.lastAccount?.key) {
+      this.lastAccount = next;
+      this.accountObservedAt = Date.now();
+    }
+    return next?.key;
+  }
+
+  observeInventory(raw: unknown, href: string) {
+    if (href !== location.href) return;
+    const data = object(raw);
+    if (
+      data.next ||
+      data.cursor ||
+      data.hasMore ||
+      !Array.isArray(data.packs) ||
+      (typeof data.total === "number" && data.total !== data.packs.length)
+    )
+      return;
+    this.inventory = { key: href, at: Date.now(), ids: parseReadyPackIds(raw) };
+  }
+
+  async verifiedCopy(subject: string, copyId: string, expectedAccount: string) {
+    if ((await this.account(undefined, true)).key !== expectedAccount)
+      throw new Error("Your Kosmora account changed. Reopen the tooltip.");
+    const version = this.accountVersion;
+    const card = parseInsights(
+      await this.read("/collection/" + subjectId(subject)),
+    );
+    if (card.subjectId !== subject || version !== this.accountVersion)
+      throw new Error("Could not verify this card for the current account.");
+    const copy = card.copies.find((item) => item.id === copyId);
+    if (!copy) throw new Error("You no longer own this copy.");
+    return copy;
+  }
   private blockedUntil = 0;
   private rateLimitRequestStartedAt = 0;
   private writes = new Set<string>();
   constructor(
     private fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
+    private nativeReads?: NativeReadCache,
   ) {}
   onAccountChange(listener: () => void) {
     this.accountListeners.add(listener);
@@ -114,10 +166,6 @@ export class GameClient implements KosmoraClient {
   setSaleRateCollection(enabled: boolean) {
     if (this.collectSaleRateData === enabled) return;
     this.collectSaleRateData = enabled;
-    this.saleRateEpoch++;
-    this.collectionAbort.abort();
-    this.collectionAbort = new AbortController();
-    this.auctionPresenceReads.clear();
   }
   /** Price histories as they arrive from the network (not cache hits), with fetch time. */
   onHistoryLoaded(
@@ -130,29 +178,19 @@ export class GameClient implements KosmoraClient {
     this.historyListeners.add(listener);
     return () => this.historyListeners.delete(listener);
   }
-  /** Open listings seen by auction searches, for local sale-rate observations. */
-  onAuctionListings(listener: (listings: AuctionListing[]) => void) {
-    this.listingListeners.add(listener);
-    return () => this.listingListeners.delete(listener);
-  }
   private clearPrivateReads() {
     this.accountVersion++;
-    this.nativePackIds = undefined;
+    this.inventory = undefined;
     this.nativeOpenings.clear();
-    this.consumedPacks.clear();
+    this.clearServiceViews();
+    this.observedCards.clear();
+    this.observedOwners.clear();
+    this.observedAuctions.clear();
+    this.observedInterest.clear();
     for (const cache of [
       this.reads,
-      this.cardReads,
-      this.priceReads,
       this.albumReads,
-      this.openingReads,
       this.packReads,
-      this.auctionReads,
-      this.auctionPresenceReads,
-      this.historyPresenceReads,
-      this.marketPages,
-      this.listingDetailReads,
-      this.collectionReads,
       this.familyCountReads,
     ])
       cache.clear();
@@ -263,6 +301,13 @@ export class GameClient implements KosmoraClient {
     return data;
   }
   async account(signal?: AbortSignal, fresh = true): Promise<Account> {
+    signal?.throwIfAborted();
+    if (
+      !fresh &&
+      this.lastAccount &&
+      Date.now() - this.accountObservedAt < 30_000
+    )
+      return this.lastAccount;
     const priority = requestPriority(signal);
     if (priority !== "background") {
       const pending = this.accountReads.pendingSignal("account");
@@ -281,40 +326,187 @@ export class GameClient implements KosmoraClient {
             "The account session changed while it was loading.",
             "AbortError",
           );
+        const firstVerification = !this.lastAccount;
         const changed = !!this.lastAccount && next.key !== this.lastAccount.key;
-        if (next.key !== this.lastAccount?.key) {
+        if (changed || (this.identityHint && this.identityHint !== next.key)) {
           this.clearPrivateReads();
-          this.accountVerifiedSince = Date.now();
         }
+        this.identityHint = next.key;
         this.lastAccount = next;
+        this.accountObservedAt = Date.now();
         if (changed) for (const listener of this.accountListeners) listener();
+        if (firstVerification || changed) this.onVerifiedAccount?.(next);
+        if (firstVerification) this.listingsChanged(next.key);
         return next;
       },
       fresh && !this.accountReads.hasPending("account"),
       signal,
     );
   }
-  insights(id: string, signal?: AbortSignal, fresh = false) {
-    id = subjectId(id);
-    const path = `/collection/${id}`;
-    return this.cached(
-      this.cardReads,
-      `card:${id}`,
-      async (shared) => parseInsights(await this.read(path, shared)),
-      signal,
-      fresh,
-      [path],
+  clearServiceViews(ids?: string[]) {
+    if (!ids) {
+      this.cardViews.clear();
+      this.pendingViews.clear();
+      return true;
+    }
+    let relevant = false;
+    for (const id of ids) {
+      const hadView = this.cardViews.delete(id);
+      relevant = this.pendingViews.delete(id) || hadView || relevant;
+    }
+    return relevant;
+  }
+  observeCardIds(ids: string[]) {
+    for (let i = 0; i < ids.length; i += 500)
+      void request({ op: "servicesObserve", ids: ids.slice(i, i + 500) }).catch(
+        () => {},
+      );
+  }
+  async observeCardDetails(raw: unknown) {
+    try {
+      const card = parseInsights(raw);
+      const owner = this.lastAccount?.key ?? this.identityHint;
+      this.remember(this.observedCards, card.subjectId, card);
+      if (owner) this.remember(this.observedOwners, card.subjectId, owner);
+      else this.observedOwners.delete(card.subjectId);
+    } catch {}
+  }
+
+  hasObservedCopies(id: string) {
+    return (
+      !!this.observedOwners.get(id) &&
+      !!this.observedCards.get(id)?.copies.length
     );
+  }
+  observeMarketHistory(id: string, finish: Finish, raw: unknown) {
+    try {
+      const history = parseHistory(raw, finish);
+      this.remember(this.observedHistory, `${id}:${finish}`, history);
+      if (this.collectSaleRateData)
+        for (const listener of this.historyListeners)
+          listener(id, history, Date.now());
+    } catch {}
+  }
+  observeCollection(path: string, raw: unknown) {
+    if (!this.lastAccount) return;
+    try {
+      const params = new URL(path, "https://kosmora.io").searchParams;
+      const family = params.get("family");
+      if (
+        !family ||
+        params.get("status") !== "available" ||
+        params.get("sendable") !== "1" ||
+        params.has("cursor")
+      )
+        return;
+      const page = parseInterestPage(raw);
+      if (!page.cursor)
+        this.remember(this.observedInterest, family, page.items);
+    } catch {}
+  }
+  private remember<T>(values: Map<string, T>, key: string, value: T) {
+    values.delete(key);
+    values.set(key, value);
+    if (values.size > 500) values.delete(values.keys().next().value!);
+  }
+  private async serviceView(
+    id: string,
+    signal?: AbortSignal,
+    includeMyListings = false,
+  ) {
+    id = subjectId(id);
+    signal?.throwIfAborted();
+    const version = this.accountVersion;
+    const pendingKey = includeMyListings ? id + ":mine" : id;
+    let pending = this.pendingViews.get(pendingKey);
+    if (!pending) {
+      const account = this.lastAccount?.key;
+      const read = request<Record<string, CardView>>({
+        op: "servicesRead",
+        ids: [id],
+        account: includeMyListings ? account : undefined,
+        includeMyListings,
+      }).finally(() => {
+        if (this.pendingViews.get(pendingKey) === read)
+          this.pendingViews.delete(pendingKey);
+      });
+      this.pendingViews.set(pendingKey, (pending = read));
+    }
+    const result = await pending;
+    signal?.throwIfAborted();
+    if (version !== this.accountVersion)
+      throw new DOMException("The Kosmora account changed.", "AbortError");
+    const view = result[id];
+    if (!view)
+      throw new Error(
+        "Connect KosMore Services in Settings to load card data.",
+      );
+    this.remember(this.cardViews, id, view);
+    return view;
+  }
+  async refreshCachedCard(id: string, signal?: AbortSignal) {
+    const version = this.accountVersion;
+    const result = await request<Record<string, CardView>>({
+      op: "servicesPeek",
+      ids: [id],
+      account: this.lastAccount?.key,
+    });
+    signal?.throwIfAborted();
+    if (version !== this.accountVersion) return;
+    const view = result[id];
+    if (view) this.remember(this.cardViews, id, view);
+    return view;
+  }
+  async insights(
+    id: string,
+    signal?: AbortSignal,
+    _fresh = false,
+    includeMyListings = false,
+  ): Promise<CardInsights> {
+    const view = await this.serviceView(id, signal, includeMyListings);
+    const native = this.observedCards.get(id);
+    const copiesKnown =
+      !!native &&
+      !!this.lastAccount &&
+      this.observedOwners.get(id) === this.lastAccount.key;
+    const card = view.card;
+    if (!card)
+      throw new Error(
+        view.accessBlocked
+          ? "Services access is blocked. Open Settings to retry after approval."
+          : view.missing
+            ? "This card is unavailable."
+            : "Card data is temporarily unavailable.",
+      );
+    return {
+      subjectId: id,
+      name: card.name,
+      rarity: card.rarity,
+      families: card.families.map((family) =>
+        native?.families?.some(
+          (value) => value.id === family.id && value.economic === false,
+        )
+          ? { ...family, economic: false as const }
+          : family,
+      ),
+      questMember: card.quests.length > 0,
+      interested: native?.interested ?? null,
+      readership: native?.readership ?? null,
+      readershipSource: native?.readershipSource,
+      copies: copiesKnown ? native.copies : [],
+      copiesKnown,
+      onSale:
+        view.listings === undefined ? undefined : view.listings.length > 0,
+    };
   }
   async activeAuctions(
     id: string,
     name: string,
     signal?: AbortSignal,
-    fresh = false,
+    _fresh = false,
     onMatch?: () => void,
   ) {
-    return (await this.auctionSummary(id, name, signal, fresh, "full", onMatch))
-      .count;
+    return (await this.auctionSummary(id, name, signal, onMatch)).count;
   }
   onListingsChanged(listener: () => void) {
     this.listingListenersChanged.add(listener);
@@ -326,140 +518,114 @@ export class GameClient implements KosmoraClient {
   async cachedListings(
     id: string,
     signal?: AbortSignal,
+    cacheOnly = false,
   ): Promise<TrackedListingHistory> {
-    const account = await this.account(signal, false);
-    return this.listingRequest(
-      "listingCache",
-      account.key,
-      subjectId(id),
-      signal,
+    const account = cacheOnly
+      ? this.lastAccount
+      : await this.account(signal, false);
+    if (!account)
+      throw new Error("Your cached Kosmora account is unavailable.");
+    const [saved, view] = await Promise.all([
+      this.listingRequest<TrackedListingHistory>(
+        "listingCache",
+        account.key,
+        subjectId(id),
+        signal,
+      ),
+      (cacheOnly
+        ? this.refreshCachedCard(id, signal)
+        : this.serviceView(id, signal, true)
+      ).catch(() => undefined),
+    ]);
+    signal?.throwIfAborted();
+    const open = (view?.listings ?? []).map((row): TrackedListing => ({
+      ...row,
+      group: "selling",
+      state: "open",
+    }));
+    const listings = saved.listings.filter(
+      (local) =>
+        !open.some(
+          (row) =>
+            row.startPrice === local.startPrice &&
+            row.endsAt === local.endsAt &&
+            row.finish === local.finish,
+        ),
     );
-  }
-  async listingHistory(
-    id: string,
-    mode: HistoryMode,
-    signal?: AbortSignal,
-    limits?: ListingLimits,
-  ): Promise<ListingBatch | undefined> {
-    const account = await this.account(signal);
-    return this.listingRequest(
-      "listingHistory",
-      account.key,
-      subjectId(id),
-      signal,
-      { mode, limits },
-    );
+    return {
+      listings: [
+        ...open.sort((a, b) => Date.parse(b.endsAt!) - Date.parse(a.endsAt!)),
+        ...listings,
+      ],
+      hasMore: false,
+      openListingsKnown: view?.listings !== undefined,
+    };
   }
   async latestListing(
     id: string,
     signal?: AbortSignal,
   ): Promise<TrackedListing | undefined> {
-    const account = await this.account(signal, false);
-    return this.listingRequest(
+    const account = this.displayAccount;
+    if (!account) return;
+    return this.listingRequest<TrackedListing | undefined>(
       "listingSavedPrice",
       account.key,
       subjectId(id),
       signal,
     );
   }
-
   async discountListingPrice(
-    subject: string,
-    copyId: string,
+    _subject: string,
+    _copyId: string,
     threshold: number,
     listings: TrackedListing[],
     signal: AbortSignal,
   ) {
-    const account = await this.account(signal, false);
-    const version = this.accountVersion;
-    const metadata = new Map<string, ListingMetadata>();
-    const detailSignal = setRequestPriority(
-      AbortSignal.any([signal]),
-      "background",
-    );
-    const price = await failedListingPrice(
-      listings,
-      copyId,
-      threshold,
-      async (auctionId) => {
-        const id = uuid(auctionId).toLowerCase();
-        try {
-          const detail = await this.ownedListingDetail(
-            id,
-            account.key,
-            detailSignal,
-          );
-          if (!detail || subjectId(detail.card.subjectId) !== subject) return;
-          const copyId = auctionCopyId(detail.auction, detail.card);
-          const outcome = auctionListingOutcome(detail.auction);
-          if (!copyId && !outcome) return;
-          const verified = { copyId, outcome };
-          metadata.set(id, verified);
-          return verified;
-        } catch (error) {
-          if (
-            error instanceof ApiError &&
-            (error.status === 404 || error.status === 403)
-          )
-            return;
-          throw error;
-        }
-      },
-    );
     signal.throwIfAborted();
-    if (version !== this.accountVersion) return;
-    if (metadata.size)
+    let failed = 0;
+    let price: string | undefined;
+    for (const row of listings) {
+      if (/cancel/i.test(row.state ?? "")) continue;
+      if (row.group !== "unsold") break;
+      price ??= row.startPrice;
+      if (++failed >= threshold) return price;
+    }
+  }
+  async observeOwnAuction(id: string, raw: unknown) {
+    const row = object(object(raw).auction);
+    if (row.id !== id || row.yours !== true || !this.displayAccount) return;
+    const outcome = auctionListingOutcome(row);
+    if (!outcome) return;
+    await this.observeOwnListings({
+      items: [{ ...row, group: outcome.group }],
+      groups: { selling: 0, sold: 0, unsold: 0, [outcome.group]: 1 },
+    });
+  }
+  async observeOwnListings(raw: unknown) {
+    const account = this.displayAccount;
+    if (!account) return;
+    const batch = parseListingBatch(raw, account.key, initialListingLimits());
+    for (const row of batch.listings)
+      this.remember(this.observedAuctions, row.id.toLowerCase(), row);
+    if (batch.listings.length)
       await this.listingRequest(
-        "listingMetadata",
+        "listingObserved",
         account.key,
-        subject,
-        signal,
-        { metadata: [...metadata] },
+        "0",
+        undefined,
+        { rows: batch.listings.slice(0, 500) },
       );
-    return price;
   }
-
-  private async ownedListingDetail(
-    id: string,
-    accountKey: string,
-    signal: AbortSignal,
-  ) {
-    const path = `/auctions/${id}`;
-    const detail = await this.cached(
-      this.listingDetailReads,
-      id,
-      (shared) => this.read(path, shared),
-      signal,
-      false,
-      [path],
-    );
-    const data = object(detail);
-    const auction = object(data.auction ?? data);
-    if (
-      uuid(auction.id).toLowerCase() !== id ||
-      auction.yours === false ||
-      typeof auction.seller !== "string" ||
-      auction.seller.toLowerCase() !== accountKey
-    )
-      return;
-    return { auction, card: object(auction.card) };
-  }
-
   async captureListings(confirmations: unknown) {
     const previous = this.lastAccount;
     const account = await this.account();
-    const version = this.accountVersion;
     if (previous && previous.key !== account.key) return;
-    const records: RecordedListing[] = [];
     const seen = new Set<string>();
-    const rows = Array.isArray(confirmations)
+    const records: RecordedListing[] = [];
+    const receipts: { auctionId: string; submittedAt: number }[] = [];
+    for (const raw of Array.isArray(confirmations)
       ? confirmations.slice(0, 500)
-      : [];
-    const signal = setRequestPriority(
-      new AbortController().signal,
-      "background",
-    );
-    for (const raw of rows) {
+      : []) {
       try {
         const row = object(raw);
         const id = uuid(row.auctionId).toLowerCase();
@@ -471,64 +637,25 @@ export class GameClient implements KosmoraClient {
         )
           continue;
         seen.add(id);
-        let record = {
+        const observed = this.observedAuctions.get(id);
+        const record = {
           id,
-          subjectId: row.subjectId,
-          startPrice: row.startPrice,
+          subjectId: observed?.subjectId ?? row.subjectId,
+          startPrice: observed?.startPrice ?? row.startPrice,
           submittedAt: row.submittedAt,
           copyId: listingCopyId(row.copyId),
         };
-        if (
-          !previous ||
-          row.submittedAt < this.accountVerifiedSince ||
-          !validRecordedListing(record)
-        ) {
-          const detail = await this.ownedListingDetail(id, account.key, signal);
-          if (!detail) continue;
-          const { auction, card } = detail;
-          record = {
-            id,
-            subjectId: subjectId(card.subjectId),
-            startPrice: amount(auction.startPrice),
-            submittedAt: row.submittedAt,
-            copyId: auctionCopyId(auction, card) ?? record.copyId,
-          };
-        }
         if (validRecordedListing(record)) records.push(record);
-      } catch {
-        // An unresolved submission remains eligible for a later history check.
-      }
-      if (version !== this.accountVersion) return;
+        else receipts.push({ auctionId: id, submittedAt: row.submittedAt });
+      } catch {}
     }
-    if (version !== this.accountVersion) return;
-    if (records.length)
+    if (records.length || receipts.length)
       await this.listingRequest("listingRecord", account.key, "0", undefined, {
         records,
+        ...(receipts.length && { receipts }),
       });
-    else await this.listingRequest("listingInvalidate", account.key, "0");
   }
 
-  async readListingBatch(
-    account: string,
-    limits: ListingLimits,
-    signal: AbortSignal,
-  ) {
-    if ((await this.account(signal)).key !== account)
-      throw new Error("Your Kosmora account changed. Reopen the popup.");
-    const version = this.accountVersion;
-    const batch = parseListingBatch(
-      await this.read(listingPath(limits), signal),
-      account,
-      limits,
-    );
-    signal.throwIfAborted();
-    if (this.accountVersion !== version)
-      throw new DOMException(
-        "Your Kosmora account changed. Reopen the popup.",
-        "AbortError",
-      );
-    return batch;
-  }
   private async listingRequest<T>(
     op: string,
     accountKey: string,
@@ -548,11 +675,6 @@ export class GameClient implements KosmoraClient {
           signal?.reason ??
             new DOMException("Listing lookup canceled.", "AbortError"),
         );
-        void send({
-          requestId: crypto.randomUUID(),
-          op: "listingCancel",
-          target: requestId,
-        }).catch(() => {});
       };
       signal?.addEventListener("abort", cancel, { once: true });
       void send({ requestId, op, accountKey, subjectId: id, ...extra })
@@ -585,9 +707,9 @@ export class GameClient implements KosmoraClient {
     id: string,
     name: string,
     signal?: AbortSignal,
-    fresh = false,
+    _fresh = false,
   ) {
-    return (await this.auctionSummary(id, name, signal, fresh)).lowestPrice;
+    return (await this.auctionSummary(id, name, signal)).lowestPrice;
   }
   async hasActiveAuctions(
     id: string,
@@ -595,165 +717,43 @@ export class GameClient implements KosmoraClient {
     signal?: AbortSignal,
     onMatch?: () => void,
   ) {
-    id = subjectId(id);
-    const key = `${this.lastAccount?.key}:auctions:${id}:${name}`;
-    const complete = this.auctionReads.peek<{ count: number }>(key);
-    if (complete && !complete.stale) return complete.value.count > 0;
-    const mode = this.auctionReads.hasPending(key)
-      ? "full"
-      : this.collectSaleRateData
-        ? "observe"
-        : "presence";
-    return (
-      (await this.auctionSummary(id, name, signal, false, mode, onMatch))
-        .count > 0
-    );
+    return (await this.activeAuctions(id, name, signal, false, onMatch)) > 0;
   }
-  private marketPage(path: string, signal: AbortSignal, fresh: boolean) {
-    return fresh
-      ? this.read(path, signal)
-      : this.cached(
-          this.marketPages,
-          path,
-          (shared) => this.read(path, shared),
-          signal,
-          false,
-          [path],
-        );
+  private auctionStats(view: CardView) {
+    const open =
+      view.card?.auctions.filter(
+        (auction) => Date.parse(auction.endsAt) > Date.now(),
+      ) ?? [];
+    let lowestPrice: string | undefined;
+    for (const row of open)
+      if (lowestPrice === undefined || BigInt(row.price) < BigInt(lowestPrice))
+        lowestPrice = row.price;
+    return { count: open.length, lowestPrice };
   }
-  private auctionSummary(
+  private async auctionSummary(
     id: string,
-    name: string,
+    _name: string,
     signal?: AbortSignal,
-    fresh = false,
-    mode: "full" | "presence" | "observe" = "full",
     onMatch?: () => void,
   ) {
-    id = subjectId(id);
-    if (requestPriority(signal) !== "background")
-      this.scheduler.promotePrefix(
-        `/auctions?${new URLSearchParams({ q: name, sort: "ending" })}&`,
-        requestPriority(signal),
-      );
-    const key = `${this.lastAccount?.key}:auctions:${id}:${name}`;
-    const listeners = this.auctionProgress.get(key) ?? new Set<() => void>();
-    if (onMatch) {
-      listeners.add(onMatch);
-      this.auctionProgress.set(key, listeners);
-    }
-    const result = this.cached(
-      mode === "full" ? this.auctionReads : this.auctionPresenceReads,
-      mode === "full"
-        ? `auctions:${id}:${name}`
-        : `auctions:${mode}:${id}:${name}`,
-      (shared) => {
-        const timeout = AbortSignal.timeout(15_000);
-        const combined = AbortSignal.any([shared, timeout]);
-        setRequestPriority(combined, requestPriority(shared));
-        const epoch = this.saleRateEpoch;
-        const collect = this.collectionAbort.signal;
-        let matched = false;
-        const keepObserving = () =>
-          this.collectSaleRateData && epoch === this.saleRateEpoch;
-        return activeAuctionSummary(
-          id,
-          name,
-          (path) => {
-            const readSignal =
-              mode === "observe" && matched
-                ? AbortSignal.any([combined, collect])
-                : combined;
-            const priority = requestPriority(shared);
-            // Once the icon is known, remaining pages only refine the price.
-            // An open tooltip can still promote the shared read.
-            setRequestPriority(
-              readSignal,
-              mode === "full" &&
-                onMatch &&
-                matched &&
-                priority !== "interactive"
-                ? "background"
-                : priority,
-            );
-            return this.marketPage(path, readSignal, fresh);
-          },
-          mode,
-          () => {
-            matched = true;
-            for (const listener of this.auctionProgress.get(key) ?? [])
-              listener();
-          },
-          keepObserving,
-        )
-          .catch((error) => {
-            if (
-              mode === "observe" &&
-              matched &&
-              collect.aborted &&
-              !combined.aborted
-            )
-              return { count: 1, listings: [], lowestPrice: undefined };
-            throw error;
-          })
-          .then((summary) => {
-            if (!keepObserving() || shared.aborted || mode === "presence")
-              return summary;
-            for (const listener of this.listingListeners)
-              try {
-                listener(summary.listings);
-              } catch {
-                // Observation failures never affect the auction summary.
-              }
-            return summary;
-          });
-      },
-      signal,
-      fresh,
-    );
-    if (!onMatch) return result;
-    return result.finally(() => {
-      listeners.delete(onMatch);
-      if (!listeners.size && this.auctionProgress.get(key) === listeners)
-        this.auctionProgress.delete(key);
-    });
+    const view = await this.serviceView(id, signal);
+    if (!view.card) throw new Error("Auction data is unavailable.");
+    const value = this.auctionStats(view);
+    if (value.count) onMatch?.();
+    return value;
   }
-  families(signal?: AbortSignal, fresh = false) {
-    return this.cached(
-      this.reads,
-      "family-choices",
-      async (shared) =>
-        parseFamilyChoices(await this.read("/atlas/families", shared)),
-      signal,
-      fresh,
-      ["/atlas/families"],
-    );
+  families(signal?: AbortSignal, _fresh = false) {
+    const load = async () =>
+      parseFamilyChoices(await this.read("/atlas/families"));
+    return this.nativeReads
+      ? this.nativeReads.get("families", FAMILIES_TTL, load, signal, false)
+      : this.familyCatalog.get("families", load, false, signal);
   }
-  /** Serves a card's queued `/collection/{id}` read ahead of other queued reads. */
   expediteCard(id: string) {
-    this.scheduler.expedite(`/collection/${subjectId(id)}`);
+    this.observeCardIds([subjectId(id)]);
   }
   invalidateFamilyCounts() {
     this.familyCountReads.clear();
-  }
-
-  async fusionRules(signal: AbortSignal) {
-    return parseFusionRules(await this.read("/fusion", signal));
-  }
-
-  async fusionCards(rarity: string, subjects: string[], signal: AbortSignal) {
-    const query = new URLSearchParams({
-      rarity,
-      ids: subjects.join(","),
-      limit: String(subjects.length),
-    });
-    return parseFusionCards(await this.read(`/fusion/cards?${query}`, signal));
-  }
-
-  async fusionCopies(id: string, signal: AbortSignal) {
-    const query = new URLSearchParams({ subject: subjectId(id) });
-    return parseFusionCopies(
-      await this.read(`/fusion/copies?${query}`, signal),
-    );
   }
 
   /** Cards collected per family, for fusion family impact. */
@@ -832,68 +832,36 @@ export class GameClient implements KosmoraClient {
   async possibleInterest(
     familyIds: string[],
     signal?: AbortSignal,
-    fresh = false,
+    _fresh = false,
   ) {
+    signal?.throwIfAborted();
     const entries: InterestEntry[] = [];
     for (const family of new Set(familyIds)) {
-      if (!family || family.length > 200)
-        throw new Error("Invalid family identifier.");
-      entries.push(
-        ...(await this.cached(
-          this.collectionReads,
-          `interest:${family}`,
-          async (shared) => {
-            const rows: InterestEntry[] = [],
-              cursors = new Set<string>();
-            let cursor: string | null = null;
-            do {
-              const params = new URLSearchParams({
-                family,
-                split: "1",
-                status: "available",
-                sendable: "1",
-                sort: "name",
-                limit: "100",
-              });
-              if (cursor) params.set("cursor", cursor);
-              const page = parseInterestPage(
-                await this.read(`/collection?${params}`, shared),
-              );
-              rows.push(...page.items);
-              cursor = page.cursor;
-              if (cursor && (cursors.has(cursor) || rows.length >= 100_000))
-                throw new Error(
-                  "The complete collection could not be counted.",
-                );
-              if (cursor) cursors.add(cursor);
-            } while (cursor);
-            return rows;
-          },
-          signal,
-          fresh,
-        )),
-      );
+      const observed = this.observedInterest.get(family);
+      if (!observed)
+        throw new Error("Sendable collection data is unavailable.");
+      entries.push(...observed);
     }
     return interestCounts(entries);
   }
-  friends(signal?: AbortSignal, fresh = false) {
+  async friends(signal?: AbortSignal, _fresh = false) {
+    if (this.nativeReads) {
+      const account = await this.account(signal, false);
+      return this.nativeReads.get(
+        `friends.${account.key}`,
+        FRIENDS_TTL,
+        async () => parseFriends(await this.read("/friends")),
+        signal,
+        false,
+      );
+    }
     return this.cached(
       this.reads,
       "friends",
       async (shared) => parseFriends(await this.read("/friends", shared)),
       signal,
-      fresh,
+      false,
       ["/friends"],
-    );
-  }
-  questSubjects(signal?: AbortSignal, fresh = false) {
-    return this.cached(
-      this.reads,
-      "quest-subjects",
-      async (shared) => parseQuestSubjects(await this.read("/quests", shared)),
-      signal,
-      fresh,
-      ["/quests"],
     );
   }
   hasInteractiveReads() {
@@ -901,121 +869,66 @@ export class GameClient implements KosmoraClient {
   }
 
   peekHistory(id: string, finish: Finish) {
-    if (!this.lastAccount) return;
-    return this.priceReads.peek<MarketHistory>(
-      `${this.lastAccount.key}:prices:${subjectId(id)}:${finish}`,
-    );
+    const view = this.cardViews.get(id);
+    const value = view?.card?.markets[finish];
+    if (value)
+      return {
+        value,
+        stale: view.stale || view.until <= Date.now(),
+        until: view.until,
+      };
   }
-
-  peekAuction(id: string, name: string) {
-    if (!this.lastAccount) return;
-    return this.auctionReads.peek<
-      Awaited<ReturnType<typeof activeAuctionSummary>>
-    >(`${this.lastAccount.key}:auctions:${subjectId(id)}:${name}`);
+  peekAuction(id: string, _name: string) {
+    const view = this.cardViews.get(id);
+    if (view?.card)
+      return {
+        fetchedAt: view.fetchedAt,
+        value: this.auctionStats(view),
+        stale: view.stale || view.until <= Date.now(),
+        until: view.until,
+      };
   }
-
   async hasSaleHistory(id: string, finish: Finish, signal?: AbortSignal) {
-    id = subjectId(id);
-    const key = `prices:${id}:${finish}`;
-    const hit = this.peekHistory(id, finish);
-    if (hit && !hit.stale) return hit.value.count > 0;
-    if (
-      this.collectSaleRateData ||
-      this.priceReads.hasPending(`${this.lastAccount?.key}:${key}`)
-    )
-      return (await this.history(id, finish, signal)).count > 0;
-    const path = `/cards/${id}/prices?finish=${finish}`;
-    return this.cached(
-      this.historyPresenceReads,
-      key,
-      async (shared) => {
-        const history = object(
-          object(await this.marketPage(path, shared, false)).prices,
-        );
-        if (history.days !== 30)
-          throw new Error("The market reporting window changed.");
-        return count(history.count) > 0;
-      },
-      signal,
-      false,
-      [path],
-    );
+    const history = await this.history(id, finish, signal);
+    return history.count > 0 || !!history.lastSale;
   }
-  history(id: string, finish: Finish, signal?: AbortSignal, fresh = false) {
-    id = subjectId(id);
-    const path = `/cards/${id}/prices?finish=${finish}`;
-    return this.cached(
-      this.priceReads,
-      `prices:${id}:${finish}`,
-      async (shared) => {
-        const epoch = this.saleRateEpoch;
-        const history = parseHistory(
-          await this.marketPage(path, shared, fresh),
-          finish,
-        );
-        if (
-          !this.collectSaleRateData ||
-          epoch !== this.saleRateEpoch ||
-          shared.aborted
-        )
-          return history;
-        const loadedAt = Date.now();
-        for (const listener of this.historyListeners)
-          try {
-            listener(id, history, loadedAt);
-          } catch {
-            // Observation failures never affect the history read.
-          }
-        return history;
-      },
-      signal,
-      fresh,
-      [path],
-    );
+  async history(
+    id: string,
+    finish: Finish,
+    signal?: AbortSignal,
+    _fresh = false,
+  ) {
+    const view = await this.serviceView(id, signal);
+    const history = view.card?.markets[finish];
+    if (!history) throw new Error("Market history is unavailable.");
+    const observed = this.observedHistory.get(`${id}:${finish}`);
+    return observed ? { ...history, sales: observed.sales } : history;
   }
   async receivePackData(value: unknown) {
-    if (!this.lastAccount) await this.account(undefined, false);
     const data = object(value);
-    if (
-      data.kind === "inventory" &&
-      Array.isArray(data.ids) &&
-      typeof data.requestedAt === "number" &&
-      data.requestedAt <= Date.now() &&
-      Date.now() - data.requestedAt < 30_000 &&
-      (!this.nativePackIds || data.requestedAt >= this.nativePackIds.at)
-    ) {
-      this.nativePackIds = {
-        ids: data.ids.map((id) => uuid(id).toLowerCase()),
-        at: data.requestedAt,
-      };
-    } else if (data.kind === "opened") {
-      this.consumedPacks.add(uuid(data.id).toLowerCase());
-      if (this.consumedPacks.size > 500)
-        this.consumedPacks.delete(this.consumedPacks.values().next().value!);
-    } else if (data.kind === "opening") {
-      const cards = parseOpening(data.data);
-      if (!cards.length) return;
-      this.nativeOpenings.set(cards[0].openingId.toLowerCase(), cards);
-      if (this.nativeOpenings.size > 60)
-        this.nativeOpenings.delete(this.nativeOpenings.keys().next().value!);
-    }
+    if (data.kind !== "opening") return;
+    const cards = parseOpening(data.data);
+    if (!cards.length) return;
+    this.nativeOpenings.set(cards[0].openingId.toLowerCase(), cards);
+    if (this.nativeOpenings.size > 60)
+      this.nativeOpenings.delete(this.nativeOpenings.keys().next().value!);
   }
 
   async readyPackIds(signal?: AbortSignal): Promise<string[]> {
-    await this.account(signal, false);
-    const ids =
-      this.nativePackIds && Date.now() - this.nativePackIds.at < 30_000
-        ? this.nativePackIds.ids
-        : await this.cached(
-            this.packReads,
-            "ready-packs",
-            async (shared) =>
-              parseReadyPackIds(await this.read("/packs/inventory", shared)),
-            signal,
-            false,
-            ["/packs/inventory"],
-          );
-    return ids.filter((id) => !this.consumedPacks.has(id));
+    if (
+      this.inventory &&
+      this.inventory.key === location.href &&
+      Date.now() - this.inventory.at < 30_000
+    )
+      return this.inventory.ids;
+    const ids = await this.packReads.get(
+      "ready-packs",
+      async (shared) =>
+        parseReadyPackIds(await this.read("/packs/inventory", shared)),
+      false,
+      signal,
+    );
+    return ids;
   }
   async albums(
     id?: string,
@@ -1045,16 +958,8 @@ export class GameClient implements KosmoraClient {
         ? [this.lastAccount.currentOpeningId]
         : [];
     const opening = (id: string) =>
-      this.nativeOpenings.get(uuid(id).toLowerCase()) ??
-      this.cached(
-        this.openingReads,
-        `opening:${id}`,
-        async (shared) =>
-          parseOpening(await this.read(`/openings/${id}`, shared)),
-        signal,
-        false,
-        [`/openings/${id}`],
-      );
+      this.nativeOpenings.get(uuid(id).toLowerCase()) ?? [];
+    signal?.throwIfAborted();
     const matches = (c: OpeningCard) =>
       c.subjectId === context.subjectId &&
       c.variant.veil === context.variant.veil &&
@@ -1163,11 +1068,7 @@ export class GameClient implements KosmoraClient {
       throw new Error("An album update is already in progress.");
     this.writes.add(key);
     try {
-      if ((await this.account()).key !== expectedAccount)
-        throw new Error("Your Kosmora account changed. Reopen the popup.");
-      const current = await this.insights(copy.subjectId, undefined, true);
-      if (!current.copies.some((c) => c.id === copy.id))
-        throw new Error("You no longer own this copy.");
+      await this.verifiedCopy(copy.subjectId, copy.id, expectedAccount);
       const album = (await this.albums(copy.subjectId, undefined, true)).find(
         (a) => a.id === albumId,
       );

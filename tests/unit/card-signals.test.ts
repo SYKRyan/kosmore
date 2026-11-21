@@ -51,8 +51,10 @@ function harness() {
   vi.stubGlobal("chrome", {
     storage: {
       local: {
-        get: vi.fn(async (keys: string[]) =>
-          Object.fromEntries(keys.map((k) => [k, data[k]])),
+        get: vi.fn(async (keys: string[] | null) =>
+          keys === null
+            ? data
+            : Object.fromEntries(keys.map((k) => [k, data[k]])),
         ),
       },
     },
@@ -71,7 +73,13 @@ function harness() {
     history: vi.fn(async (_id: string, finish: Finish) =>
       parseHistory(prices(3), finish),
     ),
-    insights: vi.fn(async () => parseInsights(card())),
+    insights: vi.fn(
+      async (id: string, _signal?: AbortSignal, _fresh?: boolean) =>
+        ({
+          ...parseInsights(card(id)),
+          questMember: id === "42",
+        }) as import("../../src/shared/types").CardInsights,
+    ),
   };
   return { client, data, provider: new CardSignalProvider(client) };
 }
@@ -221,6 +229,7 @@ it("shows On Sale only for your own listed copies, independently of public aucti
     "42",
     expect.any(AbortSignal),
     false,
+    true,
   );
   h.provider.reset();
   h.client.account.mockResolvedValue({
@@ -300,7 +309,8 @@ it("deduplicates card checks and stops sale-history reads after the first confir
   ]);
   expect(h.client.account).toHaveBeenCalledTimes(1);
   expect(h.client.history).toHaveBeenCalledTimes(1);
-  expect(h.client.insights).toHaveBeenCalledTimes(1);
+  // Public data renders independently of the account-scoped On Sale lookup.
+  expect(h.client.insights).toHaveBeenCalledTimes(2);
 });
 it("does no game reads when the overlay section is disabled even with individual signals enabled", async () => {
   const h = harness();
@@ -403,7 +413,8 @@ it("honors each toggle and skips card details when friends have no family prefer
     "plain",
     "fullart",
   ]);
-  expect(h.client.friends).toHaveBeenCalledTimes(1);
+  expect(h.client.friends).not.toHaveBeenCalled();
+  expect(h.client.account).not.toHaveBeenCalled();
 });
 it("does not invent sale signals on failures, and keeps a failed friend lookup separate", async () => {
   const h = harness();
@@ -438,8 +449,7 @@ it("propagates server cooldowns instead of probing the remaining finishes", asyn
     h.provider.get("42", iconSettings(), "plain"),
   ).rejects.toMatchObject({ status: 429, retryAt });
   expect(h.client.history).toHaveBeenCalledTimes(1);
-  // Independent lookups may have started before the server returned a cooldown.
-  expect(h.client.friends).toHaveBeenCalledTimes(1);
+  expect(h.client.friends.mock.calls.length).toBeLessThanOrEqual(1);
 });
 it("resetting for a different account never reuses the prior account's friend matches", async () => {
   const h = harness();
@@ -454,10 +464,10 @@ it("resetting for a different account never reuses the prior account's friend ma
   expect(
     (await h.provider.get("42", iconSettings(), "plain")).interestedFriends,
   ).toBe(0);
-  expect(h.client.insights).toHaveBeenCalledTimes(2);
+  expect(h.client.insights).toHaveBeenCalledTimes(4);
 });
 
-it("reuses the quest catalog across cards, honors its toggle and keeps failures separate", async () => {
+it("uses per-card quest membership, honors its toggle and keeps failures separate", async () => {
   const h = harness();
   const questOnly = {
     cardOverlaysEnabled: true,
@@ -477,13 +487,14 @@ it("reuses the quest catalog across cards, honors its toggle and keeps failures 
     quest: true,
   });
   expect((await h.provider.get("43", questOnly, "plain")).quest).toBe(false);
-  expect(h.client.questSubjects).toHaveBeenCalledTimes(1);
+  expect(h.client.questSubjects).not.toHaveBeenCalled();
   expect(h.client.history).not.toHaveBeenCalled();
   expect(h.client.friends).not.toHaveBeenCalled();
   h.provider.reset();
-  h.client.questSubjects.mockRejectedValue(
-    new ApiError("Quest catalog unavailable", 403),
-  );
+  h.client.insights.mockResolvedValue({
+    ...parseInsights(card()),
+    questMember: false,
+  });
   expect(await h.provider.get("42", iconSettings(), "plain")).toEqual({
     onSale: false,
     activeAuctions: false,
@@ -492,20 +503,12 @@ it("reuses the quest catalog across cards, honors its toggle and keeps failures 
     quest: false,
   });
 });
-it("pauses on quest throttling and discards a canceled catalog after reset", async () => {
+it("discards a canceled per-card quest check after reset", async () => {
   const h = harness();
-  h.client.questSubjects.mockRejectedValueOnce(
-    new ApiError("Slow down", 429, 123),
-  );
-  await expect(
-    h.provider.get("42", iconSettings(), "plain"),
-  ).rejects.toMatchObject({ status: 429, retryAt: 123 });
-  expect(h.client.history).toHaveBeenCalledTimes(1);
-  h.provider.reset();
-  let release!: (ids: string[]) => void;
-  h.client.questSubjects.mockImplementationOnce(
+  let release!: (value: ReturnType<typeof parseInsights>) => void;
+  h.client.insights.mockImplementationOnce(
     () =>
-      new Promise<string[]>((resolve) => {
+      new Promise<ReturnType<typeof parseInsights>>((resolve) => {
         release = resolve;
       }),
   );
@@ -523,7 +526,7 @@ it("pauses on quest throttling and discards a canceled catalog after reset", asy
   await vi.waitFor(() => expect(release).toBeTypeOf("function"));
   const canceled = expect(pending).rejects.toThrow();
   h.provider.reset();
-  release(["42"]);
+  release(parseInsights(card()));
   await canceled;
   expect((await h.provider.get("42", iconSettings(), "plain")).quest).toBe(
     true,

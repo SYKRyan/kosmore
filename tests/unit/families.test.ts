@@ -34,7 +34,7 @@ it("rejects incomplete catalogs and conflicting family IDs", () => {
     }),
   ).toThrow("conflicting");
 });
-it("deduplicates authenticated catalog GETs and supports explicit refresh", async () => {
+it("deduplicates catalog GETs and keeps a fresh catalog on explicit refresh", async () => {
   const fetcher = vi.fn(async () => Response.json(familyCatalog));
   const client = new GameClient(fetcher as typeof fetch);
   await Promise.all([client.families(), client.families()]);
@@ -44,5 +44,5 @@ it("deduplicates authenticated catalog GETs and supports explicit refresh", asyn
     expect.objectContaining({ method: "GET", credentials: "same-origin" }),
   );
   await client.families(undefined, true);
-  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(fetcher).toHaveBeenCalledTimes(1);
 });

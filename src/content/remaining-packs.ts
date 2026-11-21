@@ -4,11 +4,7 @@ import { NEXT_PACK } from "./pack-opening-hotkeys";
 import { el } from "./ui";
 
 export class RemainingPacks {
-  private request?: {
-    button: HTMLElement;
-    key: string;
-    abort: AbortController;
-  };
+  private counts = new Map<string, number | undefined>();
   private label = el("p", "ko-mega-progress");
 
   constructor(
@@ -20,13 +16,7 @@ export class RemainingPacks {
   }
 
   start() {
-    observePage(() => {
-      if (
-        this.request ||
-        (this.enabled() && location.pathname === "/packs/open")
-      )
-        this.refresh();
-    });
+    observePage(() => this.refresh());
     this.refresh();
   }
 
@@ -35,36 +25,42 @@ export class RemainingPacks {
       this.enabled() && location.pathname === "/packs/open"
         ? document.querySelector<HTMLElement>(`.ko-summary ${NEXT_PACK}`)
         : null;
-    if (!button) {
-      this.request?.abort.abort();
-      this.request = undefined;
-      this.label.remove();
-      return;
-    }
     const params = new URLSearchParams(location.search);
     const shown =
       params.get("id") ?? params.get("resume") ?? params.get("batch");
-    const key = shown
-      ? [shown, params.get("held")].filter(Boolean).join(",").toLowerCase()
-      : "";
-    if (this.request?.button === button && this.request.key === key) return;
-    this.request?.abort.abort();
-    this.request = undefined;
+    if (
+      !button ||
+      button.closest('[hidden], [aria-hidden="true"]') ||
+      !shown ||
+      params.get("replay") === "1"
+    ) {
+      this.label.remove();
+      return;
+    }
+    const key = [shown, params.get("held")]
+      .filter(Boolean)
+      .join(",")
+      .toLowerCase();
+    const count = this.counts.get(key);
+    if (count !== undefined) {
+      const text = `${count.toLocaleString()} ${count === 1 ? "pack" : "packs"} ready`;
+      if (this.label.textContent !== text) this.label.textContent = text;
+      if (button.previousElementSibling !== this.label)
+        button.before(this.label);
+      return;
+    }
     this.label.remove();
-    if (!key || params.get("replay") === "1") return;
-    const abort = new AbortController();
-    this.request = { button, key, abort };
+    if (this.counts.has(key)) return;
+    this.counts.set(key, undefined);
     const excluded = new Set(key.split(","));
     void this.client
-      .readyPackIds(abort.signal)
+      .readyPackIds()
       .then((ids) => {
-        if (abort.signal.aborted || !button.isConnected) return;
-        const count = ids.filter((id) => !excluded.has(id)).length;
-        this.label.textContent = `${count.toLocaleString()} ${count === 1 ? "pack" : "packs"} ready`;
-        button.before(this.label);
+        this.counts.set(key, ids.filter((id) => !excluded.has(id)).length);
+        this.refresh();
       })
       .catch(() => {
-        // The native action remains usable if inventory is unavailable.
+        // The count is optional. Do not retry on rerenders of the same summary.
       });
   }
 }

@@ -8,7 +8,8 @@ import {
 } from "./shared/popup-layout";
 import { readSettings, saveSettings } from "./shared/settings";
 import { installListingBackground } from "./listing-background";
-installListingBackground();
+import { installServicesBackground } from "./services-background";
+installListingBackground(installServicesBackground());
 let layoutWrites = Promise.resolve();
 chrome.tabs.onRemoved.addListener((tabId) => {
   void chrome.storage.session.remove([

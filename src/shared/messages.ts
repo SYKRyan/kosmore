@@ -1,5 +1,7 @@
 import {
   validRecordedListing,
+  validReceipt,
+  type ListingReceipt,
   type RecordedListing,
 } from "../kosmora/listing-capture";
 import type { Account } from "./types";
@@ -7,6 +9,8 @@ import {
   listingCopyId,
   SAVED_LISTING_LIMIT,
   validListingLimits,
+  validPersonalListing,
+  type PersonalListing,
   validListingMetadata,
   type ListingLimits,
   type ListingMetadata,
@@ -15,7 +19,33 @@ import { isPopupLayoutChange, type PopupLayoutChange } from "./popup-layout";
 export type Request =
   | {
       requestId: string;
-      op: "listingCache" | "listingInvalidate" | "listingSavedPrice";
+      op:
+        | "servicesStatus"
+        | "servicesRetry"
+        | "servicesDisconnect"
+        | "servicesEraseHistory";
+    }
+  | { requestId: string; op: "servicesSave" | "servicesConnect"; base: string }
+  | {
+      requestId: string;
+      op: "servicesObserve" | "servicesRead" | "servicesPeek";
+      ids: string[];
+      account?: string;
+    }
+  | {
+      requestId: string;
+      op: "listingObserved";
+      accountKey: string;
+      subjectId: string;
+      rows: PersonalListing[];
+    }
+  | {
+      requestId: string;
+      op:
+        | "listingCache"
+        | "listingInvalidate"
+        | "listingSavedPrice"
+        | "listingAccountVerified";
       accountKey: string;
       subjectId: string;
     }
@@ -33,6 +63,7 @@ export type Request =
       accountKey: string;
       subjectId: string;
       records: RecordedListing[];
+      receipts?: ListingReceipt[];
     }
   | {
       requestId: string;
@@ -83,37 +114,48 @@ export function isRequest(x: unknown): x is Request {
   const r = x as Request;
   return (
     validId(r.requestId) &&
-    (([
-      "listingCache",
-      "listingSavedPrice",
-      "listingInvalidate",
-      "listingHistory",
-      "listingRecord",
-      "listingMetadata",
-    ].includes(r.op) &&
-      "accountKey" in r &&
-      "subjectId" in r &&
+    ((r.op === "listingObserved" &&
       /^[a-z0-9_]{1,24}$/.test(r.accountKey) &&
-      typeof r.subjectId === "string" &&
-      /^\d+$/.test(r.subjectId) &&
-      (r.op !== "listingRecord" ||
-        (Array.isArray(r.records) &&
-          r.records.length <= 500 &&
-          r.records.every(validRecordedListing))) &&
-      (r.op !== "listingMetadata" ||
-        (Array.isArray(r.metadata) &&
-          r.metadata.length <= SAVED_LISTING_LIMIT &&
-          r.metadata.every(
-            (pair) =>
-              Array.isArray(pair) &&
-              pair.length === 2 &&
-              typeof pair[0] === "string" &&
-              listingCopyId(pair[0]) === pair[0] &&
-              validListingMetadata(pair[1]),
-          ))) &&
-      (r.op !== "listingHistory" ||
-        (["more", "refresh"].includes(r.mode) &&
-          (r.limits === undefined || validListingLimits(r.limits))))) ||
+      r.subjectId === "0" &&
+      Array.isArray(r.rows) &&
+      r.rows.length <= 500 &&
+      r.rows.every(validPersonalListing)) ||
+      ([
+        "listingCache",
+        "listingSavedPrice",
+        "listingAccountVerified",
+        "listingInvalidate",
+        "listingHistory",
+        "listingRecord",
+        "listingMetadata",
+      ].includes(r.op) &&
+        "accountKey" in r &&
+        "subjectId" in r &&
+        /^[a-z0-9_]{1,24}$/.test(r.accountKey) &&
+        typeof r.subjectId === "string" &&
+        /^\d+$/.test(r.subjectId) &&
+        (r.op !== "listingRecord" ||
+          (Array.isArray(r.records) &&
+            r.records.length <= 500 &&
+            r.records.every(validRecordedListing) &&
+            (r.receipts === undefined ||
+              (Array.isArray(r.receipts) &&
+                r.receipts.length <= 500 &&
+                r.receipts.every(validReceipt))))) &&
+        (r.op !== "listingMetadata" ||
+          (Array.isArray(r.metadata) &&
+            r.metadata.length <= SAVED_LISTING_LIMIT &&
+            r.metadata.every(
+              (pair) =>
+                Array.isArray(pair) &&
+                pair.length === 2 &&
+                typeof pair[0] === "string" &&
+                listingCopyId(pair[0]) === pair[0] &&
+                validListingMetadata(pair[1]),
+            ))) &&
+        (r.op !== "listingHistory" ||
+          (["more", "refresh"].includes(r.mode) &&
+            (r.limits === undefined || validListingLimits(r.limits))))) ||
       (r.op === "listingCancel" && validId(r.target)) ||
       (r.op === "openOptions" &&
         (r.section === undefined || r.section === "stat-boxes")) ||

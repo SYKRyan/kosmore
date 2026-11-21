@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
   "name": "KosMore",
-  "version": "1.8.0",
+  "version": "1.8.4",
   "description": "Card insights and pinned album shortcuts for Kosmora, including pack reveals and summaries.",
   "minimum_chrome_version": "120",
-  "permissions": ["storage"],
+  "permissions": ["storage", "identity", "alarms"],
+  "optional_host_permissions": ["https://*/*"],
   "host_permissions": ["https://kosmora.io/*"],
   "action": { "default_title": "KosMore settings" },
   "options_ui": { "page": "options.html", "open_in_tab": true },

@@ -1,5 +1,12 @@
 # Kosmora integration evidence
 
+## Services test build
+
+In **Settings → Connected Account**, enter the HTTPS API base URL shared for testing and select **Connect**. Services must register the test build's exact OAuth callback (`https://<extension-id>.chromiumapp.org/kosmore-services`) and browser origin (`chrome-extension://<extension-id>`). Find the extension ID on the browser's Extensions page. Pinned-album settings still use a signed-in Kosmora tab.
+
+The deployment defaults are in `public/card-cache-config.json`. The build copies the file into `dist` so operators can configure local retention and freshness without editing source. The service worker batches stale or missing card IDs from game responses and open controls. Public batches carry up to 100 IDs. A visible miss can load by itself. Passive observations fill spare slots. Private listings use a separately expiring player snapshot. Account-sensitive actions verify game identity and copy ownership on demand. Remaining Packs can reuse a complete inventory observed for the current summary. Family Impact is currently unavailable. Older sections below describe historical native behavior.
+
+
 Inspected 2026-11-04. This is an observed private web-client contract, not a stability guarantee or an official public API. Never log authentication headers or commit account inventories. Fixtures in `tests/fixtures` are synthetic.
 
 ## Transport
@@ -100,13 +107,15 @@ Current price indicators now use a sale-tag icon; completed-sale indicators use 
 
 The History tab reads saved listings for the exact card and account. **Load more** starts at 50 per status if there is no reusable scan, then doubles incomplete group limits up to reported totals. Leaving History cancels its subscription while other consumers can continue. The extension verifies the seller and keeps the original starting price, with submission and auction end times labeled by source.
 
-**My Last Listing:** sale rows and tooltip History read the same account-scoped history without a personal listing request. Confirmed native submissions and relists retain starting prices, up to 100 listings per card. The refresh icon imports the newest 180 auctions across all statuses. **Load more** expands the account scan for the selected card and saves matching results. A refresh changes the latest price when the server establishes the listing order. Clicking a saved price rechecks the account and field identity before filling the starting price.
+**My Last Listing** uses a separate IndexedDB index of confirmed starting prices, ordered by submission time and auction ID. Click-to-fill still verifies the game account. Discount and tooltip History independently use auction outcomes and open-listing data.
 
 The background service coalesces overlapping account-wide reads across cards and tabs, reference-counts cancellations, serializes cache merges, and delegates network work to a validated game tab through the existing request scheduler. Browser-session snapshots share loaded batches across reloads/tabs. Normalized confirmed prices and verification/LRU metadata persist under `kosmore.myListingPrices`, isolated by account and card, capped at 10,000 entries overall, and excluded from backups. Session snapshots evict older accounts before reaching 6 MB; oversized results remain usable by their current consumer. Account changes reject late results and never expose another account's cached data. The native observer joins successful batch rows to their submitted instance IDs, deduplicates auction IDs, and ignores failed results, quotes, and edits. Captured starting prices are stored separately from the history cache and excluded from backups. The observer leaves the native request and response intact.
 
 A fully expanded history lookup uses 6 requests / 2,550 transferred records for a 1,000-record group, and 8 / 11,350 for 5,000 records. The previous fixed-50 cumulative scan used 20 / 10,500 and 100 / 252,500 respectively. These are request/payload counts, not live-server timing claims.
 
 Read-only verification on 2026-11-07 used the signed-in built-in browser: `/api/me/auctions` returned `{items:[],groups:{selling:0,sold:0,unsold:0},relistAll:...}`. The native market assets confirm group-limit paging, sorting, and the My Sales fields; a public auction list/detail read confirmed `startPrice`, `endsAt`, `durationHours`, seller identity and final-price fields, with no creation timestamp exposed. That account had no populated personal history to sample live; populated, paged histories and price filling are verified with fixtures. No auction was created or changed during verification.
+
+My Last Listing reads confirmed submissions saved on this browser. Linked browsers sync through Services on connection, on startup, and about every five minutes while a Kosmora tab is open. Use Verify account if the Sell page does not yet know who is signed in. Disconnect keeps shared history. Erase synced listing history in Settings clears it across linked browsers on their next sync.
 
 The independent Sales Overlay group sits directly below Card overlays and applies to both Sell Several Cards (`/market/sell/batch`) and the single sell form (`/market/sell`). It is enabled by default. Last Sale, Lowest Listed, and My Last Listing each have default-on visibility and click-to-set preferences and a numeric adjustment defaulting to zero. Visibility disables its click setting; disabling click-to-set disables its adjustment field while preserving saved choices. Turning the group off makes all its controls read-only and removes the functionality from open game tabs.
 

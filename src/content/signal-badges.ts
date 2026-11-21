@@ -35,13 +35,20 @@ export function signalBadges(
     else badge.setAttribute("role", "img");
     const description =
       price !== undefined
-        ? `${label}. ${kind === "sale" ? "Last sale" : "Lowest current listing price"}: ${formatKosmo(price)} Kosmo, across all finishes.`
+        ? `${label}. ${kind === "sale" ? "Last sale" : "Lowest observed auction price"}: ${formatKosmo(price)} Kosmo, across all finishes.`
         : label;
     const accessibleDescription =
       badge instanceof HTMLAnchorElement
         ? `${description} Find ${marketName} at Market.`
         : description;
-    const detail = accessibleDescription + (stale ? " Last known price." : "");
+    const detail =
+      accessibleDescription +
+      (stale ? " Last known price." : "") +
+      (kind === "auction" && signals.auctionFetchedAt
+        ? " Snapshot fetched " +
+          new Date(signals.auctionFetchedAt).toLocaleTimeString() +
+          ". Provider prices are delayed five minutes."
+        : "");
     badge.setAttribute("aria-label", detail);
     badge.title = detail;
     badge.toggleAttribute("data-stale-price", !!stale);

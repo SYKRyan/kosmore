@@ -1,4 +1,5 @@
 import { setRequestPriority } from "../shared/request-scheduler";
+import { NativeReadCache } from "../shared/native-read-cache";
 import { GameClient } from "../kosmora/client";
 import { contextKey, HOST_ID, resolveCard, topDialog } from "../kosmora/dom";
 import { isTabRequest, request } from "../shared/messages";
@@ -38,14 +39,20 @@ import { MarketOutcomes } from "./market-outcomes";
 import { HistoryResolver, listenToPageRelay } from "./sale-rate-feed";
 import { saleObservations } from "./sale-observation-store";
 import { FusionFamilyImpact } from "./fusion-family";
-import { FusionNextBatch } from "./fusion-next-batch";
+import { FAMILY_IMPACT_AVAILABLE } from "../shared/feature-availability";
 import { TooltipButtons } from "./tooltip-buttons";
 import {
   RELAY_LISTED,
+  RELAY_CARDS,
+  CARD_FEED_PATH,
+  CARD_DETAILS_PATH,
+  AUCTION_DETAILS_PATH,
+  CARD_PRICES_PATH,
   RELAY_PACK,
   RELAY_READY,
   LISTING_WRITES,
 } from "../shared/page-relay";
+import { SERVICES_STATE_KEY, validCardId } from "../shared/services";
 import { settingsForPage } from "../shared/page-settings";
 import {
   HOVER_TOOLTIP,
@@ -60,10 +67,11 @@ function pageSettings() {
   return settingsForPage(settings, location.pathname);
 }
 
-const client = new GameClient();
+const client = new GameClient(
+  undefined,
+  new NativeReadCache(chrome.storage.local),
+);
 startGiftHandoff(client);
-const listingReads = new Map<string, AbortController>();
-const canceledListingReads = new Set<string>();
 const friendTooltip = new FriendTooltip(client, () => {
   if (popup && !popup.isPinned) laterHide();
 });
@@ -75,10 +83,10 @@ const overlays = new CardOverlays(client);
 overlays.start();
 const salesOverlays = new SalesOverlays(client);
 salesOverlays.start();
-const fusionFamily = new FusionFamilyImpact(client);
-fusionFamily.start();
-const fusionNextBatch = new FusionNextBatch(client);
-fusionNextBatch.start();
+const fusionFamily = FAMILY_IMPACT_AVAILABLE
+  ? new FusionFamilyImpact(client)
+  : undefined;
+fusionFamily?.start();
 const tooltipButtons = new TooltipButtons(openFromButton);
 tooltipButtons.start();
 const marketOutcomes = new MarketOutcomes(saleObservations);
@@ -92,12 +100,59 @@ window.addEventListener("message", (event) => {
   )
     return;
   void preferencesReady.then(() => {
-    if (event.data.type === RELAY_PACK) {
+    if (event.data.type === RELAY_CARDS) {
       if (
-        event.data.kind === "opening"
-          ? pageSettings().enabled
-          : settings.showRemainingPackCount
+        !needsServicesCards() ||
+        typeof event.data.path !== "string" ||
+        !Array.isArray(event.data.ids) ||
+        event.data.ids.length > 500
       )
+        return;
+      let url: URL;
+      try {
+        url = new URL(event.data.path, location.origin);
+      } catch {
+        return;
+      }
+      if (url.origin !== location.origin || !CARD_FEED_PATH.test(url.pathname))
+        return;
+      client.observeCardIds(event.data.ids.filter(validCardId));
+      const detail = CARD_DETAILS_PATH.exec(url.pathname);
+      if (detail) {
+        void client.observeCardDetails(event.data.data).then(() => {
+          if (current?.subjectId === detail[1] && popup) void show(current);
+        });
+      }
+      const price = CARD_PRICES_PATH.exec(url.pathname);
+      const finish = url.searchParams.get("finish");
+      if (price && FINISHES.some((value) => value === finish))
+        client.observeMarketHistory(
+          price[1],
+          finish as Finish,
+          event.data.data,
+        );
+      const ownAuction = AUCTION_DETAILS_PATH.exec(url.pathname);
+      if (ownAuction && event.data.data && tracksListingPrices())
+        void client
+          .observeOwnAuction(ownAuction[1], event.data.data)
+          .catch(() => {});
+      if (url.pathname === "/api/me/auctions" && tracksListingPrices())
+        void client.observeOwnListings(event.data.data).catch(() => {});
+      if (url.pathname === "/api/collection")
+        client.observeCollection(url.href, event.data.data);
+      return;
+    }
+    if (event.data.type === RELAY_PACK) {
+      if (event.data.kind === "identity") {
+        const observed = client.observeIdentity(event.data.data) ?? "";
+        void chrome.storage.local.set({ "kosmore.gameAccountHint": observed });
+      }
+      if (event.data.kind === "inventory" && settings.showRemainingPackCount) {
+        try {
+          client.observeInventory(event.data.data, event.data.href);
+        } catch {}
+      }
+      if (event.data.kind === "opening" && pageSettings().enabled)
         void client.receivePackData(event.data).catch(() => {});
       return;
     }
@@ -119,20 +174,48 @@ function tracksListingPrices() {
       (settings.showSalesMyLastListing || settings.salesDiscountEnabled))
   );
 }
+function needsServicesCards() {
+  const page = pageSettings();
+  return (
+    page.enabled ||
+    page.cardOverlaysEnabled ||
+    settings.salesOverlaysEnabled ||
+    (FAMILY_IMPACT_AVAILABLE && settings.familyImpactOverlaysEnabled) ||
+    settings.friendTooltipEnabled ||
+    settings.showTradePossibleInterest
+  );
+}
+let cardRefresh: ReturnType<typeof setTimeout> | undefined;
+let refreshOpenCard = false;
+function refreshServiceControls(ids?: string[]) {
+  if (
+    !client.clearServiceViews(ids) &&
+    (!current || !ids?.includes(current.subjectId))
+  )
+    return;
+  refreshOpenCard ||= !ids || (!!current && ids.includes(current.subjectId));
+  clearTimeout(cardRefresh);
+  cardRefresh = setTimeout(() => {
+    overlays.invalidate();
+    salesOverlays.invalidate();
+    if (refreshOpenCard && popup && current) void show(current);
+    refreshOpenCard = false;
+  }, 80);
+}
 function syncRelayPreferences() {
-  const family = settings.familyImpactOverlaysEnabled;
+  const family =
+    FAMILY_IMPACT_AVAILABLE && settings.familyImpactOverlaysEnabled;
   const saleFamily = family && settings.showSalesFamilyOverlay;
   const listingPrices = tracksListingPrices();
   window.postMessage(
     {
       type: RELAY_READY,
       preferences: {
+        servicesCards: needsServicesCards(),
         collectSaleRateData: settings.collectSaleRateData,
-        packInventory: settings.showRemainingPackCount,
         packOpenings: pageSettings().enabled,
-        fusion:
-          (family && settings.showFusionFamilyOverlay) ||
-          (settings.fusionEnabled && settings.fusionNextBatchEnabled),
+        inventory: settings.showRemainingPackCount,
+        fusion: family && settings.showFusionFamilyOverlay,
         vortex: family && settings.showVortexFamilyOverlay,
         familyMilestones:
           family &&
@@ -156,19 +239,6 @@ function syncSaleRate() {
       listenToPageRelay(saleObservations, window, false),
       client.onHistoryLoaded((id, history, loadedAt) =>
         historyResolver.receive(id, history, loadedAt),
-      ),
-      client.onAuctionListings((listings) =>
-        saleObservations.recordMany(
-          listings.map((listing) => [
-            listing.id,
-            {
-              subjectId: listing.subjectId,
-              finish: listing.finish,
-              outcome: "open",
-              endsAt: Date.parse(listing.endsAt),
-            },
-          ]),
-        ),
       ),
     ];
     stopSaleRate = () => {
@@ -222,8 +292,7 @@ const preferencesReady = Promise.all([
   pinnedState = state;
   overlays.setSettings(settings);
   salesOverlays.setSettings(settings);
-  fusionFamily.setSettings(settings);
-  fusionNextBatch.setSettings(settings);
+  fusionFamily?.setSettings(settings);
   tooltipButtons.setSettings(settings);
   if (!pageSettings().enabled) hide();
   else if (pinnedState.pinned && !popup && !current) createView(null);
@@ -278,7 +347,6 @@ function checkUrl() {
   const previous = settingsForPage(settings, previousUrl.pathname);
   lastUrl = location.href;
   syncRelayPreferences();
-  remainingPacks.refresh();
   if (packOpeningHotkeys.keepFocusOnRecap(previousUrl)) {
     const recap = current && resolveCard(current.anchor);
     if (recap && current && contextKey(recap) !== contextKey(current))
@@ -346,16 +414,24 @@ async function show(
   const valid = () =>
     !abort.signal.aborted && popup === view && current === context;
   try {
-    const account = await client.account(abort.signal, fresh);
-    if (!valid()) return;
-    view.setAccount(account, settings.pinnedAlbums[account.key] ?? [], fresh);
+    if (
+      settings.pinnedAlbumsEnabled &&
+      Object.values(settings.pinnedAlbums).some((ids) => ids.length)
+    )
+      void view.loadPrivateAccount();
     view.showCachedAuction(context.name, fresh);
     loadHeaderSignals(view, context, abort.signal);
-    const detail = client.insights(context.subjectId, abort.signal, fresh);
+    const detail =
+      client.hasObservedCopies(context.subjectId) && !client.displayAccount
+        ? client
+            .account(abort.signal, false)
+            .then(() => client.insights(context.subjectId, abort.signal, fresh))
+        : client.insights(context.subjectId, abort.signal, fresh);
     void detail.then(
       async (d) => {
         if (!valid()) return;
         view.setInsights(d, fresh);
+        if (d.copies.length) void view.loadPrivateAccount();
         let chosen;
         let problem: string | undefined;
         try {
@@ -406,7 +482,11 @@ async function show(
             (history) => {
               if (signal.aborted || !valid()) return;
               settled.add(finish);
-              view.setHistory(finish, history);
+              view.setHistory(
+                finish,
+                history,
+                client.peekHistory(context.subjectId, finish)?.stale,
+              );
             },
             (error) => {
               if (signal.aborted || !valid()) return;
@@ -445,7 +525,19 @@ function createView(
     context,
     client,
     () => {
-      if (context) void show(context, { fresh: true });
+      if (!context) return;
+      const signal = activeRequest?.signal;
+      void client
+        .refreshCachedCard(context.subjectId, signal)
+        .then(() => {
+          if (popup !== view || signal?.aborted) return;
+          for (const finish of FINISHES) {
+            const hit = client.peekHistory(context.subjectId, finish);
+            if (hit) view.setHistory(finish, hit.value, hit.stale);
+          }
+          view.showCachedAuction(context.name);
+        })
+        .catch(() => {});
     },
     dismiss,
     options,
@@ -923,7 +1015,12 @@ window.addEventListener(
   (event) => popup?.restoreCanceledWheel(event),
   { capture: true, passive: true },
 );
-for (const type of ["touchstart", "touchmove", "touchend", "touchcancel"] as const)
+for (const type of [
+  "touchstart",
+  "touchmove",
+  "touchend",
+  "touchcancel",
+] as const)
   window.addEventListener(type, (event) => popup?.restoreCanceledTouch(event), {
     capture: true,
     passive: true,
@@ -983,6 +1080,14 @@ observePage(() => {
     if (wasHovered) enter(next.anchor);
   }
 });
+client.onVerifiedAccount = (account) => {
+  if (tracksListingPrices())
+    void request({
+      op: "listingAccountVerified",
+      accountKey: account.key,
+      subjectId: "0",
+    }).catch(() => {});
+};
 client.onAccountChange(() => {
   tradeInterest.refresh();
   friendTooltip.reset();
@@ -996,11 +1101,12 @@ client.onListingsChanged(() => {
 });
 const recheckAccount = () => {
   if (
-    popup ||
-    overlays.enabled() ||
-    salesOverlays.enabled() ||
-    fusionFamily.enabled() ||
-    fusionNextBatch.running
+    client.displayAccount &&
+    (popup?.usesPrivateData ||
+      (overlays.enabled() &&
+        (settings.showOnSaleOverlay || settings.showFriendInterestOverlay)) ||
+      (salesOverlays.enabled() && settings.salesDiscountEnabled) ||
+      fusionFamily?.enabled())
   )
     void client.account().catch(() => {});
 };
@@ -1009,6 +1115,15 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) recheckAccount();
 });
 chrome.storage.onChanged.addListener((changes, area) => {
+  const observed = changes["kosmore.gameAccountHint"]?.newValue;
+  if (
+    area === "local" &&
+    typeof observed === "string" &&
+    client.displayAccount &&
+    client.displayAccount.key !== observed
+  )
+    client.observeIdentity(null);
+  if (area === "local" && changes[SERVICES_STATE_KEY]) refreshServiceControls();
   if (area === "local" && settings.collectSaleRateData)
     saleObservations.external(changes);
   if (
@@ -1036,8 +1151,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
       heldTooltipKeys.clear();
     overlays.setSettings(settings);
     salesOverlays.setSettings(settings);
-    fusionFamily.setSettings(settings);
-    fusionNextBatch.setSettings(settings);
+    fusionFamily?.setSettings(settings);
     tooltipButtons.setSettings(settings);
     if (!pageSettings().enabled) hide();
     else if (popup) {
@@ -1065,45 +1179,33 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (
     sender.id !== chrome.runtime.id ||
     sender.tab ||
-    (sender.url && sender.url !== chrome.runtime.getURL("background.js")) ||
-    !isTabRequest(message)
+    (sender.url && sender.url !== chrome.runtime.getURL("background.js"))
   )
     return false;
-  if (message.op === "cancelListingBatch") {
-    const controller = listingReads.get(message.target);
-    if (controller) controller.abort();
-    else {
-      canceledListingReads.add(message.target);
-      setTimeout(() => canceledListingReads.delete(message.target), 30_000);
-    }
-    respond({ requestId: message.requestId, ok: true, data: null });
+  if (
+    message?.op === "servicesCardsChanged" &&
+    Array.isArray(message.ids) &&
+    message.ids.length <= 100 &&
+    message.ids.every(validCardId)
+  ) {
+    refreshServiceControls(message.ids);
     return false;
   }
+  if (
+    message?.op === "confirmedListingsChanged" &&
+    message.account === client.displayAccount?.key
+  ) {
+    salesOverlays.invalidateListings();
+    return false;
+  }
+  if (!isTabRequest(message)) return false;
   if (message.op === "listingCacheChanged") {
     client.listingsChanged(message.accountKey);
     respond({ requestId: message.requestId, ok: true, data: null });
     return false;
   }
-  if (message.op === "readListingBatch") {
-    const controller = new AbortController();
-    listingReads.set(message.requestId, controller);
-    if (canceledListingReads.delete(message.requestId)) controller.abort();
-    void client
-      .readListingBatch(message.accountKey, message.limits, controller.signal)
-      .then(
-        (data) => respond({ requestId: message.requestId, ok: true, data }),
-        (error) =>
-          respond({
-            requestId: message.requestId,
-            ok: false,
-            error: messageOf(error),
-            status: error?.status,
-            retryAt: error?.retryAt,
-          }),
-      )
-      .finally(() => listingReads.delete(message.requestId));
-    return true;
-  }
+  if (message.op === "readListingBatch" || message.op === "cancelListingBatch")
+    return false;
   void (async () => {
     const account = await client.account();
     if (message.op === "session") return account;

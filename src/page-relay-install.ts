@@ -1,4 +1,5 @@
-import { parseOpening, parseReadyPackIds } from "./kosmora/contracts";
+import { validCardId } from "./shared/services";
+import { parseOpening } from "./kosmora/contracts";
 import { listingConfirmations, saleSubjects } from "./kosmora/listing-capture";
 /**
  * KosMore page-world relay, installed by src/page-hook.ts (MAIN world, document_start).
@@ -17,6 +18,12 @@ import { listingConfirmations, saleSubjects } from "./kosmora/listing-capture";
  */
 import {
   RELAY_BUFFER,
+  RELAY_CARDS,
+  CARD_FEED_PATH,
+  CARD_DETAILS_PATH,
+  AUCTION_DETAILS_PATH,
+  CARD_PRICES_PATH,
+  type CardFeedMessage,
   RELAY_PACK,
   type PackRelayMessage,
   RELAY_DATA,
@@ -49,6 +56,7 @@ export function installPageRelay(win: Window = window) {
     | RelayMessage
     | ListingChangedMessage
     | SaleBatchMessage
+    | CardFeedMessage
     | PackRelayMessage
     | (() => void)
   )[] = [];
@@ -58,6 +66,15 @@ export function installPageRelay(win: Window = window) {
     for (const [id, subject] of saleSubjects(value)) subjects.set(id, subject);
     while (subjects.size > 1000) subjects.delete(subjects.keys().next().value!);
   };
+  const decodingSubjects = new Set<Promise<unknown>>();
+  function decodeSource(response: Response) {
+    const decoding = response.clone().json();
+    decodingSubjects.add(decoding);
+    void decoding
+      .finally(() => decodingSubjects.delete(decoding))
+      .catch(() => {});
+    return decoding;
+  }
   let ready = false;
   let preferences: RelayPreferences | undefined;
   let observationEpoch = 0;
@@ -66,6 +83,7 @@ export function installPageRelay(win: Window = window) {
       | RelayMessage
       | ListingChangedMessage
       | SaleBatchMessage
+      | CardFeedMessage
       | PackRelayMessage,
   ) => win.postMessage(message, win.location.origin);
   const relay = (
@@ -73,6 +91,7 @@ export function installPageRelay(win: Window = window) {
       | RelayMessage
       | ListingChangedMessage
       | SaleBatchMessage
+      | CardFeedMessage
       | PackRelayMessage,
   ) => {
     if (ready) send(message);
@@ -143,52 +162,154 @@ export function installPageRelay(win: Window = window) {
       const method = (
         init?.method ?? (input instanceof Request ? input.method : "GET")
       ).toUpperCase();
-      const packPath = /^\/api\/openings\/([a-f0-9-]{36})(\/open)?$/i.exec(
-        url.pathname,
-      );
+      const copySubject = CARD_DETAILS_PATH.exec(url.pathname)?.[1];
+      const trackCopies = copySubject && preferences?.listingPrices !== false;
       if (
+        method === "GET" &&
         url.origin === win.location.origin &&
-        ((url.pathname === "/api/packs/inventory" &&
-          preferences?.packInventory !== false) ||
-          (packPath &&
-            (packPath[2]
-              ? preferences?.packInventory !== false
-              : preferences?.packOpenings !== false)))
+        CARD_FEED_PATH.test(url.pathname) &&
+        (!ready || preferences?.servicesCards || trackCopies)
+      ) {
+        void response
+          .then(async (res) => {
+            if (
+              !res.ok ||
+              (ready && !preferences?.servicesCards && !trackCopies)
+            )
+              return;
+            const data = trackCopies
+              ? await decodeSource(res)
+              : await res.clone().json();
+            if (
+              trackCopies &&
+              preferences?.listingPrices !== false &&
+              String(data?.subjectId) === copySubject &&
+              Array.isArray(data.copies)
+            )
+              rememberSubjects({
+                items: data.copies.map((copy: { id?: unknown }) => ({
+                  instanceId: copy?.id,
+                  subjectId: copySubject,
+                })),
+              });
+            if (ready && !preferences?.servicesCards) return;
+            const ids = observedCardIds(url.pathname, data);
+            const needsNativeData =
+              CARD_DETAILS_PATH.test(url.pathname) ||
+              (preferences?.listingPrices !== false &&
+                AUCTION_DETAILS_PATH.test(url.pathname) &&
+                (data as { auction?: { yours?: boolean } } | null)?.auction
+                  ?.yours === true) ||
+              CARD_PRICES_PATH.test(url.pathname) ||
+              ["/api/fusion/copies", "/api/me/auctions"].includes(
+                url.pathname,
+              ) ||
+              (url.pathname === "/api/collection" &&
+                url.searchParams.get("sendable") === "1");
+            if (!ids.length && !needsNativeData) return;
+            const deliver = () => {
+              if (preferences?.servicesCards)
+                relay({
+                  type: RELAY_CARDS,
+                  path: url.pathname + url.search,
+                  ids,
+                  ...(needsNativeData && { data }),
+                });
+            };
+            if (ready) deliver();
+            else {
+              buffer.push(deliver);
+              if (buffer.length > RELAY_BUFFER) buffer.shift();
+            }
+          })
+          .catch(() => {});
+      }
+      if (
+        method === "GET" &&
+        url.origin === win.location.origin &&
+        (url.pathname === "/api/me" ||
+          (url.pathname === "/api/packs/inventory" && !url.search))
+      ) {
+        const href = win.location.href;
+        const identity = url.pathname === "/api/me";
+        void response
+          .then(async (res) => {
+            if (!res.ok && !(identity && res.status === 401)) return;
+            const data = res.ok ? await res.clone().json() : null;
+            const deliver = () => {
+              if (identity)
+                relay({
+                  type: RELAY_PACK,
+                  kind: "identity",
+                  data: data?.handle
+                    ? {
+                        handle: data.handle,
+                        currentOpening: data.currentOpening
+                          ? { id: data.currentOpening.id }
+                          : undefined,
+                      }
+                    : null,
+                });
+              else if (
+                preferences?.inventory &&
+                Array.isArray(data?.packs) &&
+                !data.next &&
+                !data.cursor &&
+                !data.hasMore &&
+                (data.total === undefined || data.total === data.packs.length)
+              )
+                relay({
+                  type: RELAY_PACK,
+                  kind: "inventory",
+                  href,
+                  data: {
+                    packs: data.packs.map(
+                      (p: { status?: string; openingId?: string }) => ({
+                        status: p.status,
+                        openingId: p.openingId,
+                      }),
+                    ),
+                  },
+                });
+            };
+            if (ready) deliver();
+            else {
+              buffer.push(deliver);
+              if (buffer.length > RELAY_BUFFER) buffer.shift();
+            }
+          })
+          .catch(() => {});
+      }
+      const packPath = /^\/api\/openings\/([a-f0-9-]{36})$/i.exec(url.pathname);
+      if (
+        method === "GET" &&
+        packPath &&
+        url.origin === win.location.origin &&
+        preferences?.packOpenings !== false
       ) {
         void response
           .then(async (res) => {
             if (!res.ok) return;
-            if (method === "GET" && url.pathname === "/api/packs/inventory") {
+            const cards = parseOpening(await res.clone().json());
+            if (
+              cards.length &&
+              cards[0].openingId.toLowerCase() === packPath[1].toLowerCase()
+            )
               relay({
                 type: RELAY_PACK,
-                kind: "inventory",
-                ids: parseReadyPackIds(await res.clone().json()),
-                requestedAt: submittedAt,
+                kind: "opening",
+                data: {
+                  id: cards[0].openingId,
+                  cards: cards.map((card) => ({
+                    slot: card.slot,
+                    subjectId: card.subjectId,
+                    instanceId: card.instanceId,
+                    rarity: card.rarity,
+                    veil: card.variant.veil,
+                    card: { fullArt: card.variant.fullArt },
+                  })),
+                },
               });
-            } else if (method === "GET" && packPath && !packPath[2]) {
-              const cards = parseOpening(await res.clone().json());
-              if (
-                cards.length &&
-                cards[0].openingId.toLowerCase() === packPath[1].toLowerCase()
-              )
-                relay({
-                  type: RELAY_PACK,
-                  kind: "opening",
-                  data: {
-                    id: cards[0].openingId,
-                    cards: cards.map((card) => ({
-                      slot: card.slot,
-                      subjectId: card.subjectId,
-                      instanceId: card.instanceId,
-                      rarity: card.rarity,
-                      veil: card.variant.veil,
-                      card: { fullArt: card.variant.fullArt },
-                    })),
-                  },
-                });
-            } else if (method === "POST" && packPath?.[2]) {
-              relay({ type: RELAY_PACK, kind: "opened", id: packPath[1] });
-            }
           })
           .catch(() => {});
       }
@@ -211,7 +332,7 @@ export function installPageRelay(win: Window = window) {
         const source = method === "GET" ? "batch" : "draft";
         const data =
           source === "batch"
-            ? response.then((res) => (res.ok ? res.clone().json() : undefined))
+            ? response.then((res) => (res.ok ? decodeSource(res) : undefined))
             : typeof init?.body === "string"
               ? Promise.resolve().then(() => JSON.parse(init.body as string))
               : draftRequest
@@ -247,42 +368,13 @@ export function installPageRelay(win: Window = window) {
           .catch(() => {});
       }
       if (
-        method === "GET" &&
-        url.origin === win.location.origin &&
-        win.location.pathname === "/market/sell" &&
-        preferences?.listingPrices !== false &&
-        /^\/api\/collection\/\d+$/.test(url.pathname)
-      ) {
-        void response
-          .then(async (res) => {
-            if (!res.ok) return;
-            const data = await res.clone().json();
-            const subject = url.pathname.split("/").pop();
-            if (
-              String(data?.subjectId) !== subject ||
-              !Array.isArray(data.copies)
-            )
-              return;
-            for (const [id, card] of saleSubjects({
-              items: data.copies.map((copy: { id?: unknown }) => ({
-                instanceId: copy?.id,
-                subjectId: subject,
-              })),
-            }))
-              subjects.set(id, card);
-          })
-          .catch(() => {});
-      }
-      if (
         method === "POST" &&
         url.origin === win.location.origin &&
         LISTING_WRITES.test(url.pathname) &&
         preferences?.listingChanges !== false
       ) {
         const trackPrices = preferences?.listingPrices !== false;
-        const knownSubjects = trackPrices
-          ? new Map(subjects)
-          : new Map<string, string>();
+
         const body = !trackPrices
           ? undefined
           : typeof init?.body === "string"
@@ -294,12 +386,14 @@ export function installPageRelay(win: Window = window) {
           .then(async (res) => {
             if (!res.ok) return;
             const result = await res.clone().json();
+            // A native sale may follow a collection read before its cloned body finishes decoding.
+            if (trackPrices) await Promise.allSettled(decodingSubjects);
             const listings = listingConfirmations(
               url.pathname,
               await body,
               result,
               submittedAt,
-              knownSubjects,
+              subjects,
             );
             if (
               listings.length ||
@@ -366,4 +460,36 @@ export function installPageRelay(win: Window = window) {
     }
     return response;
   } as typeof fetch;
+}
+
+export function observedCardIds(path: string, data: unknown): string[] {
+  const ids = new Set<string>();
+  function add(value: unknown) {
+    const id =
+      typeof value === "number" && Number.isSafeInteger(value)
+        ? String(value)
+        : value;
+    if (validCardId(id) && ids.size < 500) ids.add(id);
+  }
+  add(CARD_PRICES_PATH.exec(path)?.[1]);
+  add(CARD_DETAILS_PATH.exec(path)?.[1]);
+  function visit(value: unknown, depth: number, card = false) {
+    if (depth > 10 || !value || typeof value !== "object" || ids.size >= 500)
+      return;
+    if (Array.isArray(value)) {
+      for (const item of value.slice(0, 500)) visit(item, depth + 1, card);
+      return;
+    }
+    const row = value as Record<string, unknown>;
+    add(row.subjectId);
+    if (card) add(row.id);
+    for (const [name, nested] of Object.entries(row))
+      visit(
+        nested,
+        depth + 1,
+        name === "card" || (name === "cards" && path === "/api/cards"),
+      );
+  }
+  visit(data, 0, path === "/api/cards");
+  return [...ids];
 }

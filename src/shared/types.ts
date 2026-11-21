@@ -47,6 +47,9 @@ export interface CardInsights {
   readership: number | null;
   readershipSource?: string;
   copies: OwnedCopy[];
+  copiesKnown?: boolean;
+  onSale?: boolean;
+  questMember?: boolean;
   families: CardFamily[] | null;
 }
 export interface CardFamily {
@@ -59,11 +62,14 @@ export interface Friend {
   handle: string;
   key: string;
 }
-export interface Sale {
-  auctionId: string;
+export interface MarketSale {
   price: string;
   soldAt: string;
   finish: Finish;
+  numberOne?: boolean;
+}
+export interface Sale extends MarketSale {
+  auctionId: string;
 }
 export interface MarketHistory {
   finish: Finish;
@@ -74,6 +80,14 @@ export interface MarketHistory {
   high: string | null;
   sales: Sale[];
   complete: boolean;
+  lastSale?: MarketSale;
+  daily?: {
+    day: string;
+    count: number;
+    low: string;
+    median: string;
+    high: string;
+  }[];
 }
 export interface Album {
   id: string;
@@ -132,15 +146,6 @@ export interface Settings {
   autoSkipOpening: boolean;
   autoDismissFoundPack: boolean;
   showRemainingPackCount: boolean;
-  fusionEnabled: boolean;
-  fusionNextBatchEnabled: boolean;
-  fusionRespectFamilyImpact: boolean;
-  fusionRespectBlacklist: boolean;
-  fusionRespectPriceThreshold: boolean;
-  fusionExcludeFullArts: boolean;
-  fusionExcludeShiny: boolean;
-  fusionExcludeNumberOnes: boolean;
-  fusionPriceThreshold: number;
   cardOverlaysEnabled: boolean;
   disableCardOverlaysInPulsar: boolean;
   disableCardOverlaysInVortex: boolean;
@@ -198,6 +203,7 @@ export interface Settings {
   pinnedAlbumHotkeys: import("./hotkeys").PinnedAlbumHotkeys;
 }
 export interface KosmoraClient {
+  readonly displayAccount?: Account;
   hasInteractiveReads?(): boolean;
   hasActiveAuctions?(
     id: string,
@@ -217,6 +223,7 @@ export interface KosmoraClient {
     | {
         until: number;
         stale: boolean;
+        fetchedAt?: number;
         value: { count: number; lowestPrice?: string };
       }
     | undefined;
@@ -227,13 +234,8 @@ export interface KosmoraClient {
   cachedListings(
     id: string,
     signal?: AbortSignal,
+    cacheOnly?: boolean,
   ): Promise<import("../kosmora/my-listings").TrackedListingHistory>;
-  listingHistory(
-    id: string,
-    mode: import("./listing-cache").HistoryMode,
-    signal?: AbortSignal,
-    limits?: import("../kosmora/my-listings").ListingLimits,
-  ): Promise<import("../kosmora/my-listings").ListingBatch | undefined>;
   latestListing(
     id: string,
     signal?: AbortSignal,
@@ -250,9 +252,13 @@ export interface KosmoraClient {
     signal?: AbortSignal,
     fresh?: boolean,
   ): Promise<import("../kosmora/trade-interest").InterestCounts>;
+  verifiedCopy(
+    subject: string,
+    copyId: string,
+    expectedAccount: string,
+  ): Promise<OwnedCopy>;
   account(signal?: AbortSignal, fresh?: boolean): Promise<Account>;
   friends(signal?: AbortSignal, fresh?: boolean): Promise<Friend[]>;
-  questSubjects(signal?: AbortSignal, fresh?: boolean): Promise<string[]>;
   families(
     signal?: AbortSignal,
     fresh?: boolean,
@@ -261,6 +267,7 @@ export interface KosmoraClient {
     subjectId: string,
     signal?: AbortSignal,
     fresh?: boolean,
+    includeMyListings?: boolean,
   ): Promise<CardInsights>;
   activeAuctions(
     subjectId: string,

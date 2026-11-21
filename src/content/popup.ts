@@ -1,3 +1,4 @@
+import { hasFriendInterests } from "../shared/trade-matches";
 import { LISTING_REFRESH_LABEL } from "../kosmora/my-listings";
 import { setRequestPriority } from "../shared/request-scheduler";
 import { headerIcon, pinIcon, tooltipIcon } from "./icons";
@@ -103,6 +104,7 @@ export class Popup {
   private notesTab = button("", () => this.selectTab("notes"), "tab");
   private selectedTab: PopupTab = "market";
   private tradeResult?: TradeMatches;
+  private cachedTradeFriends?: Awaited<ReturnType<KosmoraClient["friends"]>>;
   private tradeError?: string;
   private insightError?: string;
   private activeAuctions?: number | Error;
@@ -224,7 +226,7 @@ export class Popup {
         "",
         () =>
           this.selectedTab === "trade"
-            ? this.refreshTrade(true)
+            ? this.refreshTradeFromCache()
             : this.selectedTab === "history"
               ? this.listingHistory?.refresh()
               : this.selectedTab === "notes"
@@ -906,7 +908,11 @@ export class Popup {
             if (price !== undefined || !this.listingPriceStale)
               this.lowestListingPrice =
                 price ?? new Error("The lowest listing price is unavailable.");
-            if (price !== undefined) this.listingPriceStale = false;
+            if (price !== undefined)
+              this.listingPriceStale = !!this.client.peekAuction?.(
+                this.details.subjectId,
+                this.details.name,
+              )?.stale;
           }
         } catch (error) {
           if (
@@ -983,6 +989,7 @@ export class Popup {
     this.refreshButton.disabled = history && this.historyRefreshBusy;
   }
   setAccount(account: Account, pinned: string[], fresh = false) {
+    if (this.account?.key !== account.key) this.cachedTradeFriends = undefined;
     this.account = account;
     this.notes?.setAccount(account);
     this.listingHistory?.setAccount(account);
@@ -991,6 +998,24 @@ export class Popup {
     this.albumRefresh = fresh;
     void this.loadAlbums();
     this.refreshTrade();
+  }
+  private refreshTradeFromCache() {
+    const friends = this.cachedTradeFriends,
+      account = this.account,
+      families = this.details?.families;
+    if (!friends || !account || !families?.length) return;
+    void readTradeMatches(account.key, families, friends)
+      .then((result) => {
+        if (
+          this.closed ||
+          this.account !== account ||
+          this.cachedTradeFriends !== friends
+        )
+          return;
+        this.tradeResult = result;
+        this.renderTrade();
+      })
+      .catch(() => {});
   }
   refreshTrade(fresh = false) {
     this.tradeRequest?.abort();
@@ -1001,8 +1026,24 @@ export class Popup {
     this.renderTrade();
     if (this.selectedTab === "trade") void this.loadTrade(fresh);
   }
+  get usesPrivateData() {
+    return !!this.account;
+  }
+
+  async loadPrivateAccount() {
+    if (!this.context || this.closed) return;
+    try {
+      const account = await this.client.account(undefined, false);
+      if (!this.closed)
+        this.setAccount(account, this.settings.pinnedAlbums[account.key] ?? []);
+    } catch (error) {
+      if (!this.closed) this.albumsFailed(error);
+    }
+  }
+
   private selectTab(tab: PopupTab, remember = true) {
     this.selectedTab = tab;
+    if (tab !== "market" && !this.account) void this.loadPrivateAccount();
     if (remember) this.onLayoutChange({ tab });
     this.market.hidden = tab !== "market";
     this.listingArea.hidden = tab !== "history";
@@ -1045,8 +1086,11 @@ export class Popup {
     try {
       if ((await this.client.account(request.signal)).key !== accountKey)
         throw new Error("Your Kosmora account changed. Reopen the popup.");
-      const friends = await this.client.friends(request.signal, fresh);
+      const friends = (await hasFriendInterests(accountKey))
+        ? await this.client.friends(request.signal, fresh)
+        : [];
       if (!valid()) return;
+      this.cachedTradeFriends = friends;
       const result = await readTradeMatches(accountKey, families, friends);
       if (valid()) this.tradeResult = result;
     } catch (error) {
@@ -1405,10 +1449,19 @@ export class Popup {
           ? "No active listings for this card."
           : price === undefined
             ? "Loading the lowest listing price."
-            : `Lowest current listing price across all finishes: ${formatKosmo(price)} Kosmo.`;
+            : `Lowest observed auction price across all finishes: ${formatKosmo(price)} Kosmo.`;
     this.listedFor.toggleAttribute("data-stale-price", this.listingPriceStale);
     if (this.listingPriceStale)
       this.listedFor.title = "Last known lowest listing price.";
+    const fetchedAt =
+      this.context &&
+      this.client.peekAuction?.(this.context.subjectId, marketName ?? "")
+        ?.fetchedAt;
+    if (fetchedAt)
+      this.listedFor.title +=
+        " Provider snapshot fetched " +
+        new Date(fetchedAt).toLocaleTimeString() +
+        ". Auction prices are delayed five minutes.";
     if (marketName) this.listedFor.title += ` Find ${marketName} at Market.`;
   }
   private saleRates(): SaleRates | undefined {
@@ -1426,7 +1479,8 @@ export class Popup {
     const sales = available
       .flatMap((h) => h.sales)
       .sort((a, b) => Date.parse(b.soldAt) - Date.parse(a.soldAt));
-    if (sales.length) this.marketBody.append(this.chart(available));
+    if (available.some((h) => h.daily?.length || h.sales.length))
+      this.marketBody.append(this.chart(available));
     const table = el("table", "stats");
     table.setAttribute("aria-label", "Market summaries by variant");
     const head = el("tr");
@@ -1485,7 +1539,7 @@ export class Popup {
       if (h instanceof Error)
         this.marketBody.append(note(`${FINISH_LABEL[f]}: ${h.message}`, true));
     }
-    if (available.some((h) => !h.complete))
+    if (available.some((h) => !h.complete && !h.daily))
       this.marketBody.append(
         note(
           "The chart uses the returned sales sample. Counts and price summaries cover the reported window.",
@@ -1541,7 +1595,11 @@ export class Popup {
       }
     } else if (available.length)
       this.marketBody.append(
-        note("No completed sales in the available variant histories."),
+        note(
+          available.some((h) => h.count || h.lastSale)
+            ? "Individual sales are unavailable. Daily prices are shown above."
+            : "No completed sales in the available variant histories.",
+        ),
       );
   }
   private chart(histories: MarketHistory[]) {
@@ -1551,10 +1609,18 @@ export class Popup {
     svg.setAttribute("role", "img");
     svg.setAttribute(
       "aria-label",
-      "Completed sale prices over the last 30 days, separated by variant",
+      histories.some((h) => h.daily)
+        ? "Daily median sale prices over the last 30 days by variant"
+        : "Completed sale prices over the last 30 days, separated by variant",
     );
-    const sales = histories.flatMap((h) => h.sales),
-      values = sales.map((s) => BigInt(s.price));
+    const samples = (h: MarketHistory) =>
+      h.daily
+        ? h.daily.map((row) => ({
+            price: row.median,
+            soldAt: row.day + "T00:00:00Z",
+          }))
+        : h.sales;
+    const values = histories.flatMap(samples).map((s) => BigInt(s.price));
     const low = values.reduce((a, b) => (a < b ? a : b)),
       high = values.reduce((a, b) => (a > b ? a : b)),
       range = high - low || 1n;
@@ -1572,7 +1638,7 @@ export class Popup {
       svg.append(line);
     }
     for (const h of histories) {
-      const points = [...h.sales]
+      const points = [...samples(h)]
         .sort((a, b) => Date.parse(a.soldAt) - Date.parse(b.soldAt))
         .map((s) => ({
           sale: s,
@@ -1598,7 +1664,7 @@ export class Popup {
         circle.setAttribute("r", "3");
         circle.setAttribute("fill", COLORS[h.finish]);
         const title = document.createElementNS(svg.namespaceURI, "title");
-        title.textContent = `${FINISH_LABEL[h.finish]} · ${formatKosmo(p.sale.price)} Kosmo · ${new Date(p.sale.soldAt).toLocaleString()}`;
+        title.textContent = `${FINISH_LABEL[h.finish]} · ${formatKosmo(p.sale.price)} Kosmo · ${new Date(p.sale.soldAt).toLocaleString(undefined, h.daily ? { timeZone: "UTC" } : undefined)}`;
         circle.append(title);
         svg.append(circle);
       }
@@ -1628,7 +1694,11 @@ export class Popup {
     if (!this.account) {
       if (showAlbums)
         area.append(
-          note(this.albumError ?? "Loading your albums…", !!this.albumError),
+          note(
+            this.albumError ??
+              "Open this card in Kosmora to verify your copies.",
+            !!this.albumError,
+          ),
         );
       return;
     }
@@ -1638,9 +1708,11 @@ export class Popup {
       if (showAlbums)
         area.append(
           note(
-            this.details
-              ? "Own a copy of this card to add it to an album."
-              : "Loading owned copies…",
+            this.details?.copiesKnown === false
+              ? "Open this card in Kosmora to verify your copies."
+              : this.details
+                ? "Own a copy of this card to add it to an album."
+                : "Loading owned copies…",
           ),
         );
       return;
@@ -1763,24 +1835,28 @@ export class Popup {
       this.openingCopyAction;
     this.sellButton.title = !this.details
       ? "Loading owned copies…"
-      : !this.details.copies.length
-        ? "Own a copy of this card to sell it."
-        : !copy
-          ? "Choose an owned copy below to sell it."
-          : copy.state !== "available"
-            ? "This copy is not available to sell."
-            : "Open the sell form for this owned copy";
+      : this.details.copiesKnown === false
+        ? "Open this card in Kosmora to verify ownership."
+        : !this.details.copies.length
+          ? "Own a copy of this card to sell it."
+          : !copy
+            ? "Choose an owned copy below to sell it."
+            : copy.state !== "available"
+              ? "This copy is not available to sell."
+              : "Open the sell form for this owned copy";
     for (const [action, control] of [
       ["gift", this.giftButton],
       ["trade", this.tradeButton],
     ] as const) {
       const problem = !this.details
         ? "Loading owned copies…"
-        : !this.details.copies.length
-          ? `Own a copy of this card to ${action} it.`
-          : !copy
-            ? `Choose an owned copy to ${action} it.`
-            : transferProblem(copy, action);
+        : this.details.copiesKnown === false
+          ? "Open this card in Kosmora to verify ownership."
+          : !this.details.copies.length
+            ? `Own a copy of this card to ${action} it.`
+            : !copy
+              ? `Choose an owned copy to ${action} it.`
+              : transferProblem(copy, action);
       control.disabled =
         !!problem || !this.account || this.pending || this.openingCopyAction;
       control.title = problem ?? `Open the ${action} form for this owned copy`;
@@ -1799,18 +1875,13 @@ export class Popup {
     if (!this.status.isConnected) this.albumArea.append(this.status);
     this.renderSell();
     try {
-      if (
-        (await this.client.account(undefined, action !== "sell")).key !==
-        accountKey
-      )
-        throw new Error("Your Kosmora account changed. Reopen the popup.");
-      const fresh = await this.client.insights(
+      const owned = await this.client.verifiedCopy(
         this.context.subjectId,
-        undefined,
-        true,
+        copy.id,
+        accountKey,
       );
-      const owned = fresh.copies.find((c) => c.id === copy.id);
-      if (!owned) throw new Error("You no longer own this copy.");
+      if (action === "sell" && owned.state !== "available")
+        throw new Error("This copy is no longer available to sell.");
       if (action !== "sell") {
         const problem = transferProblem(owned, action);
         if (problem) throw new Error(problem);

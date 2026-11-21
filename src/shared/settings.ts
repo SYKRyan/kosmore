@@ -11,7 +11,6 @@ import {
   SALE_MINIMUMS,
   type SaleRarity,
   validDiscountThreshold,
-  validFusionPriceThreshold,
   validSaleAdjustment,
   validSalePrice,
 } from "./sales-prices";
@@ -55,15 +54,6 @@ export const defaults = (): Settings => ({
   autoSkipOpening: false,
   autoDismissFoundPack: false,
   showRemainingPackCount: true,
-  fusionEnabled: false,
-  fusionNextBatchEnabled: true,
-  fusionRespectFamilyImpact: true,
-  fusionRespectBlacklist: true,
-  fusionRespectPriceThreshold: false,
-  fusionExcludeFullArts: true,
-  fusionExcludeShiny: true,
-  fusionExcludeNumberOnes: true,
-  fusionPriceThreshold: 0,
   cardOverlaysEnabled: true,
   disableCardOverlaysInPulsar: false,
   disableCardOverlaysInVortex: false,
@@ -182,14 +172,6 @@ export function parseSettings(value: unknown): Settings {
     "autoSkipOpening",
     "autoDismissFoundPack",
     "showRemainingPackCount",
-    "fusionEnabled",
-    "fusionNextBatchEnabled",
-    "fusionRespectFamilyImpact",
-    "fusionRespectBlacklist",
-    "fusionRespectPriceThreshold",
-    "fusionExcludeFullArts",
-    "fusionExcludeShiny",
-    "fusionExcludeNumberOnes",
     "cardOverlaysEnabled",
     "salesOverlaysEnabled",
     "showSalesLastSale",
@@ -206,8 +188,6 @@ export function parseSettings(value: unknown): Settings {
     "pinnedAlbumsEnabled",
   ] as const)
     if (typeof v[key] === "boolean") d[key] = v[key];
-  if (validFusionPriceThreshold(v.fusionPriceThreshold))
-    d.fusionPriceThreshold = v.fusionPriceThreshold;
   for (const key of [
     "salesLastSaleAdjustment",
     "salesLowestListingAdjustment",

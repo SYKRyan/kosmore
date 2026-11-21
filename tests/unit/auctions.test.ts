@@ -5,7 +5,7 @@ import {
   parseAuctionPage,
 } from "../../src/kosmora/auctions";
 import { GameClient } from "../../src/kosmora/client";
-import { auction, auctionPage } from "../fixtures/auctions";
+import { auction } from "../fixtures/auctions";
 
 const withoutListings = <T extends { listings: unknown }>({
   listings: _listings,
@@ -137,28 +137,46 @@ it("rejects malformed results and pagination without returning a partial count",
     })),
   ).rejects.toThrow("result page");
 });
-it("caches auction reads for 60 seconds, refreshes explicitly, and isolates accounts", async () => {
-  let account = "FirstPlayer";
-  const fetcher = vi.fn(async (input: RequestInfo | URL) =>
-    Response.json(
-      String(input) === "/api/me" ? { handle: account } : auctionPage(),
-    ),
+it("filters elapsed auctions from the Services snapshot and refreshes the tab view on account changes", async () => {
+  let handle = "FirstPlayer";
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    expect(input).toBe("/api/me");
+    return Response.json({ handle });
+  });
+  const send = vi.fn(
+    async ({ requestId }: { requestId: string; account: string }) => ({
+      requestId,
+      ok: true,
+      data: {
+        "42": {
+          stale: false,
+          until: Date.now() + 300_000,
+          card: {
+            auctions: [
+              { price: "10", endsAt: "2000-01-01T00:00:00Z" },
+              { price: "20", endsAt: "2099-01-01T00:00:00Z" },
+            ],
+          },
+        },
+      },
+    }),
   );
-  const client = new GameClient(fetcher as typeof fetch);
-  await client.account();
-  expect(await client.activeAuctions("42", "Card")).toBe(2);
-  expect(await client.lowestListingPrice("42", "Card")).toBe("10000000");
-  await client.activeAuctions("42", "Card");
-  expect(fetcher).toHaveBeenCalledTimes(2);
-  await client.activeAuctions("42", "Card", undefined, true);
-  expect(fetcher).toHaveBeenCalledTimes(3);
-  const now = Date.now();
-  const clock = vi.spyOn(Date, "now").mockReturnValue(now + 60_001);
-  await client.activeAuctions("42", "Card");
-  expect(fetcher).toHaveBeenCalledTimes(4);
-  clock.mockRestore();
-  account = "SecondPlayer";
-  await client.account();
-  await client.activeAuctions("42", "Card");
-  expect(fetcher).toHaveBeenCalledTimes(6);
+  vi.stubGlobal("chrome", { runtime: { sendMessage: send } });
+  try {
+    const client = new GameClient(fetcher as typeof fetch);
+    await client.account();
+    expect(await client.activeAuctions("42", "Card")).toBe(1);
+    expect(client.peekAuction("42", "Card")?.value.lowestPrice).toBe("20");
+    handle = "SecondPlayer";
+    await client.account();
+    expect(client.peekAuction("42", "Card")).toBeUndefined();
+    expect(await client.lowestListingPrice("42", "Card")).toBe("20");
+    expect(send.mock.calls.map(([call]) => call.account)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

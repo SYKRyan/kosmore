@@ -49,7 +49,11 @@ interface Reads {
     subjectId: string,
     signal?: AbortSignal,
     fresh?: boolean,
-  ): Promise<{ families: CardFamily[] | null; copies?: OwnedCopy[] }>;
+  ): Promise<{
+    families: CardFamily[] | null;
+    copies?: OwnedCopy[];
+    copiesKnown?: boolean;
+  }>;
   expediteCard?(subjectId: string): void;
   /** The signed-in account; card reads are cached per account. */
   account?(signal?: AbortSignal, fresh?: boolean): Promise<unknown>;
@@ -464,7 +468,8 @@ export class FusionFamilyImpact {
             ownershipRevision !== this.ownershipRevision
           )
             return;
-          if (card.copies) this.owned.set(id, card.copies.length);
+          if (card.copies && card.copiesKnown !== false)
+            this.owned.set(id, card.copies.length);
           else if (this.trading() || this.vortex() || this.selling())
             this.failed.set(id, this.now());
           this.freshOwned.delete(id);

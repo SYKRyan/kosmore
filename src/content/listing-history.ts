@@ -1,24 +1,16 @@
 import type { Account, KosmoraClient } from "../shared/types";
 import { FINISH_LABEL, messageOf } from "../shared/types";
 import {
-  listingComplete,
-  nextListingLimits,
-  type ListingBatch,
   type TrackedListing,
   type TrackedListingHistory,
 } from "../kosmora/my-listings";
-import type { HistoryMode } from "../shared/listing-cache";
 import { formatKosmo } from "../kosmora/contracts";
 import { button, el, note } from "./ui";
-
-type LoadMode = HistoryMode | "saved";
 
 export class ListingHistory {
   private account?: string;
   private saved?: TrackedListingHistory;
-  private scan?: ListingBatch;
   private error?: string;
-  private failedMode: LoadMode = "saved";
   private request?: AbortController;
   private active = false;
   private closed = false;
@@ -33,7 +25,7 @@ export class ListingHistory {
     if (this.account === account.key) return;
     this.cancel();
     this.account = account.key;
-    this.saved = this.scan = undefined;
+    this.saved = undefined;
     this.error = undefined;
     if (this.active) void this.load();
   }
@@ -44,7 +36,7 @@ export class ListingHistory {
     else void this.load();
   }
   refresh() {
-    void this.load("refresh");
+    void this.load(true);
   }
   invalidate() {
     if (!this.active) return;
@@ -61,13 +53,12 @@ export class ListingHistory {
     this.closed = true;
     this.cancel();
   }
-  private async load(mode: LoadMode = "saved") {
+  private async load(cacheOnly = false) {
     if (!this.account || this.request || this.closed || !this.active) return;
     const request = new AbortController();
     this.request = request;
     this.busy(true);
     this.error = undefined;
-    this.failedMode = mode;
     const valid = () =>
       !this.closed &&
       this.active &&
@@ -75,24 +66,11 @@ export class ListingHistory {
       this.request === request;
     this.render();
     try {
-      if (mode !== "saved") {
-        const limits =
-          mode === "more" && this.scan
-            ? nextListingLimits(this.scan)
-            : undefined;
-        const scan = await this.client.listingHistory(
-          this.subject,
-          mode,
-          request.signal,
-          limits,
-        );
-        if (!valid()) return;
-        if (scan) this.scan = scan;
-      }
       this.dirty = false;
       const saved = await this.client.cachedListings(
         this.subject,
         request.signal,
+        cacheOnly,
       );
       if (valid()) this.saved = saved;
     } catch (error) {
@@ -114,10 +92,12 @@ export class ListingHistory {
     const listings = new Map<string, TrackedListing>(
       this.saved?.listings.map((row) => [row.id, row]),
     );
-    for (const row of this.scan?.listings ?? [])
-      if (!listings.has(row.id)) listings.set(row.id, row);
     if (listings.size) {
-      this.area.append(note("Your original starting prices."));
+      this.area.append(
+        note(
+          "Your saved starting prices and open single-card listings. Services omits lots and face-down listings.",
+        ),
+      );
       const list = el("ul", "my-listings");
       list.setAttribute("aria-label", "My previous listings");
       for (const listing of listings.values()) {
@@ -147,26 +127,16 @@ export class ListingHistory {
     } else if (this.saved)
       this.area.append(
         note(
-          this.saved.hasMore
-            ? "No saved listings for this card."
-            : "You haven't listed this card yet.",
+          this.saved.openListingsKnown === undefined && !this.saved.hasMore
+            ? "You haven't listed this card yet."
+            : "No saved or open single-card listings were found. Services omits lots and face-down listings.",
         ),
       );
-    if (this.request && this.failedMode !== "saved")
-      this.area.append(note("Updating your listing history…"));
+    if (this.request) this.area.append(note("Updating your listing history…"));
     if (this.error)
       this.area.append(
         note(this.error, true),
-        button("Retry listing history", () => void this.load(this.failedMode)),
+        button("Retry listing history", () => void this.load()),
       );
-    if (this.saved?.hasMore && !(this.scan && listingComplete(this.scan))) {
-      const more = button(
-        "Load more",
-        () => void this.load("more"),
-        "sales-toggle",
-      );
-      more.disabled = !!this.request;
-      this.area.append(more);
-    }
   }
 }

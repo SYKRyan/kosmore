@@ -28,10 +28,6 @@ export function settingMicros(value: number) {
   if (Number(decimal) === value) return decimalMicros(decimal);
 }
 
-export function validFusionPriceThreshold(value: unknown): value is number {
-  return value === 0 || validSalePrice(value);
-}
-
 export function validSalePrice(value: unknown, minimum = 0): value is number {
   return (
     typeof value === "number" &&

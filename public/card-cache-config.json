@@ -1,0 +1,4 @@
+{
+  "retentionDays": 30,
+  "freshnessSeconds": 300
+}

@@ -7,8 +7,9 @@ export const RELAY_DATA = "kosmore.pageData";
 export const RELAY_READY = "kosmore.relayReady";
 export interface RelayPreferences {
   collectSaleRateData: boolean;
-  packInventory: boolean;
+  servicesCards?: boolean;
   packOpenings: boolean;
+  inventory?: boolean;
   fusion: boolean;
   vortex: boolean;
   familyMilestones: boolean;
@@ -17,15 +18,12 @@ export interface RelayPreferences {
   listingPrices: boolean;
 }
 export const RELAY_PACK = "kosmore.packData";
-export type PackRelayMessage =
-  | {
-      type: typeof RELAY_PACK;
-      kind: "inventory";
-      ids: string[];
-      requestedAt: number;
-    }
-  | { type: typeof RELAY_PACK; kind: "opened"; id: string }
-  | { type: typeof RELAY_PACK; kind: "opening"; data: unknown };
+export type PackRelayMessage = {
+  type: typeof RELAY_PACK;
+  kind: "opening" | "identity" | "inventory";
+  href?: string;
+  data: unknown;
+};
 export const RELAY_LISTED = "kosmore.listingChanged";
 export const LISTING_WRITES =
   /^\/api\/(?:auctions(?:\/[0-9a-f-]{36}\/relist)?|market\/listings\/batch)$/i;
@@ -64,4 +62,18 @@ export function isRelayMessage(value: unknown): value is RelayMessage {
     RELAY_PATH.test(m.path) &&
     "data" in m
   );
+}
+
+export const RELAY_CARDS = "kosmore.servicesCards";
+export const AUCTION_DETAILS_PATH = /^\/api\/auctions\/([a-f0-9-]{36})$/i;
+export const CARD_DETAILS_PATH = /^\/api\/collection\/([1-9]\d{0,17})$/;
+export const CARD_PRICES_PATH = /^\/api\/cards\/([1-9]\d{0,17})\/prices$/;
+export const CARD_FEED_PATH =
+  /^\/api\/(?:collection(?:\/[1-9]\d{0,17})?|cards(?:\/[1-9]\d{0,17}(?:\/prices)?)?|auctions(?:\/[a-f0-9-]{36})?|me\/auctions|fusion\/cards|vortex\/lobby|market\/listings\/batch|openings\/[a-f0-9-]{36}|trade(?:s)?(?:\/[a-f0-9-]{36})?)$/i;
+
+export interface CardFeedMessage {
+  type: typeof RELAY_CARDS;
+  path: string;
+  ids: string[];
+  data?: unknown;
 }

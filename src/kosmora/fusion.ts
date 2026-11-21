@@ -1,4 +1,4 @@
-import { count, object, subjectId, text, uuid } from "./contracts";
+import { count, object, subjectId, text } from "./contracts";
 
 /** One card in the Fusion page's grid (`GET /api/fusion/cards`). */
 export interface FusionCard {
@@ -41,26 +41,6 @@ export function parseFusionCards(value: unknown): FusionCard[] {
       return [];
     }
   });
-}
-
-export function parseFusionCopies(value: unknown) {
-  const { copies } = object(value);
-  if (!Array.isArray(copies))
-    throw new Error("Kosmora returned an unfamiliar Fusion copy list.");
-  return copies.map((value) => {
-    const copy = object(value);
-    return {
-      id: uuid(copy.id).toLowerCase(),
-      numberOne: copy.numberOne === true,
-    };
-  });
-}
-
-export function parseFusionRules(value: unknown) {
-  const maxBatches = count(object(value).maxBatches);
-  if (!maxBatches)
-    throw new Error("Kosmora returned an invalid Fusion tray limit.");
-  return { recipes: parseRecipes(value), maxBatches };
 }
 
 /** Family tier thresholds from `GET /api/families`, ascending. */

@@ -17,11 +17,15 @@ export function lastSaleSummary(
   const partial = finishes.some(
     (finish) =>
       histories[finish] instanceof Error ||
-      !(histories[finish] as { complete: boolean }).complete,
+      !(
+        (histories[finish] as { complete: boolean; daily?: unknown })
+          .complete || (histories[finish] as { daily?: unknown }).daily
+      ),
   );
   const sales = finishes.flatMap((finish) => {
     const history = histories[finish];
-    return history && !(history instanceof Error) ? history.sales : [];
+    if (!history || history instanceof Error) return [];
+    return history.lastSale ? [history.lastSale] : history.sales;
   });
   const latest = sales.sort(
     (a, b) => Date.parse(b.soldAt) - Date.parse(a.soldAt),
@@ -36,6 +40,6 @@ export function lastSaleSummary(
   const price = `${(cents / 100n).toLocaleString("en-US")}.${String(cents % 100n).padStart(2, "0")}`;
   return {
     label: `Last Sale: $${price}${partial ? " (partial)" : ""}`,
-    title: `${FINISH_LABEL[latest.finish]} · ${new Date(latest.soldAt).toLocaleString()} · Kosmo. Most recent returned sale across selected variants.${partial ? " Some history is incomplete or unavailable." : ""}`,
+    title: `${FINISH_LABEL[latest.finish]} · ${new Date(latest.soldAt).toLocaleString()} · Kosmo.${latest.numberOne ? " #1 copy." : ""} Most recent returned sale across selected variants.${partial ? " Some history is incomplete or unavailable." : ""}`,
   };
 }

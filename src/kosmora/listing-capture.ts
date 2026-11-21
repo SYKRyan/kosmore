@@ -9,6 +9,24 @@ export interface ListingConfirmation {
   startPrice?: string;
 }
 
+export type ListingReceipt = Pick<
+  ListingConfirmation,
+  "auctionId" | "submittedAt"
+>;
+export function validReceipt(value: unknown): value is ListingReceipt {
+  try {
+    const row = object(value);
+    uuid(row.auctionId);
+    return (
+      typeof row.submittedAt === "number" &&
+      Number.isSafeInteger(row.submittedAt) &&
+      row.submittedAt > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 export interface RecordedListing {
   id: string;
   subjectId: string;
@@ -71,6 +89,7 @@ export function listingConfirmations(
         : [result];
   const body = request && typeof request === "object" ? object(request) : {};
   const items = batch && Array.isArray(body.items) ? body.items : [body];
+  const submittedSubjects = saleSubjects(body);
   const prices = new Map<string, string>();
   for (const raw of items) {
     try {
@@ -86,13 +105,26 @@ export function listingConfirmations(
       if (row.ok === false || (batch && row.ok !== true)) return [];
       const auctionId = uuid(row.auctionId).toLowerCase();
       const copyId = listingCopyId(row.instanceId ?? body.instanceId);
+      const reportedSubject =
+        row.subjectId ?? (row.card && object(row.card).subjectId);
+      const subject =
+        reportedSubject === undefined
+          ? copyId && (subjects.get(copyId) ?? submittedSubjects.get(copyId))
+          : subjectId(reportedSubject);
+      const price =
+        row.startPrice === undefined
+          ? ((copyId && prices.get(copyId)) ??
+            (!batch && body.startPrice !== undefined
+              ? amount(body.startPrice)
+              : undefined))
+          : amount(row.startPrice);
       return [
         {
           auctionId,
           submittedAt,
           copyId,
-          subjectId: copyId && subjects.get(copyId),
-          startPrice: copyId && prices.get(copyId),
+          subjectId: subject,
+          startPrice: price,
         },
       ];
     } catch {

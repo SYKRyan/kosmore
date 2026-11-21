@@ -11,9 +11,13 @@ import {
   type Friend,
   type KosmoraClient,
   type Settings,
-  type Sale,
+  type MarketSale,
 } from "../shared/types";
-import { matchFriends, readFriendPreferences } from "../shared/trade-matches";
+import {
+  hasFriendInterests,
+  matchFriends,
+  readFriendPreferences,
+} from "../shared/trade-matches";
 import type { FriendReminder } from "../shared/friend-reminders";
 import { ApiError } from "../kosmora/client";
 export interface CardSignals {
@@ -22,10 +26,11 @@ export interface CardSignals {
   saleHistory: boolean;
   interestedFriends: number;
   quest: boolean;
-  lastSale?: Sale;
+  lastSale?: MarketSale;
   lowestListingPrice?: string;
   staleLastSale?: boolean;
   staleListingPrice?: boolean;
+  auctionFetchedAt?: number;
   marketName?: string;
 }
 export type OverlaySettings = Pick<
@@ -62,7 +67,6 @@ export class CardSignalProvider {
       | "hasSaleHistory"
       | "hasActiveAuctions"
       | "insights"
-      | "questSubjects"
       | "activeAuctions"
       | "lowestListingPrice"
       | "peekAuction"
@@ -141,16 +145,16 @@ export class CardSignalProvider {
       ),
       priority,
     );
-    const account = await this.context.get(
-      "account",
-      (shared) =>
-        this.client.account(setRequestPriority(shared, priority), false),
-      false,
-      demand,
-    );
+    const privateAccount = () =>
+      this.context.get(
+        "account",
+        (shared) =>
+          this.client.account(setRequestPriority(shared, priority), false),
+        false,
+        demand,
+      );
     demand.throwIfAborted();
     const key = [
-      account.key,
       id,
       settings.showOnSaleOverlay,
       settings.showActiveAuctionsOverlay,
@@ -259,27 +263,22 @@ export class CardSignalProvider {
             (details ??= this.client.insights(id, signal, false));
           if (settings.showOnSaleOverlay)
             add(async () => {
-              const card = await insights();
+              await privateAccount();
+              const card = await this.client.insights(id, signal, false, true);
               publish({
-                onSale: card.copies.some((copy) => !!copy.auctionId),
+                onSale:
+                  card.onSale === true ||
+                  card.copies.some((copy) => !!copy.auctionId),
               });
             });
           if (settings.showQuestOverlay)
             add(async () => {
-              const subjects = await this.context.get(
-                "quests",
-                (shared) =>
-                  this.client
-                    .questSubjects(setRequestPriority(shared, priority))
-                    .then((ids) => new Set(ids)),
-                false,
-                signal,
-              );
-              publish({ quest: subjects.has(id) });
+              const card = await insights();
+              publish({ quest: card.questMember ?? false });
             });
           if (settings.showSaleHistoryOverlay)
             add(async (ready) => {
-              let lastSale: Sale | undefined;
+              let lastSale: MarketSale | undefined;
               let historyFailed = false;
               let hasSales = false;
               if (settings.showLastSalePriceOverlay) {
@@ -289,12 +288,16 @@ export class CardSignalProvider {
                 const now = Date.now();
                 if (hits.every((hit) => hit && now - hit.until < 86_400_000)) {
                   const cached = hits
-                    .flatMap((hit) => hit!.value.sales)
+                    .flatMap((hit) =>
+                      hit!.value.lastSale
+                        ? [hit!.value.lastSale]
+                        : hit!.value.sales,
+                    )
                     .filter(
                       (sale) =>
                         Date.parse(sale.soldAt) >= now - 30 * 86_400_000,
                     )
-                    .reduce<Sale | undefined>(
+                    .reduce<MarketSale | undefined>(
                       (latest, sale) =>
                         !latest ||
                         Date.parse(sale.soldAt) > Date.parse(latest.soldAt)
@@ -329,18 +332,20 @@ export class CardSignalProvider {
                     finish,
                     readSignal,
                   );
-                  if (history.count > 0) {
+                  if (history.count > 0 || history.lastSale) {
                     hasSales = true;
                     publish({ saleHistory: true });
                   }
                   if (settings.showLastSalePriceOverlay)
-                    for (const sale of history.sales)
+                    for (const sale of history.lastSale
+                      ? [history.lastSale]
+                      : history.sales)
                       if (
                         !lastSale ||
                         Date.parse(sale.soldAt) > Date.parse(lastSale.soldAt)
                       )
                         lastSale = sale;
-                  return history.count > 0;
+                  return history.count > 0 || !!history.lastSale;
                 } catch (error) {
                   historyFailed = true;
                   if (
@@ -373,7 +378,11 @@ export class CardSignalProvider {
                   publish({
                     saleHistory: hasSales,
                     lastSale,
-                    staleLastSale: undefined,
+                    staleLastSale:
+                      FINISHES.some(
+                        (finish) =>
+                          this.client.peekHistory?.(id, finish)?.stale,
+                      ) || undefined,
                   });
               } else {
                 for (const finish of finishes) if (await check(finish)) break;
@@ -416,6 +425,7 @@ export class CardSignalProvider {
                   marketName: card.name,
                   lowestListingPrice: cached.value.lowestPrice,
                   staleListingPrice: cached.stale,
+                  auctionFetchedAt: cached.fetchedAt,
                 });
               const count = recap
                 ? await this.client.activeAuctions(
@@ -434,7 +444,9 @@ export class CardSignalProvider {
                   : current.value.lowestListingPrice !== undefined
                     ? {
                         lowestListingPrice: undefined,
-                        staleListingPrice: undefined,
+                        staleListingPrice:
+                          this.client.peekAuction?.(id, card.name)?.stale ||
+                          undefined,
                       }
                     : {}),
               });
@@ -448,12 +460,19 @@ export class CardSignalProvider {
                 if (lowestListingPrice !== undefined)
                   publish({
                     lowestListingPrice,
-                    staleListingPrice: undefined,
+                    staleListingPrice:
+                      this.client.peekAuction?.(id, card.name)?.stale ||
+                      undefined,
+                    auctionFetchedAt: this.client.peekAuction?.(id, card.name)
+                      ?.fetchedAt,
                   });
               }
             });
           if (settings.showFriendInterestOverlay)
             add(async () => {
+              if (!(await hasFriendInterests())) return;
+              const account = await privateAccount();
+              if (!(await hasFriendInterests(account.key))) return;
               const saved = await this.friendPreferences(
                 account,
                 signal,

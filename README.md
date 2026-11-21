@@ -1,10 +1,7 @@
-**RECENT RATE LIMITS & UPCOMING CHANGES**
----
-The developer of Kosmora has enabled strict rate limits that are preventing the extension from working as expected. We have been in contact and have identified a solution that works for everyone involved.
+KosMore Services supplies shared card prices, sales history, and auction snapshots. In Settings, enter your Services URL and connect your Kosmora account. If your administrator issued a tester invite, enter it before connecting. Open single-card listings load for the linked game account when a feature needs them. Public auction prices are delayed by five minutes at the provider.
 
-The developer has been kind enough to offer developer specific endpoints that should help avoid rate limits and increase the overall performance of third-party extensions like KosMore. Coming soon, KosMore will be providing it's own backend cache and will use a dedicated developer API rather than relying on the signed in user's Kosmora token and the native API. 
+My Last Listing reads confirmed submissions saved on this browser. Linked browsers sync through Services on connection, on startup, and about every five minutes while a Kosmora tab is open. Use Verify account if the Sell page does not yet know who is signed in. Disconnect keeps shared history. Erase synced listing history in Settings clears it across linked browsers on their next sync.
 
-I appreciate your patience while these changes are implemented.
 ---
 
 # KosMore
@@ -74,7 +71,7 @@ Card overlays, Family Impact Overlay, Sales Overlay, profile reminders, trade re
 Hover a supported card, or press its overlay button when enabled, to open KosMore's card popup. It includes rarity, finish, family links, market indicators, album shortcuts, stat boxes, and four icon tabs. The last selected tab is remembered for the next tooltip in that browser tab.
 
 - **Market (chart):** completed-sale history, a price chart, and a per-finish summary for Standard, Shiny, and Full art. Toggle finishes to change the history and related statistics; expand recent sales with **Show All**. **Last Sale** and **Listed For** appear in the header when data exists; Listed For opens the card's Market search.
-- **My listing history (history):** saved starting prices across finishes. The tab opens from local storage. **Load more** scans older listings and saves matching results. The refresh icon checks your newest 180 auctions. Rows distinguish captured submission times from auction end times.
+- **My listing history:** My listing history combines saved starting prices with open single-card listings. Lots and face-down listings are omitted by Services. Refresh shows the available cached data.
 - **Trade (friends):** current friends whose saved family preferences match the card. Expand a friend to see all saved families, highlighted matches, private notes, and **Social**/**Profile** links. One friend expands at a time; a single match opens automatically. This uses the same content and behavior as the companion friend tooltip.
 - **Notes:** private notes for the card, shared across its copies and finishes within your account. Save or cancel edits here; these notes are stored in the extension.
 
@@ -200,7 +197,7 @@ Settings control **preferred family badges**, **possible interest counts**, and 
 Show price helpers beneath the starting-price field on both the single sell screen and **Sell Several Cards**.
 
 - **Show Last Sale price:** display the latest completed-sale price across all finishes in Kosmora's 30-day history.
-- **Show Lowest Listed price:** display the lowest current listing price across all finishes, using the highest bid or the starting price when there are no bids.
+- **Show Lowest Listed price:** display the lowest observed auction price across all finishes, using the highest bid or the starting price when there are no bids.
 - **Show My Last Listing price:** display your newest confirmed original starting price for the card, across finishes, labeled **My Last Listing:**. This uses your listing history rather than a winning bid or final sale price.
 - **Set price when clicked:** each price has its own subsetting to fill that card's starting-price field when clicked.
 - **Price adjustment:** add or subtract a fixed amount of Kosmo from the clicked price. For example, `-1` prices one Kosmo lower. The default is `0`, and adjustments support up to six decimal places.
@@ -210,7 +207,7 @@ Show price helpers beneath the starting-price field on both the single sell scre
 
 Discount, Quick Prices, and Custom Rarity Minimums are off by default. Price buttons fill only that card’s starting price and respect Kosmora’s minimum for its rarity. Review and submit listings using Kosmora’s usual sale controls.
 
-My Last Listing shows the saved starting price for the card. KosMore saves up to 100 listings per account and card. Use the refresh icon on either sale screen or in tooltip History to check your newest 180 auctions across all statuses. **Load more** in History searches older listings and saves the results for the next visit.
+My Last Listing uses submission time to select the latest confirmed starting price across finishes. Its local Sell badge also works offline after account verification.
 
 ### Hotkeys
 
@@ -234,21 +231,6 @@ Find the shortcuts under **Hotkeys → Pack Opening** and the automation and dis
 - **Any key dismisses found pack** starts on under **Pack Openings**. Turn it off to use the **Dismiss Found Pack** keybind instead.
 - **Auto-dismiss found pack** starts off. Turn it on to dismiss the full-screen Rogue and Mega pack alerts automatically. The found packs still appear on the summary.
 - **Auto-skip on next pack** starts off. After you activate **Next Pack** by mouse or hotkey, it presses **Skip** once when the next pack appears. Kosmora’s reveal hints must be enabled so it can warn you about special packs.
-
-### Fusion
-
-Fusion batches are off by default. In **Settings → Fusion**, turn on the group and choose **Enabled Fusion Batches** in the confirmation dialog. Choose **Nevermind** to leave it off. The warning stays visible in Settings while the group is on.
-
-> This feature has been reviewed by the developer. Although approved for use, it may result in "sus points" on your account. Use at your own risk.
-
-On Kosmora’s Fusion page, **✦ Next Batch** appears beside **Clear**. It keeps your picks and fills as many open slots as possible using your recipe and tray limit for the selected rarity. It follows the active search and filters and loads more results when needed. The star spins during selection unless reduced motion is enabled. Review your picks and use Kosmora’s **Fuse** button when ready.
-
-**Enable Next Batch button** starts checked. Adjust the filters below it and click **Save** to apply your choices.
-
-- **Respect Family Impact** starts on. Skip picks that would lower a family tier, taking the whole tray into account.
-- **Respect Blacklist** starts on. Skip cards that belong to any family on the list saved under **Family Impact Overlay → Blacklist**.
-- **Respect Price Threshold** starts off. When on, skip a copy if any completed sale returned for its finish in the last 30 days exceeds the threshold. The threshold starts at 0 Kosmo.
-- **Exclude Full Arts**, **Exclude Shiny**, and **Exclude #1s** each start on. Use the switches to control which copies can be picked.
 
 ### Backup & restore
 

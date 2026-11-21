@@ -33,6 +33,28 @@ export function summarizePrices(histories: MarketHistory[]): PriceSummary {
       sampled: false,
     };
   }
+  if (histories.some((history) => history.daily)) {
+    const range = (key: "low" | "high") => {
+      const prices = histories.flatMap((history) =>
+        history[key] === null ? [] : [BigInt(history[key])],
+      );
+      if (!prices.length) return null;
+      const extreme = prices.reduce((a, b) =>
+        (key === "low" ? a < b : a > b) ? a : b,
+      );
+      return formatKosmo(extreme.toString());
+    };
+    const active = histories.filter((h) => h.count > 0);
+    return {
+      min: range("low"),
+      max: range("high"),
+      median:
+        active.length === 1 && active[0].median !== null
+          ? formatKosmo(active[0].median)
+          : null,
+      sampled: false,
+    };
+  }
   const prices = histories
     .flatMap((h) => h.sales.map((s) => BigInt(s.price)))
     .sort((a, b) => (a < b ? -1 : +(a > b)));

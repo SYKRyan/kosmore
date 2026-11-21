@@ -287,6 +287,21 @@ export class ListingCacheService {
       await this.local.set(updates);
     });
   }
+  async observe(account: string, rows: PersonalListing[]) {
+    const groups = new Map<string, PersonalListing[]>();
+    for (const row of rows) {
+      const group = groups.get(row.subjectId) ?? [];
+      group.push(row);
+      groups.set(row.subjectId, group);
+    }
+    await this.importRows(
+      account,
+      groups,
+      Date.now(),
+      false,
+      new AbortController().signal,
+    );
+  }
   private async importRows(
     account: string,
     groups: Map<string, PersonalListing[]>,

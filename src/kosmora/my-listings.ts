@@ -49,6 +49,7 @@ export interface TrackedListing {
   state?: string;
 }
 export interface TrackedListingHistory {
+  openListingsKnown?: boolean;
   listings: TrackedListing[];
   hasMore: boolean;
 }
@@ -142,7 +143,13 @@ export function applyListingMetadata(
   )
     return row;
   return outcome
-    ? { ...row, copyId, group: outcome.group, state: outcome.state, endsAt: outcome.endsAt }
+    ? {
+        ...row,
+        copyId,
+        group: outcome.group,
+        state: outcome.state,
+        endsAt: outcome.endsAt,
+      }
     : { ...row, copyId };
 }
 

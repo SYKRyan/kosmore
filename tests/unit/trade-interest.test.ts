@@ -73,49 +73,35 @@ it("rejects malformed or incomplete collection responses instead of presenting p
   ])
     expect(() => parseInterestPage(value)).toThrow();
 });
-it("loads all matching family pages through the shared client, caches them, and clears counts on account changes", async () => {
+it("uses only complete observed sendable collection data for the verified account", async () => {
   let handle = "Player";
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-    const url = new URL(String(input), "https://kosmora.io");
-    if (url.pathname === "/api/me") return Response.json({ handle });
-    expect(url.pathname).toBe("/api/collection");
-    expect(url.searchParams.get("split")).toBe("1");
-    expect(url.searchParams.get("status")).toBe("available");
-    expect(url.searchParams.get("sendable")).toBe("1");
-    expect(url.searchParams.has("rarity")).toBe(false);
-    const second = url.searchParams.get("cursor") === "next";
-    return Response.json({
-      items: [
-        row(second ? "2" : "1", second ? "Mythic" : "Epic", second ? 2 : 3),
-      ],
-      nextCursor: second ? null : "next",
-    });
+    expect(input).toBe("/api/me");
+    return Response.json({ handle });
   });
   const client = new GameClient(fetcher as typeof fetch);
   await client.account();
-  expect(await client.possibleInterest(["films", "games", "films"])).toEqual({
-    Common: 0,
-    Uncommon: 0,
-    Rare: 0,
-    Epic: 3,
-    Legendary: 0,
-    Mythic: 2,
+  const path = "/api/collection?family=films&status=available&sendable=1";
+  client.observeCollection(path, { items: [row("1")], nextCursor: "next" });
+  await expect(client.possibleInterest(["films"])).rejects.toThrow(
+    "unavailable",
+  );
+  client.observeCollection(path, {
+    items: [row("1", "Epic", 3)],
+    nextCursor: null,
   });
-  expect(fetcher).toHaveBeenCalledTimes(5);
-  await client.possibleInterest(["films", "games"]);
-  expect(fetcher).toHaveBeenCalledTimes(5);
+  client.observeCollection(path.replace("films", "games"), {
+    items: [row("2", "Mythic", 2)],
+    nextCursor: null,
+  });
+  expect(
+    await client.possibleInterest(["films", "games", "films"]),
+  ).toMatchObject({ Epic: 3, Mythic: 2 });
+  expect(fetcher).toHaveBeenCalledTimes(1);
   handle = "Other";
   await client.account();
-  await client.possibleInterest(["films"]);
-  expect(fetcher).toHaveBeenCalledTimes(8);
-});
-it("does not return a partial count after failed or cyclic pagination", async () => {
-  for (const fail of [false, true]) {
-    const client = new GameClient((async (input) => {
-      if (fail && String(input).includes("cursor="))
-        return Response.json({}, { status: 503 });
-      return Response.json({ items: [row("1")], nextCursor: "loop" });
-    }) as typeof fetch);
-    await expect(client.possibleInterest(["films"])).rejects.toThrow();
-  }
+  await expect(client.possibleInterest(["films"])).rejects.toThrow(
+    "unavailable",
+  );
+  expect(fetcher).toHaveBeenCalledTimes(2);
 });

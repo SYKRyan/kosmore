@@ -4,6 +4,10 @@ KosMore
 A browser extension that adds card insights, shortcuts, and private reminders
 to Kosmora.
 
+KosMore Services supplies shared card prices, sales history, and auction snapshots. In Settings, enter your Services URL and connect your Kosmora account. If your administrator issued a tester invite, enter it before connecting. Open single-card listings load for the linked game account when a feature needs them. Public auction prices are delayed by five minutes at the provider.
+
+My Last Listing reads confirmed submissions saved on this browser. Linked browsers sync through Services on connection, on startup, and about every five minutes while a Kosmora tab is open. Use Verify account if the Sell page does not yet know who is signed in. Disconnect keeps shared history. Erase synced listing history in Settings clears it across linked browsers on their next sync.
+
 - Card tooltips: view market analytics, your listing history, matching
   friends, and private notes while browsing, including pack reveals, trade
   pickers, and Market Activity.
@@ -122,10 +126,7 @@ tab is remembered for the next tooltip in that browser tab.
   history and related statistics; expand recent sales with Show All. Last Sale
   and Listed For appear in the header when data exists; Listed For opens the
   card's Market search.
-- My listing history (history): saved starting prices across finishes. The
-  tab opens from local storage. Load more scans older listings and saves
-  matches. The refresh icon checks your newest 180 auctions. Rows distinguish
-  captured submission times from auction end times.
+- My listing history combines saved starting prices with open single-card listings. Lots and face-down listings are omitted by Services. Refresh shows the available cached data.
 - Trade (friends): current friends whose saved family preferences match the
   card. Expand a friend to see all saved families, highlighted matches,
   private notes, and Social/Profile links. One friend expands at a time; a
@@ -415,10 +416,7 @@ Discount, Quick Prices, and Custom Rarity Minimums are off by default. Price
 buttons fill only that card's starting price and respect Kosmora's minimum
 for its rarity. Review and submit listings using Kosmora's usual sale controls.
 
-My Last Listing shows the saved starting price for the card. KosMore saves up
-to 100 listings per account and card. The refresh icon checks the newest 180
-auctions across all statuses. Load more in tooltip History searches older
-listings and saves the results for the next visit.
+My Last Listing uses submission time to select the latest confirmed starting price across finishes. Its local Sell badge also works offline after account verification.
 
 Hotkeys
 -------
@@ -474,37 +472,6 @@ above Open the Next Pack.
   mouse or hotkey, it presses Skip once when the next pack appears.
   Kosmora's reveal hints must be enabled so it can warn you about
   special packs.
-
-Fusion
-------
-
-Fusion batches are off by default. In Settings → Fusion, turn on the group
-and choose Enabled Fusion Batches in the confirmation dialog. Choose
-Nevermind to leave it off. The warning stays visible in Settings while the
-group is on.
-
-This feature has been reviewed by the developer. Although approved for use,
-it may result in "sus points" on your account. Use at your own risk.
-
-On Kosmora’s Fusion page, ✦ Next Batch appears beside Clear. It keeps your
-picks and fills as many open slots as possible using your recipe and tray
-limit for the selected rarity. It follows the active search and filters and
-loads more results when needed. The star spins during selection unless
-reduced motion is enabled. Review your picks and use Kosmora’s Fuse button
-when ready.
-
-Enable Next Batch button starts checked. Adjust the filters below it and
-click Save to apply your choices.
-
-- Respect Family Impact starts on. Skip picks that would lower a family
-  tier, taking the whole tray into account.
-- Respect Blacklist starts on. Skip cards that belong to any family on the
-  list saved under Family Impact Overlay → Blacklist.
-- Respect Price Threshold starts off. When on, skip a copy if any completed
-  sale returned for its finish in the last 30 days exceeds the threshold.
-  The threshold starts at 0 Kosmo.
-- Exclude Full Arts, Exclude Shiny, and Exclude #1s each start on. Use the
-  switches to control which copies can be picked.
 
 Backup & restore
 ----------------

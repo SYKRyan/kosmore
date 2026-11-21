@@ -50,7 +50,7 @@ const OPTIONS = [
     show: "showSalesMyLastListing",
     click: "salesMyLastListingSetsPrice",
     adjustment: "salesMyLastListingAdjustment",
-    help: "Your most recent starting price for this card, from My Sales history across all finishes.",
+    help: "Your most recently recorded starting price for this card across all finishes. Linked browsers share confirmed listings.",
   },
 ] as const;
 

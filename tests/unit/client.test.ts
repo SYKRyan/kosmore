@@ -1,4 +1,4 @@
-import { it, expect, vi } from "vitest";
+import { afterEach, it, expect, vi } from "vitest";
 import { GameClient } from "../../src/kosmora/client";
 import {
   ALBUM_A,
@@ -9,10 +9,33 @@ import {
   card,
   me,
   opening,
-  prices,
 } from "../fixtures/data";
-import { auction } from "../fixtures/auctions";
+import { serviceDetails } from "../fixtures/services";
+import { parseServicesCard } from "../../src/shared/services";
 import type { CardContext } from "../../src/shared/types";
+afterEach(() => vi.unstubAllGlobals());
+function serviceMessages(wait?: Promise<void>) {
+  const send = vi.fn(async (message: { requestId: string; ids: string[] }) => {
+    await wait;
+    return {
+      requestId: message.requestId,
+      ok: true,
+      data: Object.fromEntries(
+        message.ids.map((id) => [
+          id,
+          {
+            card: parseServicesCard(serviceDetails(id), id),
+            stale: false,
+            until: Date.now() + 300_000,
+          },
+        ]),
+      ),
+    };
+  });
+  vi.stubGlobal("chrome", { runtime: { sendMessage: send } });
+  return send;
+}
+
 it("honors server throttling without retrying or sending further requests during the cooldown", async () => {
   const fetcher = vi.fn(async () =>
     Response.json(
@@ -50,6 +73,7 @@ it("discards late private reads from an account that changed during loading", as
     await held;
     return Response.json(card());
   });
+  serviceMessages(held);
   const client = new GameClient(fetcher as typeof fetch);
   await client.account();
   const pending = client.insights("42");
@@ -63,7 +87,7 @@ it("discards late private reads from an account that changed during loading", as
     fetcher.mock.calls.filter(([path]) =>
       String(path).startsWith("/api/collection/"),
     ),
-  ).toHaveLength(2);
+  ).toHaveLength(0);
 });
 it("bounds concurrent network reads and stops queued fetches after a server cooldown", async () => {
   const releases: (() => void)[] = [];
@@ -77,7 +101,7 @@ it("bounds concurrent network reads and stops queued fetches after a server cool
   });
   const client = new GameClient(fetcher as typeof fetch);
   const tasks = Promise.allSettled(
-    Array.from({ length: 10 }, (_, i) => client.insights(String(i + 1))),
+    Array.from({ length: 10 }, (_, i) => client.albums(String(i + 1))),
   );
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
   for (const release of releases) release();
@@ -88,21 +112,9 @@ it("bounds concurrent network reads and stops queued fetches after a server cool
 });
 it("album updates retain unrelated price history while refreshing membership before writes", async () => {
   const h = harness();
-  const client = new GameClient(async (input, init) => {
-    if (String(input).includes("/prices?"))
-      return Response.json({
-        prices: {
-          count: 0,
-          days: 30,
-          low: null,
-          median: null,
-          high: null,
-          sales: [],
-        },
-      });
-    return h.fetcher(input, init);
-  });
-  await client.account();
+  serviceMessages();
+  const client = h.client;
+  await client.observeCardDetails(card());
   const history = await client.history("42", "plain");
   await client.albums("42");
   await client.add(
@@ -115,7 +127,7 @@ it("album updates retain unrelated price history while refreshing membership bef
     },
     "fixtureplayer",
   );
-  expect(await client.history("42", "plain")).toBe(history);
+  expect(await client.history("42", "plain")).toEqual(history);
   expect((await client.albums("42"))[0].contains).toBe(true);
   expect(h.posts()).toBe(1);
 });
@@ -277,6 +289,7 @@ it("serializes removals and additions for the same album subject", async () => {
 });
 it("checks membership and never toggles or rewrites an existing album", async () => {
   const h = harness({ contains: true });
+  await h.client.observeCardDetails(card());
   await h.client.add(
     ALBUM_A,
     {
@@ -291,6 +304,7 @@ it("checks membership and never toggles or rewrites an existing album", async ()
 });
 it("uses only the explicit add endpoint and confirms a timeout without repeating the write", async () => {
   const h = harness({ timeout: true });
+  await h.client.observeCardDetails(card());
   await h.client.add(
     ALBUM_A,
     {
@@ -312,6 +326,7 @@ it("uses only the explicit add endpoint and confirms a timeout without repeating
 it("rejects unowned copies, full albums, and account switches before writing", async () => {
   for (const opts of [{ full: true }, { other: true }, {}]) {
     const h = harness(opts);
+    await h.client.observeCardDetails(card());
     await expect(
       h.client.add(
         ALBUM_A,
@@ -330,6 +345,7 @@ it("rejects unowned copies, full albums, and account switches before writing", a
 it("resolves repeated subjects by verified opening slot plus identity", async () => {
   const h = harness();
   await h.client.account();
+  await h.client.receivePackData({ kind: "opening", data: opening });
   const copies = [...card().copies, { ...card().copies[0], id: COPY_B }].map(
     (c) => ({
       id: c.id,
@@ -385,12 +401,13 @@ it("shares one card read between callers once the account is known", async () =>
   );
   const client = new GameClient(fetcher as typeof fetch);
   await client.account(undefined, false);
+  const messages = serviceMessages();
   // Fusion badges and card overlays reading the same card.
   await Promise.all([client.insights("42"), client.insights("42")]);
-  await client.insights("42");
+  expect(messages).toHaveBeenCalledTimes(1);
   expect(
     fetcher.mock.calls.filter(([u]) => String(u) === "/api/collection/42"),
-  ).toHaveLength(1);
+  ).toHaveLength(0);
 });
 
 it("queries only the requested family IDs and falls back if one is missing", async () => {
@@ -425,129 +442,66 @@ it("queries only the requested family IDs and falls back if one is missing", asy
   expect(paths[3].searchParams.has("ids")).toBe(false);
 });
 
-it("shares the pack inventory fallback and uses the game's newer ready snapshot", async () => {
-  const another = "abcdef12-0000-4000-8000-000000000001";
-  const fetcher = vi.fn(async (input: RequestInfo | URL) =>
-    Response.json(
-      String(input) === "/api/me"
-        ? me
-        : {
-            packs: [{ status: "ready", openingId: OPENING }],
-          },
-    ),
+it("coalesces concurrent pack inventory checks without another account request", async () => {
+  const fetcher = vi.fn(async (_input: RequestInfo | URL) =>
+    Response.json({ packs: [{ status: "ready", openingId: OPENING }] }),
   );
   const client = new GameClient(fetcher);
   expect(
     await Promise.all([client.readyPackIds(), client.readyPackIds()]),
   ).toEqual([[OPENING], [OPENING]]);
-  await client.receivePackData({
-    kind: "inventory",
-    ids: [OPENING, another],
-    requestedAt: Date.now(),
-  });
-  await client.receivePackData({ kind: "opened", id: OPENING });
-  expect(await client.readyPackIds()).toEqual([another]);
   expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
-    "/api/me",
     "/api/packs/inventory",
   ]);
 });
 
-it("uses count-only sale history for icons when collection is paused", async () => {
-  const fetcher = vi.fn(async () =>
-    Response.json({ prices: { days: 30, count: 1 } }),
-  );
-  const client = new GameClient(fetcher as typeof fetch);
-  const evidence = vi.fn();
-  client.onHistoryLoaded(evidence);
-  client.setSaleRateCollection(false);
-  await expect(client.hasSaleHistory("42", "plain")).resolves.toBe(true);
-  await expect(client.hasSaleHistory("42", "plain")).resolves.toBe(true);
-  expect(fetcher).toHaveBeenCalledTimes(1);
-  await expect(client.history("42", "plain")).rejects.toThrow();
-  expect(fetcher).toHaveBeenCalledTimes(2);
-  expect(evidence).not.toHaveBeenCalled();
-});
-
-it("stops positive icon searches early when paused and keeps pagination when collecting", async () => {
-  const offsets: number[] = [];
-  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-    const offset = Number(
-      new URL(String(input), "https://kosmora.io").searchParams.get("offset"),
-    );
-    offsets.push(offset);
-    return Response.json({
-      items: [
-        auction(offset + 1, offset ? "42" : "44", {
-          startPrice: offset === 2 ? "5000000" : "10000000",
-        }),
-      ],
-      nextOffset: offset === 2 ? null : offset + 1,
-    });
+it("uses Services for market counts, summaries and price chips without game requests", async () => {
+  const requests = serviceMessages();
+  const game = vi.fn(async () => {
+    throw new Error("Unexpected Kosmora request");
   });
-  const client = new GameClient(fetcher as typeof fetch);
-  const evidence = vi.fn();
-  client.onAuctionListings(evidence);
-  client.setSaleRateCollection(false);
-  await expect(client.hasActiveAuctions("42", "fixture")).resolves.toBe(true);
-  expect(offsets.splice(0)).toEqual([0, 1]);
-  expect(evidence).not.toHaveBeenCalled();
-  await expect(client.hasActiveAuctions("43", "fixture")).resolves.toBe(false);
-  expect(offsets.splice(0)).toEqual([0, 1, 2]);
-  client.setSaleRateCollection(true);
-  await expect(client.hasActiveAuctions("42", "fixture")).resolves.toBe(true);
-  expect(offsets.splice(0)).toEqual([0, 1, 2]);
-  expect(evidence).toHaveBeenCalledWith(
-    expect.arrayContaining([
-      expect.objectContaining({ id: auction(2).id }),
-      expect.objectContaining({ id: auction(3).id }),
-    ]),
-  );
-  await expect(client.lowestListingPrice("42", "fixture")).resolves.toBe(
-    "5000000",
-  );
-  expect(offsets).toEqual([0, 1, 2]);
+  const client = new GameClient(game as typeof fetch);
+  const results = await Promise.all([
+    client.hasSaleHistory("42", "plain"),
+    client.hasSaleHistory("42", "veil"),
+    client.activeAuctions("42", "Fixture"),
+    client.lowestListingPrice("42", "Fixture"),
+    client.history("42", "plain"),
+  ]);
+  expect(results).toEqual([
+    true,
+    false,
+    1,
+    "7500000",
+    expect.objectContaining({
+      count: 1,
+      median: "6500000",
+      lastSale: expect.objectContaining({ price: "6500000" }),
+    }),
+  ]);
+  expect(game).not.toHaveBeenCalled();
+  expect(requests).toHaveBeenCalledTimes(1);
 });
 
-it("passes icon history to settlement only when it came from a network read", async () => {
-  const fetcher = vi.fn(async () => Response.json(prices(3)));
-  const client = new GameClient(fetcher as typeof fetch);
-  const evidence = vi.fn();
-  client.onHistoryLoaded(evidence);
-  await expect(client.hasSaleHistory("42", "plain")).resolves.toBe(true);
-  expect(evidence).toHaveBeenCalledWith(
-    "42",
-    expect.objectContaining({ count: 3 }),
-    expect.any(Number),
-  );
-  await expect(client.hasSaleHistory("42", "plain")).resolves.toBe(true);
-  expect(fetcher).toHaveBeenCalledTimes(1);
-  expect(evidence).toHaveBeenCalledOnce();
-});
-
-it("reuses live auction price and presence for 60 seconds and permits an explicit refresh", async () => {
-  const clock = vi.spyOn(Date, "now");
-  const at = Date.now();
-  try {
-    clock.mockReturnValue(at);
-    const fetcher = vi.fn(async () =>
-      Response.json({ items: [auction(1)], nextOffset: null }),
-    );
-    const client = new GameClient(fetcher as typeof fetch);
-    client.setSaleRateCollection(false);
-    await client.hasActiveAuctions("42", "Presence");
-    await client.lowestListingPrice("42", "Price");
-    clock.mockReturnValue(at + 59_999);
-    await client.hasActiveAuctions("42", "Presence");
-    await client.lowestListingPrice("42", "Price");
-    expect(fetcher).toHaveBeenCalledTimes(2);
-    clock.mockReturnValue(at + 60_000);
-    await client.hasActiveAuctions("42", "Presence");
-    await client.lowestListingPrice("42", "Price");
-    expect(fetcher).toHaveBeenCalledTimes(4);
-    await client.lowestListingPrice("42", "Price", undefined, true);
-    expect(fetcher).toHaveBeenCalledTimes(5);
-  } finally {
-    clock.mockRestore();
-  }
+it("does not use the absence of a listing to infer an unsold outcome", async () => {
+  const client = new GameClient();
+  const signal = new AbortController().signal;
+  const one = { id: "1", startPrice: "19", group: "unsold" } as const;
+  const two = { id: "2", startPrice: "29", group: "unsold" } as const;
+  const unknown = { id: "3", startPrice: "39" };
+  expect(
+    await client.discountListingPrice("42", "", 2, [one, two], signal),
+  ).toBe("19");
+  expect(
+    await client.discountListingPrice("42", "", 2, [one, unknown, two], signal),
+  ).toBeUndefined();
+  expect(
+    await client.discountListingPrice(
+      "42",
+      "",
+      1,
+      [{ ...unknown, group: "selling" }, one],
+      signal,
+    ),
+  ).toBeUndefined();
 });

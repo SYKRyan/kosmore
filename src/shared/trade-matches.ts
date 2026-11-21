@@ -62,6 +62,45 @@ export async function readTradeMatches(
     unreadable,
   };
 }
+let interests: Promise<Set<string>> | undefined;
+let listening = false;
+export async function hasFriendInterests(account?: string): Promise<boolean> {
+  if (!listening && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (
+        area === "local" &&
+        Object.keys(changes).some((key) => key.startsWith("kosmore.friend."))
+      )
+        interests = undefined;
+    });
+    listening = true;
+  }
+  if (!listening) interests = undefined;
+  interests ??= chrome.storage.local
+    .get(null)
+    .then((values) => {
+      const result = new Set<string>();
+      for (const [key, value] of Object.entries(values)) {
+        if (
+          key.startsWith("kosmore.friend.") &&
+          value &&
+          typeof value === "object" &&
+          "families" in value &&
+          Array.isArray(value.families) &&
+          value.families.length
+        )
+          result.add(key.split(".")[2]);
+      }
+      return result;
+    })
+    .catch((error) => {
+      interests = undefined;
+      throw error;
+    });
+  const keys = await interests;
+  return account ? keys.has(account) : keys.size > 0;
+}
+
 export async function readFriendPreferences(
   accountKey: string,
   friends: Friend[],

@@ -135,12 +135,6 @@ export class SalesOverlays {
     batch?: { revision: number; copies: Map<string, string> };
     draft?: { revision: number; copies: Map<string, string> };
   };
-  private historyRefresh?: {
-    page: string;
-    account: string;
-    request: AbortController;
-    promise: Promise<unknown>;
-  };
   constructor(private client: KosmoraClient) {
     this.provider = new CardSignalProvider(client);
     this.intersection = new IntersectionObserver((records) => {
@@ -165,7 +159,6 @@ export class SalesOverlays {
     window.addEventListener("pagehide", () => {
       this.generation++;
       this.provider.reset();
-      this.historyRefresh?.request.abort();
       for (const entry of this.entries.values()) entry.mineRequest?.abort();
     });
     window.addEventListener("message", (event) => {
@@ -302,15 +295,6 @@ export class SalesOverlays {
     });
   }
   private scan(changes?: PageChanges) {
-    if (
-      this.historyRefresh &&
-      (!this.enabled() ||
-        !this.settings?.salesDiscountEnabled ||
-        this.historyRefresh.page !== location.href)
-    ) {
-      this.historyRefresh.request.abort();
-      this.historyRefresh = undefined;
-    }
     if (this.batchCopies?.page !== location.href) this.batchCopies = undefined;
     if (this.enabled()) {
       this.refreshTimer ??= setInterval(() => {
@@ -549,25 +533,6 @@ export class SalesOverlays {
       else if (entry.visible) void this.loadMyPrice(entry);
     }
   }
-  private refreshDiscountHistory(subject: string, account: string) {
-    const active = this.historyRefresh;
-    if (active?.page === location.href && active.account === account)
-      return active.promise;
-    active?.request.abort();
-    const request = new AbortController();
-    const refresh = {
-      page: location.href,
-      account,
-      request,
-      promise: this.client
-        .listingHistory(subject, "refresh", request.signal)
-        .finally(() => {
-          if (this.historyRefresh === refresh) this.historyRefresh = undefined;
-        }),
-    };
-    this.historyRefresh = refresh;
-    return refresh.promise;
-  }
   private async loadMyPrice(entry: Entry, refresh = false) {
     if (
       !(
@@ -605,33 +570,36 @@ export class SalesOverlays {
       this.valid(entry, generation);
     this.render(entry);
     try {
-      const account = await this.client.account(request.signal, false);
-      if (!valid()) return;
-      const subject = entry.target.context.subjectId;
-      if (refresh) {
-        if (this.settings!.salesDiscountEnabled && entry.copyId)
-          await this.refreshDiscountHistory(subject, account.key);
-        else
-          await this.client.listingHistory(subject, "refresh", request.signal);
+      const account =
+        refresh || this.settings!.salesDiscountEnabled
+          ? await this.client.account(
+              request.signal,
+              !this.client.displayAccount,
+            )
+          : this.client.displayAccount;
+      if (!account) {
+        entry.myAccount = entry.myPrice = entry.recordedAt = undefined;
+        return;
       }
       if (!valid()) return;
+      const subject = entry.target.context.subjectId;
       entry.mineDirty = false;
       const history =
         this.settings!.salesDiscountEnabled && entry.copyId
           ? await this.client.cachedListings(subject, request.signal)
           : undefined;
-      const result = history
-        ? history.listings[0]
-        : await this.client.latestListing(subject, request.signal);
+      const result = this.settings!.showSalesMyLastListing
+        ? await this.client.latestListing(subject, request.signal)
+        : undefined;
       if (!valid()) return;
       entry.myAccount = account.key;
       entry.myPrice = result?.startPrice;
       entry.recordedAt = result?.submittedAt;
-      if (history && entry.copyId) {
+      if (history && history.openListingsKnown !== false) {
         this.render(entry);
         const price = await this.client.discountListingPrice(
           subject,
-          entry.copyId,
+          "",
           this.settings!.salesDiscountThreshold,
           history.listings,
           request.signal,
@@ -662,7 +630,6 @@ export class SalesOverlays {
   private loseListingContext() {
     if (this.listingContextLost) return;
     this.listingContextLost = true;
-    this.historyRefresh?.request.abort();
     for (const entry of this.entries.values()) {
       entry.mineRequest?.abort();
       entry.mineRequest = undefined;
@@ -755,17 +722,27 @@ export class SalesOverlays {
       const badge = canClick
         ? el("button", `price-badge ${kind}`)
         : el("span", `price-badge ${kind}`);
-      const text = price === undefined ? "—" : `$${formatKosmo(price)}`;
+      const text =
+        price === undefined
+          ? kind === "history" && entry.myAccount && !entry.mineError
+            ? "No recorded listing"
+            : "—"
+          : `$${formatKosmo(price)}`;
       badge.append(cardIcon(kind), el("span", "amount", `${label} ${text}`));
       badge.toggleAttribute("data-stale-price", !!stale);
       badge.title =
         (kind === "history" ? entry.mineError : entry.error) ??
-        `${label.replace(/:$/, "")}: ${price === undefined ? "unavailable" : `${formatKosmo(price)} Kosmo`}, across all finishes.${clickable ? ` Click to set the starting price with an adjustment of ${adjustment} Kosmo.` : ""}`;
+        `${label.replace(/:$/, "")}: ${price === undefined ? "unavailable" : `${formatKosmo(price)} Kosmo`}, across all finishes.${canClick ? ` Click to set the starting price with an adjustment of ${adjustment} Kosmo.` : ""}`;
+      if (kind === "auction" && entry.signals?.auctionFetchedAt)
+        badge.title +=
+          " Snapshot fetched " +
+          new Date(entry.signals.auctionFetchedAt).toLocaleTimeString() +
+          ". Provider prices are delayed five minutes.";
       if (stale) badge.title += " Last known price.";
       if (canClick && !entry.editable)
         badge.title += " The starting price is read-only.";
       if (kind === "history" && entry.recordedAt)
-        badge.title += ` Recorded on this browser ${new Date(entry.recordedAt).toLocaleString()}.`;
+        badge.title += ` Submitted ${new Date(entry.recordedAt).toLocaleString()}.`;
       if (kind === "history" && entry.mineLoading && price !== undefined)
         badge.title += " Saved price; checking for newer listings…";
       badge.setAttribute(
@@ -828,7 +805,8 @@ export class SalesOverlays {
           ? this.discountButton(entry, entry.discountPrice)
           : undefined;
       if (discount) controls.append(discount);
-      controls.append(this.refreshButton(entry));
+      if (!entry.myAccount || s.salesDiscountEnabled)
+        controls.append(this.refreshButton(entry));
       entry.body.append(controls);
     }
     this.updateVisibility(entry);
@@ -837,9 +815,10 @@ export class SalesOverlays {
     const check = el("button", "price-badge history-check");
     check.type = "button";
     check.disabled = this.listingContextLost || !!entry.mineRequest;
-    check.title = LISTING_REFRESH_LABEL;
-    check.setAttribute("aria-label", LISTING_REFRESH_LABEL);
-    check.append(headerIcon("refresh"));
+    check.title = entry.myAccount ? LISTING_REFRESH_LABEL : "Verify account";
+    check.setAttribute("aria-label", check.title);
+    if (entry.myAccount) check.append(headerIcon("refresh"));
+    else check.textContent = "Verify account";
     check.addEventListener("click", (event) => {
       event.stopPropagation();
       void this.loadMyPrice(entry, true);

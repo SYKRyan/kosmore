@@ -1,3 +1,4 @@
+import { FAMILY_IMPACT_AVAILABLE } from "../../src/shared/feature-availability";
 import { questCatalog } from "../fixtures/quests";
 import {
   test,
@@ -29,7 +30,6 @@ import type { TrackedListing } from "../../src/kosmora/my-listings";
 import {
   FUSION_FAMILIES,
   familyMilestones,
-  fusionBatchFixture,
   fusionFixture,
   fusionGrid,
   fusionMembership,
@@ -247,6 +247,30 @@ test.beforeEach(async () => {
   await worker.evaluate(
     async ({ a, b }) => {
       await chrome.storage.session.clear();
+      if (
+        (await indexedDB.databases()).some(
+          (db) => db.name === "kosmore.confirmed-listings",
+        )
+      ) {
+        await new Promise<void>((resolve, reject) => {
+          const open = indexedDB.open("kosmore.confirmed-listings");
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const db = open.result;
+            const tx = db.transaction(["records", "state"], "readwrite");
+            for (const store of ["records", "state"])
+              tx.objectStore(store).clear();
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            tx.onabort = () => {
+              db.close();
+              reject(tx.error);
+            };
+          };
+        });
+      }
       await chrome.storage.local.remove("kosmore.myListingPrices");
       const all = await chrome.storage.local.get(null);
       await chrome.storage.local.remove(
@@ -1531,24 +1555,38 @@ test("already-added albums show a small red removal action on the right and refr
         trash = rect(".album-remove");
       const buttons = [...root.querySelectorAll(".copy-actions button")];
       const style = getComputedStyle(root.querySelector(".footer")!);
-      const gearStyle = getComputedStyle(root.querySelector(".settings-button")!);
+      const gearStyle = getComputedStyle(
+        root.querySelector(".settings-button")!,
+      );
       return {
         gridOffset: Math.abs(album.left - metric.left),
         columnDifference: Math.abs(album.width - metric.width),
-        actionCenterOffset: Math.abs((sell.left + gift.right) / 2 - (footer.left + footer.right) / 2),
-        settingsOffset: Math.abs(footer.right - settings.right - parseFloat(style.paddingRight)),
-        settingsRowOffset: Math.abs((settings.top + settings.bottom) / 2 - (brand.top + brand.bottom) / 2),
+        actionCenterOffset: Math.abs(
+          (sell.left + gift.right) / 2 - (footer.left + footer.right) / 2,
+        ),
+        settingsOffset: Math.abs(
+          footer.right - settings.right - parseFloat(style.paddingRight),
+        ),
+        settingsRowOffset: Math.abs(
+          (settings.top + settings.bottom) / 2 - (brand.top + brand.bottom) / 2,
+        ),
         gearBackground: gearStyle.backgroundColor,
         gearBorder: gearStyle.borderTopWidth,
         brandOffset: Math.abs(
           brand.left + brand.width / 2 - footer.left - footer.width / 2,
         ),
         buttonOrder: buttons.map((button) => button.textContent),
-        iconWidths: buttons.map((button) => button.querySelector("svg")?.getBoundingClientRect().width),
+        iconWidths: buttons.map(
+          (button) =>
+            button.querySelector("svg")?.getBoundingClientRect().width,
+        ),
         brandBelowButtons: buttons.every(
           (button) => button.getBoundingClientRect().bottom < brand.top,
         ),
-        singleButtonRow: buttons.every((button) => Math.abs(button.getBoundingClientRect().top - sell.top) < 1),
+        singleButtonRow: buttons.every(
+          (button) =>
+            Math.abs(button.getBoundingClientRect().top - sell.top) < 1,
+        ),
         statusOffset: Math.abs(
           status.top + status.height / 2 - trash.top - trash.height / 2,
         ),
@@ -2144,33 +2182,53 @@ test("Hotkeys switches pause live shortcuts and preserve individual settings", a
     packOpeningHotkeysEnabled: true,
     hotkeys: shortcutBindings({ home: "KeyH" }),
     hoverTooltipHotkeys: shortcutBindings({ pin: "KeyP" }),
-    pinnedAlbumHotkeys: { fixtureplayer: shortcutBindings({ [ALBUM_A]: "KeyA" }) },
+    pinnedAlbumHotkeys: {
+      fixtureplayer: shortcutBindings({ [ALBUM_A]: "KeyA" }),
+    },
   });
   const options = await context.newPage();
   try {
-    await options.goto(`chrome-extension://${extensionId}/options.html#hotkeys`);
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#hotkeys`,
+    );
     const hotkeys = options.locator("#hotkeys");
     const hover = options.locator("#hover-tooltip-hotkeys");
     const master = hotkeys.getByRole("switch", { name: "Enable all hotkeys" });
-    const tooltipSwitch = hover.getByRole("switch", { name: "Enable hover tooltip hotkeys" });
+    const tooltipSwitch = hover.getByRole("switch", {
+      name: "Enable hover tooltip hotkeys",
+    });
     const navigation = options.locator("#navigation-hotkeys");
-    const anyKey = options.locator("#pack-openings").getByRole("checkbox", { name: "Any key dismisses found pack" });
-    await expect(navigation.getByRole("heading", { name: "Navigation", exact: true })).toBeVisible();
+    const anyKey = options
+      .locator("#pack-openings")
+      .getByRole("checkbox", { name: "Any key dismisses found pack" });
+    await expect(
+      navigation.getByRole("heading", { name: "Navigation", exact: true }),
+    ).toBeVisible();
     const subtitle = hotkeys.locator(".hotkeys-subtitle");
     await expect(subtitle).toHaveCount(1);
-    await expect(hotkeys.locator(".settings-subgroup .sub:not(:empty):not(.hotkey-help)")).toHaveCount(0);
+    await expect(
+      hotkeys.locator(".settings-subgroup .sub:not(:empty):not(.hotkey-help)"),
+    ).toHaveCount(0);
     const subtitleBox = (await subtitle.boundingBox())!;
     const navigationBox = (await navigation.boundingBox())!;
-    expect(navigationBox.y - (subtitleBox.y + subtitleBox.height)).toBeGreaterThanOrEqual(12);
+    expect(
+      navigationBox.y - (subtitleBox.y + subtitleBox.height),
+    ).toBeGreaterThanOrEqual(12);
     await tooltipSwitch.uncheck();
     await expect(hover.locator(".savebar .status")).toContainText("Saved.");
-    await expect(hover.getByRole("button", { name: "Set shortcut for Pin/Unpin" })).toBeDisabled();
+    await expect(
+      hover.getByRole("button", { name: "Set shortcut for Pin/Unpin" }),
+    ).toBeDisabled();
     await master.uncheck();
-    await expect(hotkeys.locator("[data-feature-status]")).toContainText("Saved.");
+    await expect(hotkeys.locator("[data-feature-status]")).toContainText(
+      "Saved.",
+    );
     await expect(navigation.getByRole("switch")).toBeDisabled();
     await expect(tooltipSwitch).toBeDisabled();
     await expect(anyKey).toBeDisabled();
-    await expect(options.getByRole("checkbox", { name: "Auto-skip on next pack" })).toBeEnabled();
+    await expect(
+      options.getByRole("checkbox", { name: "Auto-skip on next pack" }),
+    ).toBeEnabled();
 
     const collection = "https://kosmora.io/collection";
     const popup = page.locator("#kosmore-root");
@@ -2205,7 +2263,9 @@ test("Hotkeys switches pause live shortcuts and preserve individual settings", a
 
     await options.bringToFront();
     await master.check();
-    await expect(hotkeys.locator("[data-feature-status]")).toContainText("Saved.");
+    await expect(hotkeys.locator("[data-feature-status]")).toContainText(
+      "Saved.",
+    );
     await expect(tooltipSwitch).not.toBeChecked();
     await expect(navigation.getByRole("switch")).toBeChecked();
     await expect(anyKey).toBeEnabled();
@@ -2217,7 +2277,9 @@ test("Hotkeys switches pause live shortcuts and preserve individual settings", a
     await page.keyboard.press("p");
     await expect(popup).not.toHaveAttribute("data-pinned", "");
     await page.keyboard.press("a");
-    await expect(popup.getByRole("button", { name: /Space & discovery.*Already added/ })).toBeDisabled();
+    await expect(
+      popup.getByRole("button", { name: /Space & discovery.*Already added/ }),
+    ).toBeDisabled();
     expect(writeRequests).toBe(1);
     await page.keyboard.press("h");
     await expect(page).toHaveURL("https://kosmora.io/home");
@@ -2351,8 +2413,10 @@ test("tooltip hotkeys reuse popup actions, respect typing and native dialogs, an
 test("Pack Openings shows the ready-pack count above the native Next Pack button", async () => {
   const path = "**/api/packs/inventory";
   const nextId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-  await page.route(path, (route) =>
-    route.fulfill({
+  let checks = 0;
+  await page.route(path, (route) => {
+    checks++;
+    return route.fulfill({
       json: {
         packs: [
           { status: "ready", openingId: OPENING },
@@ -2368,8 +2432,8 @@ test("Pack Openings shows the ready-pack count above the native Next Pack button
           },
         ],
       },
-    }),
-  );
+    });
+  });
   const options = await context.newPage();
   try {
     await page.goto(
@@ -2404,6 +2468,7 @@ test("Pack Openings shows the ready-pack count above the native Next Pack button
     await expect(count).toHaveCount(0);
     await setting.check();
     await expect(count).toHaveText("2 packs ready");
+    expect(checks).toBe(1);
     await page.bringToFront();
     const prompt = page.getByRole("button", { name: "Continue", exact: true });
     await prompt.click();
@@ -3141,7 +3206,9 @@ test("a pinned tooltip follows card reveals and focuses the first summary card a
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
     if (document.activeElement?.matches(".ko-grid-open"))
-      throw new Error("Focused a later card while the first card was unavailable");
+      throw new Error(
+        "Focused a later card while the first card was unavailable",
+      );
     button.disabled = false;
   });
   await expect(cards.first()).toBeFocused();
@@ -3233,7 +3300,9 @@ test("an unpinned pack tooltip follows the mouse without changing keyboard focus
   await expect(cards.nth(1)).toBeFocused();
   await expect(face).toHaveCSS("outline-style", "none");
   expect(
-    await face.evaluate((element) => getComputedStyle(element, "::after").backgroundImage),
+    await face.evaluate(
+      (element) => getComputedStyle(element, "::after").backgroundImage,
+    ),
   ).toBe("none");
 });
 
@@ -5592,20 +5661,21 @@ test("For Sale marks only your listings, centers in albums and honors overlay se
     await page.route(albumUrl, (route) =>
       route.fulfill({ contentType: "text/html", body: fixture("page") }),
     );
-    const showCards = () => page.evaluate(
-      (html) => {
-        document.querySelector("main")!.innerHTML = html;
-      },
-      '<style>.kc-window > .kc-img { display:block }</style>' +
-        '<h1>For Sale overlay</h1><div style="display:flex;gap:20px">' +
-        ["42", "43"]
-          .map(
-            (id) =>
-              `<a id="card-${id}" href="/card/${id}" style="display:block;width:200px">${face(id)}</a>`,
-          )
-          .join("") +
-        "</div>",
-    );
+    const showCards = () =>
+      page.evaluate(
+        (html) => {
+          document.querySelector("main")!.innerHTML = html;
+        },
+        "<style>.kc-window > .kc-img { display:block }</style>" +
+          '<h1>For Sale overlay</h1><div style="display:flex;gap:20px">' +
+          ["42", "43"]
+            .map(
+              (id) =>
+                `<a id="card-${id}" href="/card/${id}" style="display:block;width:200px">${face(id)}</a>`,
+            )
+            .join("") +
+          "</div>",
+      );
     await page.goto("https://kosmora.io/collection");
     await showCards();
     const own = page.locator("#card-42"),
@@ -6226,7 +6296,9 @@ test("the smallest popup keeps its tabs and footer accessible by scrolling", asy
     popup.getByRole("button", { name: "Settings", exact: true }).click(),
   ]);
   try {
-    await expect(options).toHaveURL(`chrome-extension://${extensionId}/options.html`);
+    await expect(options).toHaveURL(
+      `chrome-extension://${extensionId}/options.html`,
+    );
   } finally {
     await options.close();
   }
@@ -7766,16 +7838,38 @@ test("my last listing fills only its card, shares sale settings, and uses starti
       second = page.locator(".bsell-row").nth(1);
     await expect(first.locator(".price-badge.history")).toContainText("—");
     expect(reads).toBe(0);
-    await first
-      .getByRole("button", { name: "Refresh my listing history" })
-      .click();
+    await page.route("**/api/market/listings/batch", (route) =>
+      route.fulfill({
+        json: {
+          results: [
+            { ok: true, auctionId: myListing(90).id, instanceId: COPY_A },
+            { ok: true, auctionId: myListing(91).id, instanceId: COPY_B },
+          ],
+        },
+      }),
+    );
+    await first.getByRole("button", { name: "Verify account" }).click();
+    await page.evaluate(
+      async ([a, b]) => {
+        await fetch("/api/market/listings/batch", {
+          method: "POST",
+          body: JSON.stringify({
+            items: [
+              { instanceId: a, subjectId: "42", startPrice: "17123456" },
+              { instanceId: b, subjectId: "46", startPrice: "23000000" },
+            ],
+          }),
+        });
+      },
+      [COPY_A, COPY_B],
+    );
     await expect(
       first.getByRole("button", { name: /^My Last Listing: \$17/ }),
     ).toBeEnabled();
     await expect(
       second.getByRole("button", { name: /^My Last Listing: \$23/ }),
     ).toBeEnabled();
-    expect(reads).toBe(1);
+    expect(reads).toBe(0);
     await expect(first.locator("input")).toHaveValue("12.00");
     await first.getByRole("button", { name: /^My Last Listing: \$17/ }).click();
     await expect(first.locator("input")).toHaveValue("17.123456");
@@ -7813,6 +7907,7 @@ test("my last listing fills only its card, shares sale settings, and uses starti
       path: "test-results/screenshots/my-last-listing-settings.png",
     });
     await page.goto("https://kosmora.io/market/sell?subject=42");
+    await page.getByRole("button", { name: "Verify account" }).click();
     const start = page.getByTestId("sell-start"),
       badge = page.getByRole("button", { name: /^My Last Listing: \$17/ });
     await expect(badge).toBeEnabled();
@@ -7827,42 +7922,35 @@ test("my last listing fills only its card, shares sale settings, and uses starti
     );
     expect(writeRequests).toBe(0);
     account = "OtherPlayer";
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await page.evaluate(() => fetch("/api/me").then((r) => r.json()));
     await expect(page.locator(".price-badge.history")).toContainText("—");
-    expect(reads).toBe(1);
+    expect(reads).toBe(0);
     await group
       .getByLabel("Show My Last Listing price", { exact: true })
       .uncheck();
     await group.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.locator("[data-kosmore-sales-overlay]")).toHaveCount(0);
   } finally {
+    await page.unroute("**/api/market/listings/batch");
     await options.close();
     await page.unroute("**/api/me/auctions?**");
   }
 });
 
-test("listing performance: saved sale prices stay visible during refresh and confirmed writes update them without history reads", async () => {
-  let reads = 0,
-    price = "17000000",
-    hold = false,
-    release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route("**/api/me/auctions?**", async (route) => {
+test("listing performance: confirmed writes update the saved sale price without history reads", async () => {
+  let reads = 0;
+  await page.route("**/api/me/auctions?**", (route) => {
     reads++;
-    if (hold) await held;
-    await route.fulfill({
-      json: myListingPage([
-        ...(price === "23000000"
-          ? [myListing(4002, "42", { startPrice: price })]
-          : []),
-        myListing(4000, "42"),
-      ]),
-    });
+    return route.fulfill({ json: myListingPage([myListing(4000, "42")]) });
   });
   await page.route("https://kosmora.io/api/auctions", (route) =>
-    route.fulfill({ json: { auctionId: myListing(4001).id } }),
+    route.fulfill({
+      json: {
+        auctionId: myListing(4001).id,
+        subjectId: "42",
+        startPrice: "29000000",
+      },
+    }),
   );
   await page.route("**/api/auctions/" + myListing(4001).id, (route) =>
     route.fulfill({
@@ -7891,24 +7979,12 @@ test("listing performance: saved sale prices stay visible during refresh and con
     );
     await expect(badge).toContainText("—");
     expect(reads).toBe(0);
-    const refresh = page.getByRole("button", {
-      name: "Refresh my listing history",
-    });
-    await refresh.click();
-    await expect(badge).toContainText("$17");
-    expect(reads).toBe(1);
+    await page.getByRole("button", { name: "Verify account" }).click();
+    await expect(badge).toContainText("No recorded listing");
     await page.reload();
-    await expect(badge).toContainText("$17");
-    expect(reads).toBe(1);
-    price = "23000000";
-    hold = true;
-    await refresh.click();
-    await expect(badge).toContainText("$17");
-    await expect(badge).toBeEnabled();
-    await expect.poll(() => reads).toBe(2);
-    release();
-    await expect(badge).toContainText("$23");
-    hold = false;
+    await page.getByRole("button", { name: "Verify account" }).click();
+    await expect(badge).toContainText("No recorded listing");
+    expect(reads).toBe(0);
     await page.getByTestId("sell-start").fill("99");
     await page.evaluate(() =>
       fetch("/api/auctions/quote", {
@@ -7918,7 +7994,7 @@ test("listing performance: saved sale prices stay visible during refresh and con
       }),
     );
     await page.waitForTimeout(180);
-    expect(reads).toBe(2);
+    expect(reads).toBe(0);
     await page.evaluate(() =>
       fetch("/api/auctions", {
         method: "POST",
@@ -7927,7 +8003,7 @@ test("listing performance: saved sale prices stay visible during refresh and con
       }),
     );
     await expect(badge).toContainText("$29");
-    expect(reads).toBe(2);
+    expect(reads).toBe(0);
     await expect(page.getByTestId("sell-start")).toHaveValue("99");
     await badge.click();
     await expect(page.getByTestId("sell-start")).toHaveValue("29");
@@ -7940,7 +8016,6 @@ test("listing performance: saved sale prices stay visible during refresh and con
       path: "test-results/screenshots/last-listing-cached-single.png",
     });
   } finally {
-    release();
     await page.unroute("**/api/me/auctions?**");
     await page.unroute("https://kosmora.io/api/auctions");
     await page.unroute("https://kosmora.io/api/auctions/quote");
@@ -8157,8 +8232,12 @@ test("Quick Prices retain their order and nodes through refreshes, and rarity wa
     const minimums = settings.getByRole("group", {
       name: "Use Custom Rarity Minimums",
     });
-    const commonBox = (await minimums.getByLabel("Common", { exact: true }).boundingBox())!,
-      uncommonBox = (await minimums.getByLabel("Uncommon", { exact: true }).boundingBox())!;
+    const commonBox = (await minimums
+        .getByLabel("Common", { exact: true })
+        .boundingBox())!,
+      uncommonBox = (await minimums
+        .getByLabel("Uncommon", { exact: true })
+        .boundingBox())!;
     expect(uncommonBox.y).toBeGreaterThan(commonBox.y + commonBox.height);
     const epic = minimums.getByLabel("Epic", { exact: true });
     await expect(epic).toHaveValue("20");
@@ -8218,15 +8297,21 @@ test("Quick Prices retain their order and nodes through refreshes, and rarity wa
     await refresh.click();
     await expect(refresh).toBeEnabled();
     await expect(prices.first()).toHaveAttribute("data-test-original", "");
-    await settings.getByLabel("Last Sale price adjustment", { exact: true }).fill("-1");
+    await settings
+      .getByLabel("Last Sale price adjustment", { exact: true })
+      .fill("-1");
     await save.click();
     await expect(settings.getByRole("status")).toContainText("Saved");
     await expect(prices.first()).toHaveAttribute("data-test-original", "");
     const rowWarning = overlay.locator('[data-kosmore-sales-warning="row"]');
     const controlsOffset = () =>
       row.evaluate((element) => {
-        const box = element.querySelector(".bsell-input")!.getBoundingClientRect();
-        const tools = element.querySelector(".suggested")!.getBoundingClientRect();
+        const box = element
+          .querySelector(".bsell-input")!
+          .getBoundingClientRect();
+        const tools = element
+          .querySelector(".suggested")!
+          .getBoundingClientRect();
         return tools.y - box.y;
       });
     await start.fill("50");
@@ -8240,7 +8325,10 @@ test("Quick Prices retain their order and nodes through refreshes, and rarity wa
     const startBox = (await start.boundingBox())!,
       warningBox = (await rowWarning.boundingBox())!;
     expect(warningBox.y).toBeGreaterThanOrEqual(startBox.y + startBox.height);
-    const submit = page.getByRole("button", { name: "Put on sale", exact: true }),
+    const submit = page.getByRole("button", {
+        name: "Put on sale",
+        exact: true,
+      }),
       summary = page.locator(
         '.bsell-bar > button + [data-kosmore-sales-warning="summary"]',
       );
@@ -9035,7 +9123,8 @@ test("20-card pack summary loads all badges without scrolling", async () => {
   const priceRoute = "**/api/cards/*/prices?**";
   const stagger = Array.from(
     { length: 20 },
-    (_, i) => `.ko-grid > li:nth-child(${i + 1}) { animation-delay: ${i * 25}ms; }`,
+    (_, i) =>
+      `.ko-grid > li:nth-child(${i + 1}) { animation-delay: ${i * 25}ms; }`,
   ).join("\n");
   const html = fixture("summary", 20).replace(
     "</body>",
@@ -9095,9 +9184,9 @@ test("20-card pack summary loads all badges without scrolling", async () => {
     const cards = grid.locator(":scope > li");
     await expect(cards.nth(4)).toBeInViewport();
     await expect(cards.nth(5)).not.toBeInViewport();
-    await expect(grid.locator("[data-kosmore-card-overlays] .sale")).toHaveCount(
-      20,
-    );
+    await expect(
+      grid.locator("[data-kosmore-card-overlays] .sale"),
+    ).toHaveCount(20);
     await expect(grid).toHaveAttribute("data-frame-times", /\[/);
     expect(peakOffscreen).toBe(1);
     expect(await page.evaluate(() => scrollY)).toBe(0);
@@ -9671,6 +9760,10 @@ test("sale rate: relays the page's own auction reads and settles them per finish
 });
 
 test("Vortex family impact: marks stakes and picker cards, preserves native picks and saves its independent setting", async () => {
+  test.skip(
+    !FAMILY_IMPACT_AVAILABLE,
+    "Family Impact is currently unavailable.",
+  );
   let copies = 2;
   await pulsarSettings({
     enabled: false,
@@ -9824,529 +9917,11 @@ test("Vortex family impact: marks stakes and picker cards, preserves native pick
   }
 });
 
-const batchCopyId = (id: string) => `00000000-0000-4000-8000-000000000${id}`;
-
-async function withFusionBatch(
-  run: () => Promise<void>,
-  delays: { insights?: Promise<void>; nativeCopies?: Promise<void> } = {},
-) {
-  const routes = [
-    "https://kosmora.io/fusion",
-    "https://kosmora.io/api/fusion",
-    "https://kosmora.io/api/fusion/cards*",
-    "https://kosmora.io/api/fusion/copies*",
-    "https://kosmora.io/api/families",
-    "https://kosmora.io/api/me/families*",
-    "https://kosmora.io/api/collection/4*",
-    "https://kosmora.io/api/cards/4*/prices*",
-  ];
-  const family = FUSION_FAMILIES.asteroids;
-  const copies = (id: string) => {
-    const normal = { ...card(id).copies[0], id: batchCopyId(id), serial: 2 };
-    if (id === "404") return [{ ...normal, veil: true }];
-    if (id === "405") return [{ ...normal, fullArt: true }];
-    if (id === "406") return [{ ...normal, serial: 1, numberOne: true }];
-    if (id === "408")
-      return [
-        { ...normal, id: batchCopyId("488"), serial: 1, numberOne: true },
-        normal,
-      ];
-    return [normal];
-  };
-  const item = (id: string, rarity: string) => ({
-    card: {
-      subjectId: id,
-      name: `Card ${id}`,
-      rarity,
-      primaryFamily: id === "401" || id === "402" ? family : null,
-    },
-    quantity: copies(id).length,
-    usable: copies(id).length,
-  });
-  await page.route(routes[0], (route) =>
-    route.fulfill({ contentType: "text/html", body: fusionBatchFixture() }),
-  );
-  await page.route(routes[1], (route) =>
-    route.request().method() === "GET"
-      ? route.fulfill({
-          json: {
-            recipes: [
-              ...fusionRecipes.recipes,
-              { from: "Uncommon", to: "Rare", cards: 2 },
-            ],
-            maxBatches: 2,
-          },
-        })
-      : route.fallback(),
-  );
-  await page.route(routes[2], (route) => {
-    const query = new URL(route.request().url()).searchParams;
-    const rarity = query.get("rarity") ?? "Common";
-    const first =
-      !query.has("cursor") &&
-      !query.has("ids") &&
-      !query.has("q") &&
-      rarity === "Common";
-    const ids =
-      query.get("ids")?.split(",") ??
-      (rarity === "Uncommon"
-        ? ["411"]
-        : query.get("q") === "mixed"
-          ? ["408", "410"]
-          : query.has("q")
-            ? ["409"]
-            : first
-              ? ["401", "402", "403", "404", "405", "406", "407", "408"]
-              : ["409", "410"]);
-    return route.fulfill({
-      json: {
-        items: ids.map((id) => item(id, rarity)),
-        nextCursor: first ? "two" : null,
-      },
-    });
-  });
-  let copyReads = 0;
-  await page.route(routes[3], async (route) => {
-    const id = new URL(route.request().url()).searchParams.get("subject")!;
-    if (++copyReads === 2) await delays.nativeCopies;
-    return route.fulfill({ json: { copies: copies(id) } });
-  });
-  await page.route(routes[4], (route) =>
-    route.fulfill({ json: familyMilestones }),
-  );
-  await page.route(routes[5], (route) =>
-    route.fulfill({
-      json: { total: 1, families: [{ id: family.id, collected: 3 }] },
-    }),
-  );
-  await page.route(routes[6], async (route) => {
-    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
-    if (id === "401") await delays.insights;
-    const families =
-      id === "401" || id === "402"
-        ? [family]
-        : id === "403"
-          ? [
-              FUSION_FAMILIES.parrots,
-              { ...FUSION_FAMILIES.mama, economic: false },
-            ]
-          : [];
-    return route.fulfill({
-      json: { ...card(id), copies: copies(id), families },
-    });
-  });
-  await page.route(routes[7], (route) => {
-    const id = new URL(route.request().url()).pathname.split("/").at(-2);
-    const sales = (
-      id === "407" ? ["5000000", "5000001"] : id === "409" ? ["5000000"] : []
-    ).map((price, index) => ({
-      auctionId: index ? COPY_B : COPY_A,
-      price,
-      soldAt: `2026-11-${10 - index}T12:00:00Z`,
-    }));
-    return route.fulfill({
-      json: {
-        prices: {
-          days: 30,
-          count: sales.length,
-          sales,
-          low: "5000000",
-          median: "5000000",
-          high: sales.at(-1)?.price,
-        },
-      },
-    });
-  });
-  try {
-    await run();
-  } finally {
-    for (const route of routes) await page.unroute(route);
-  }
-}
-
-test("Fusion settings use the group controls and update an open native picker", async () => {
-  await withFusionBatch(async () => {
-    await page.goto("https://kosmora.io/fusion");
-    const next = page.getByRole("button", { name: "Next Batch", exact: true });
-    await expect(page.locator(".fu-grid")).toHaveAttribute("aria-busy", "false");
-    await expect(next).toHaveCount(0);
-    const options = await context.newPage();
-    try {
-      await options.goto(
-        `chrome-extension://${extensionId}/options.html#fusion`,
-      );
-      const group = options.locator("#fusion");
-      const master = group.getByRole("switch", { name: "Enable Fusion" });
-      const enabled = group.getByRole("checkbox", {
-        name: "Enable Next Batch button",
-      });
-      const priceFilter = group.getByRole("switch", {
-        name: "Respect Price Threshold",
-      });
-      const price = group.getByRole("spinbutton", {
-        name: "Price threshold (Kosmo)",
-      });
-      const filters = group.getByRole("group", { name: "Next Batch filters" });
-      const save = group.getByRole("button", { name: "Save", exact: true });
-      const warningText =
-        'This feature has been reviewed by the developer. Although approved for use, it may result in "sus points" on your account. Use at your own risk.';
-      const warning = group.locator("strong").filter({ hasText: warningText });
-      const dialog = options.getByRole("dialog", {
-        name: "Enable Fusion Batches?",
-      });
-      const dismiss = dialog.getByRole("button", {
-        name: "Nevermind",
-        exact: true,
-      });
-      async function confirmEnable(accept: boolean) {
-        await master.click();
-        await expect(dialog).toBeVisible();
-        await expect(dialog).toHaveAccessibleDescription(warningText);
-        await expect(dismiss).toBeFocused();
-        await expect(next).toHaveCount(0);
-        if (accept)
-          await dialog
-            .getByRole("button", { name: "Enabled Fusion Batches", exact: true })
-            .click();
-        else
-          await dismiss.click();
-        await expect(dialog).toBeHidden();
-      }
-      await expect(master).not.toBeChecked();
-      await expect(enabled).toBeDisabled();
-      await expect(warning).toBeHidden();
-      await confirmEnable(false);
-      await expect(master).not.toBeChecked();
-      await expect(master).toBeFocused();
-      await expect(warning).toBeHidden();
-      await expect(next).toHaveCount(0);
-      await master.press("Space");
-      await expect(dialog).toBeVisible();
-      await dialog.screenshot({
-        path: "test-results/screenshots/fusion-confirmation.png",
-      });
-      await options.keyboard.press("Escape");
-      await expect(dialog).toBeHidden();
-      await expect(master).not.toBeChecked();
-      await confirmEnable(true);
-      await expect(master).toBeChecked();
-      await expect(warning).toBeVisible();
-      await expect(
-        group.locator(".settings-group-heading + fieldset > p:first-child > strong"),
-      ).toHaveText(warningText);
-      await expect(next).toBeEnabled();
-      await expect(next.locator(".kosmore-star")).toHaveText("✦");
-      await expect(page.locator(".fu-tools > button")).toHaveText([
-        "✦ Next Batch",
-        "Clear",
-      ]);
-      await expect(enabled).toBeChecked();
-      await expect(
-        group.getByText("Fill available slots in the Fusion tray with eligible cards."),
-      ).toBeVisible();
-      await expect(enabled).toHaveCSS("appearance", "auto");
-      await expect(priceFilter).toHaveCSS("appearance", "none");
-      await expect(filters.getByRole("switch")).toHaveCount(6);
-      await expect(filters.locator(":scope > .row > label")).toHaveText([
-        "Respect Family Impact",
-        "Respect Blacklist",
-        "Respect Price Threshold",
-        "Exclude Full Arts",
-        "Exclude Shiny",
-        "Exclude #1s",
-      ]);
-      for (const label of [
-        "Respect Family Impact",
-        "Respect Blacklist",
-        "Exclude Full Arts",
-        "Exclude Shiny",
-        "Exclude #1s",
-      ])
-        await expect(filters.getByRole("switch", { name: label })).toBeChecked();
-      await expect(priceFilter).not.toBeChecked();
-      await expect(price).toHaveValue("0");
-      await expect(price).toBeDisabled();
-      await group.screenshot({ path: "test-results/screenshots/fusion-settings.png" });
-      await enabled.uncheck();
-      await expect(priceFilter).toBeDisabled();
-      await expect(next).toBeVisible();
-      await group.getByRole("button", { name: "Cancel", exact: true }).click();
-      await expect(enabled).toBeChecked();
-      await priceFilter.check();
-      await price.fill("0.0000001");
-      await save.click();
-      await expect(group.getByRole("status")).toContainText(
-        "up to six decimal places",
-      );
-      await price.fill("5.000001");
-      await save.click();
-      await expect(group.getByRole("status")).toContainText("Saved");
-      await master.uncheck();
-      await expect(next).toHaveCount(0);
-      await expect(warning).toBeHidden();
-      await expect(save).toBeDisabled();
-      await confirmEnable(true);
-      await expect(next).toBeVisible();
-      await expect(warning).toBeVisible();
-      await options.reload();
-      await expect(master).toBeChecked();
-      await expect(warning).toBeVisible();
-      await expect(price).toHaveValue("5.000001");
-      await enabled.uncheck();
-      await save.click();
-      await expect(next).toHaveCount(0);
-    } finally {
-      await options.close();
-    }
-  });
-});
-
-test("Fusion Next Batch fills every open slot, filters exact copies and loads later pages", async () => {
-  await worker.evaluate(() =>
-    chrome.storage.local.set({
-      "kosmore.settings": {
-        schemaVersion: 1,
-        enabled: false,
-        familyImpactOverlaysEnabled: false,
-        fusionEnabled: true,
-        familyBlacklist: ["MAMA Awards"],
-        fusionRespectPriceThreshold: true,
-        fusionPriceThreshold: 5,
-      },
-    }),
-  );
-  await withFusionBatch(async () => {
-    await page.goto("https://kosmora.io/fusion");
-    const next = page.getByRole("button", { name: "Next Batch", exact: true });
-    const status = page.locator(".fu-tools [role=status]");
-    const slots = page.locator(".fu-slot-on");
-    await page.getByRole("button", { name: "Add 401", exact: true }).click();
-    await next.click();
-    await expect(status).toHaveText("Added 3. The Fusion tray is full.");
-    await expect(next).not.toHaveAttribute("aria-busy", "true");
-    expect(
-      await next
-        .locator(".kosmore-star")
-        .evaluate((star) => star.getAnimations().length),
-    ).toBe(0);
-    await expect(slots.locator(".kc-name")).toHaveText([
-      "Card 401",
-      "Card 408",
-      "Card 409",
-      "Card 410",
-    ]);
-    await expect(slots.nth(1)).toHaveAttribute("data-copy", batchCopyId("408"));
-    await page.locator(".fu-tray").screenshot({ path: "test-results/screenshots/fusion-tray.png" });
-    await next.click();
-    await expect(status).toHaveText("The Fusion tray is full.");
-    expect(writeRequests).toBe(0);
-    await page.getByRole("button", { name: "Clear", exact: true }).click();
-    await page.getByRole("searchbox", { name: "Search" }).fill("solo");
-    await next.click();
-    await expect(status).toHaveText("Added 1. 3 slots remain.");
-    await expect(slots.locator(".kc-name")).toHaveText(["Card 409"]);
-    await page.getByRole("radio", { name: "Uncommon" }).click();
-    await next.click();
-    await expect(status).toHaveText("Added 1. 3 slots remain.");
-    await expect(slots.locator(".kc-name")).toHaveText(["Card 411"]);
-    await page.getByRole("radio", { name: "Common", exact: true }).click();
-    await page.getByRole("searchbox", { name: "Search" }).fill("mixed");
-    await expect(page.locator(".fu-grid .pick-hit")).toHaveCount(2);
-    await page.getByRole("button", { name: "Add 408", exact: true }).click();
-    await page.getByRole("button", { name: "Add 410", exact: true }).click();
-    await next.click();
-    await expect(status).toHaveText("Added 1. 1 slot remains.");
-    await expect(slots.locator(".kc-name")).toHaveText([
-      "Card 408",
-      "Card 408",
-      "Card 410",
-    ]);
-    await expect(slots.nth(0)).toHaveAttribute("data-copy", batchCopyId("488"));
-    await expect(slots.nth(1)).toHaveAttribute("data-copy", batchCopyId("408"));
-  });
-});
-
-test("Fusion Next Batch uses the player's tray capacity for each rarity", async () => {
-  await worker.evaluate(() =>
-    chrome.storage.local.set({
-      "kosmore.settings": {
-        schemaVersion: 1,
-        enabled: false,
-        familyImpactOverlaysEnabled: false,
-        fusionEnabled: true,
-        fusionRespectFamilyImpact: false,
-        fusionExcludeFullArts: false,
-        fusionExcludeShiny: false,
-        fusionExcludeNumberOnes: false,
-      },
-    }),
-  );
-  const routes = [
-    "https://kosmora.io/fusion",
-    "https://kosmora.io/api/fusion",
-    "https://kosmora.io/api/fusion/cards*",
-  ];
-  const rarities = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"];
-  const recipes = [2, 2, 2, 3, 6].map((cards, index) => ({
-    from: rarities[index],
-    to: rarities[index + 1],
-    cards,
-  }));
-  await page.route(routes[0], (route) =>
-    route.fulfill({ contentType: "text/html", body: fusionBatchFixture() }),
-  );
-  await page.route(routes[1], (route) =>
-    route.request().method() === "GET"
-      ? route.fulfill({ json: { recipes, maxBatches: 10 } })
-      : route.fallback(),
-  );
-  await page.route(routes[2], (route) => {
-    const query = new URL(route.request().url()).searchParams;
-    const rarity = query.get("rarity");
-    const cursor = Number(query.get("cursor"));
-    const ids =
-      query.get("ids")?.split(",") ??
-      Array.from({ length: 16 }, (_, index) => String(501 + cursor + index));
-    return route.fulfill({
-      json: {
-        items: ids.map((subjectId) => ({
-          card: { subjectId, rarity },
-          quantity: 1,
-          usable: 1,
-        })),
-        nextCursor: cursor < 48 ? String(cursor + 16) : null,
-      },
-    });
-  });
-  try {
-    await page.goto("https://kosmora.io/fusion");
-    const next = page.getByRole("button", { name: "Next Batch", exact: true });
-    const slots = page.locator(".fu-slot-on");
-    const status = page.locator(".fu-tools [role=status]");
-    for (const [rarity, capacity] of [
-      ["Common", 20],
-      ["Uncommon", 20],
-      ["Rare", 20],
-      ["Epic", 30],
-      ["Legendary", 60],
-    ] as const) {
-      await page.getByRole("radio", { name: rarity, exact: true }).click();
-      await next.click();
-      await expect(status).toHaveText(
-        `Added ${capacity}. The Fusion tray is full.`,
-      );
-      await expect(slots).toHaveCount(capacity);
-    }
-    recipes[0].cards = 3;
-    await page.reload();
-    await next.click();
-    await expect(status).toHaveText("Added 30. The Fusion tray is full.");
-    await expect(slots).toHaveCount(30);
-    expect(writeRequests).toBe(0);
-  } finally {
-    for (const route of routes) await page.unroute(route);
-  }
-});
-
-test("Fusion Next Batch cancels a pending scan when the player changes the tray", async () => {
-  await worker.evaluate(() =>
-    chrome.storage.local.set({
-      "kosmore.settings": {
-        schemaVersion: 1,
-        enabled: false,
-        familyImpactOverlaysEnabled: false,
-        fusionEnabled: true,
-      },
-    }),
-  );
-  let release!: () => void;
-  const slow = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await withFusionBatch(async () => {
-    try {
-      await page.goto("https://kosmora.io/fusion");
-      const next = page.getByRole("button", {
-        name: "Next Batch",
-        exact: true,
-      });
-      const request = page.waitForRequest(
-        "https://kosmora.io/api/collection/401",
-      );
-      await next.click();
-      await request;
-      await expect(next).toBeDisabled();
-      await expect(next).toHaveAttribute("aria-busy", "true");
-      const star = next.locator(".kosmore-star");
-      await expect
-        .poll(() =>
-          star.evaluate((icon) =>
-            icon.getAnimations().some((animation) => animation.playState === "running"),
-          ),
-        )
-        .toBe(true);
-      await page.getByRole("button", { name: "Add 402", exact: true }).click();
-      release();
-      await expect(page.locator(".fu-tools [role=status]")).toHaveText(
-        "Selection stopped.",
-      );
-      await expect(next).toBeEnabled();
-      await expect(next).not.toHaveAttribute("aria-busy", "true");
-      expect(await star.evaluate((icon) => icon.getAnimations().length)).toBe(0);
-      await expect(page.locator(".fu-slot-on .kc-name")).toHaveText([
-        "Card 402",
-      ]);
-    } finally {
-      release();
-    }
-  }, { insights: slow });
-});
-
-test("Fusion Next Batch removes an unverified copy when the player takes over", async () => {
-  await worker.evaluate(() =>
-    chrome.storage.local.set({
-      "kosmore.settings": {
-        schemaVersion: 1,
-        enabled: false,
-        familyImpactOverlaysEnabled: false,
-        fusionEnabled: true,
-      },
-    }),
-  );
-  let release!: () => void;
-  const slow = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await withFusionBatch(async () => {
-    try {
-      await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.goto("https://kosmora.io/fusion");
-      await page.getByRole("searchbox", { name: "Search" }).fill("mixed");
-      const next = page.getByRole("button", { name: "Next Batch", exact: true });
-      const slots = page.locator(".fu-slot-on .kc-name");
-      await next.click();
-      await expect(slots).toHaveText(["Card 408"]);
-      await expect(next).toBeDisabled();
-      await expect(next).toHaveAttribute("aria-busy", "true");
-      expect(
-        await next
-          .locator(".kosmore-star")
-          .evaluate((star) => star.getAnimations().length),
-      ).toBe(0);
-      await page.getByRole("button", { name: "Fuse", exact: true }).click();
-      await page.getByRole("button", { name: "Add 410", exact: true }).click();
-      release();
-      await expect(next).toBeEnabled();
-      await expect(slots).toHaveText(["Card 410"]);
-      expect(writeRequests).toBe(0);
-    } finally {
-      release();
-      await page.emulateMedia({ reducedMotion: null });
-    }
-  }, { nativeCopies: slow });
-});
-
 test("fusion family impact: marks tiles safe or not from the page's own reads, follows the tray, never blocks picks, and fits narrow cards", async () => {
+  test.skip(
+    !FAMILY_IMPACT_AVAILABLE,
+    "Family Impact is currently unavailable.",
+  );
   const familyReads: string[][] = [];
   await page.route("https://kosmora.io/fusion", (route) =>
     route.fulfill({
@@ -10568,6 +10143,7 @@ test("persisted settings and listing prices survive a browser restart", async ()
   });
   page = await context.newPage();
   await page.goto("https://kosmora.io/market/sell?subject=42");
+  await page.getByRole("button", { name: "Verify account" }).click();
   await expect(page.locator(".price-badge.history")).toContainText("$17");
   expect(personalReads).toBe(0);
   const pins = await worker.evaluate(
@@ -10641,7 +10217,10 @@ test("read budget: native listing capture avoids deep history on the next sell f
     await page.evaluate(async (instanceId) => {
       await fetch("/api/auctions", {
         method: "POST",
-        body: JSON.stringify({ instanceId, startPrice: "27000000" }),
+        body: JSON.stringify({
+          instanceId,
+          startPrice: "27000000",
+        }),
       }).then((res) => res.json());
     }, COPY_A);
     if (!baseline)
@@ -10660,6 +10239,8 @@ test("read budget: native listing capture avoids deep history on the next sell f
     if (baseline) await pulsarSettings({ showSalesMyLastListing: true });
     const started = performance.now();
     await page.goto("https://kosmora.io/market/sell?subject=42");
+    if (!baseline)
+      await page.getByRole("button", { name: "Verify account" }).click();
     await expect(
       page.getByRole("button", { name: /^My Last Listing: \$27/ }),
     ).toBeEnabled();
@@ -10792,7 +10373,7 @@ test("read budget: first market badge, price and tooltip data on a paginated gri
   }
 });
 
-test("native relists verify the exact auction once and save the accepted starting price", async () => {
+test("native relists use the game’s observed auction to save the accepted starting price", async () => {
   const previous = myListing(999);
   const relisted = myListing(1000, "42", { startPrice: "31000000" });
   let detailReads = 0;
@@ -10809,6 +10390,7 @@ test("native relists verify the exact auction once and save the accepted startin
   });
   try {
     await page.goto("https://kosmora.io/market/sell?subject=42");
+    await page.getByRole("button", { name: "Verify account" }).click();
     for (let i = 0; i < 2; i++) {
       await page.evaluate(async (id) => {
         await fetch("/api/auctions/" + id + "/relist", {
@@ -10816,6 +10398,13 @@ test("native relists verify the exact auction once and save the accepted startin
           body: "{}",
         });
       }, previous.id);
+      if (i === 0) {
+        expect(detailReads).toBe(0);
+        await page.evaluate(
+          (id) => fetch("/api/auctions/" + id).then((r) => r.json()),
+          relisted.id,
+        );
+      }
       await expect(page.locator(".price-badge.history")).toContainText("$31");
     }
     expect(detailReads).toBe(1);
@@ -10846,19 +10435,22 @@ test("Sell Many shows one reconnect notice when the tab outlives an extension re
     await page.evaluate((markup) => {
       history.pushState({}, "", "/market/sell/batch?s=42.v,46.f");
       const batch = new DOMParser().parseFromString(markup, "text/html");
-      document
-        .querySelector("main")!
-        .replaceWith(batch.querySelector("main")!);
+      document.querySelector("main")!.replaceWith(batch.querySelector("main")!);
     }, sellManyFixture(true));
     const notice = page.locator('[data-kosmore-sales-warning="reconnect"]'),
-      refresh = page.getByRole("button", { name: "Refresh my listing history" });
+      refresh = page.getByRole("button", {
+        name: "Refresh my listing history",
+      });
     await expect(popup).toHaveCount(0);
     await expect(notice).toHaveText(
       "Refresh this Kosmora tab to reconnect your listing history.",
     );
     await expect(refresh).toHaveCount(2);
-    for (const button of await refresh.all()) await expect(button).toBeDisabled();
-    await expect(page.getByText(/Extension context invalidated/i)).toHaveCount(0);
+    for (const button of await refresh.all())
+      await expect(button).toBeDisabled();
+    await expect(page.getByText(/Extension context invalidated/i)).toHaveCount(
+      0,
+    );
     expect(errors).toEqual([]);
 
     await page.reload();
@@ -10867,5 +10459,27 @@ test("Sell Many shows one reconnect notice when the tab outlives an extension re
     await expect(refresh.first()).toBeEnabled();
   } finally {
     await session.detach();
+  }
+});
+
+test("shows Family Impact as unavailable and removes the Fusion Batches settings", async () => {
+  test.skip(FAMILY_IMPACT_AVAILABLE, "Family Impact is enabled in this build.");
+  const options = await context.newPage();
+  try {
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#family-impact-overlay`,
+    );
+    const group = options.locator("#family-impact-overlay");
+    await expect(
+      group.getByText("Family Impact is currently unavailable."),
+    ).toBeVisible();
+    await expect(
+      group.getByRole("switch", { name: "Enable family impact overlays" }),
+    ).toBeDisabled();
+    await expect(
+      options.getByRole("switch", { name: "Enable Fusion", exact: true }),
+    ).toHaveCount(0);
+  } finally {
+    await options.close();
   }
 });

@@ -447,7 +447,13 @@ export class CardOverlays {
     void this.provider
       .get(
         entry.context.subjectId,
-        settings,
+        entry.visible
+          ? settings
+          : {
+              ...settings,
+              showOnSaleOverlay: false,
+              showFriendInterestOverlay: false,
+            },
         finish,
         (signals) => {
           if (valid()) this.render(entry, signals);
