@@ -77,6 +77,8 @@ export class GameClient implements KosmoraClient {
   private observedHistory = new Map<string, MarketHistory>();
   private observedInterest = new Map<string, InterestEntry[]>();
   private albumReads = new ReadCache(100, 10_000);
+  private ownedReads = new ReadCache(80, 30_000);
+  private openingReads = new ReadCache(60);
   private packReads = new ReadCache(1, 0);
   private nativeOpenings = new Map<string, OpeningCard[]>();
   private accountReads = new ReadCache(1, 2_000);
@@ -190,6 +192,8 @@ export class GameClient implements KosmoraClient {
     for (const cache of [
       this.reads,
       this.albumReads,
+      this.ownedReads,
+      this.openingReads,
       this.packReads,
       this.familyCountReads,
     ])
@@ -343,18 +347,25 @@ export class GameClient implements KosmoraClient {
       signal,
     );
   }
-  clearServiceViews(ids?: string[]) {
-    if (!ids) {
-      this.cardViews.clear();
-      this.pendingViews.clear();
-      return true;
-    }
-    let relevant = false;
-    for (const id of ids) {
-      const hadView = this.cardViews.delete(id);
-      relevant = this.pendingViews.delete(id) || hadView || relevant;
-    }
-    return relevant;
+  clearServiceViews() {
+    this.cardViews.clear();
+    this.pendingViews.clear();
+  }
+  serviceCardChanged(id: string, fetchedAt?: number) {
+    const view = this.cardViews.get(id);
+    if (
+      view &&
+      !view.stale &&
+      view.until > Date.now() &&
+      view.fetchedAt === fetchedAt &&
+      fetchedAt !== undefined
+    )
+      return false;
+    this.cardViews.delete(id);
+    this.pendingViews.delete(id);
+    this.pendingViews.delete(id + ":mine");
+    this.pendingViews.delete(id + ":peek");
+    return true;
   }
   observeCardIds(ids: string[]) {
     for (let i = 0; i < ids.length; i += 500)
@@ -416,46 +427,65 @@ export class GameClient implements KosmoraClient {
   ) {
     id = subjectId(id);
     signal?.throwIfAborted();
+    const cached = this.cardViews.get(id);
+    // Listings have an independent expiry and game-account check in the worker.
+    if (
+      !includeMyListings &&
+      cached &&
+      !cached.stale &&
+      cached.until > Date.now()
+    )
+      return cached;
+    const view = await this.readServiceView(
+      id,
+      includeMyListings ? "mine" : "public",
+      signal,
+    );
+    if (!view)
+      throw new Error(
+        "Connect KosMore Services in Settings to load card data.",
+      );
+    return view;
+  }
+  private async readServiceView(
+    id: string,
+    mode: "public" | "mine" | "peek",
+    signal?: AbortSignal,
+  ) {
+    signal?.throwIfAborted();
     const version = this.accountVersion;
-    const pendingKey = includeMyListings ? id + ":mine" : id;
+    const pendingKey = mode === "public" ? id : id + ":" + mode;
     let pending = this.pendingViews.get(pendingKey);
     if (!pending) {
       const account = this.lastAccount?.key;
       const read = request<Record<string, CardView>>({
-        op: "servicesRead",
+        op: mode === "peek" ? "servicesPeek" : "servicesRead",
         ids: [id],
-        account: includeMyListings ? account : undefined,
-        includeMyListings,
-      }).finally(() => {
-        if (this.pendingViews.get(pendingKey) === read)
-          this.pendingViews.delete(pendingKey);
-      });
+        account: mode === "public" ? undefined : account,
+        includeMyListings: mode === "mine",
+      })
+        .then((result) => {
+          if (this.pendingViews.get(pendingKey) === read && result[id])
+            this.remember(this.cardViews, id, {
+              ...result[id],
+              listings: undefined,
+            });
+          return result;
+        })
+        .finally(() => {
+          if (this.pendingViews.get(pendingKey) === read)
+            this.pendingViews.delete(pendingKey);
+        });
       this.pendingViews.set(pendingKey, (pending = read));
     }
     const result = await pending;
     signal?.throwIfAborted();
     if (version !== this.accountVersion)
       throw new DOMException("The Kosmora account changed.", "AbortError");
-    const view = result[id];
-    if (!view)
-      throw new Error(
-        "Connect KosMore Services in Settings to load card data.",
-      );
-    this.remember(this.cardViews, id, view);
-    return view;
+    return result[id];
   }
   async refreshCachedCard(id: string, signal?: AbortSignal) {
-    const version = this.accountVersion;
-    const result = await request<Record<string, CardView>>({
-      op: "servicesPeek",
-      ids: [id],
-      account: this.lastAccount?.key,
-    });
-    signal?.throwIfAborted();
-    if (version !== this.accountVersion) return;
-    const view = result[id];
-    if (view) this.remember(this.cardViews, id, view);
-    return view;
+    return this.readServiceView(id, "peek", signal);
   }
   async insights(
     id: string,
@@ -909,9 +939,23 @@ export class GameClient implements KosmoraClient {
     if (data.kind !== "opening") return;
     const cards = parseOpening(data.data);
     if (!cards.length) return;
+    this.invalidateMissingPackCopies(cards);
     this.nativeOpenings.set(cards[0].openingId.toLowerCase(), cards);
     if (this.nativeOpenings.size > 60)
       this.nativeOpenings.delete(this.nativeOpenings.keys().next().value!);
+  }
+  private invalidateMissingPackCopies(cards: OpeningCard[]) {
+    for (const card of cards) {
+      const key = this.lastAccount?.key + ":" + card.subjectId;
+      const hit = this.ownedReads.peek<OwnedCopy[]>(key);
+      if (
+        hit &&
+        !hit.value.some(
+          (copy) => copy.id.toLowerCase() === card.instanceId.toLowerCase(),
+        )
+      )
+        this.ownedReads.delete(key);
+    }
   }
 
   async readyPackIds(signal?: AbortSignal): Promise<string[]> {
@@ -945,20 +989,100 @@ export class GameClient implements KosmoraClient {
       [path],
     );
   }
-  async resolveCopy(
+  async tooltipCopies(
     context: CardContext,
-    copies: OwnedCopy[],
+    account: string,
+    pinnedAlbums: boolean,
     signal?: AbortSignal,
-  ): Promise<OwnedCopy | undefined> {
-    if (context.copyId) return copies.find((c) => c.id === context.copyId);
-    if (context.surface === "page" || !copies.length) return undefined;
+  ) {
+    const version = this.accountVersion;
+    if (account !== this.lastAccount?.key)
+      throw new Error("Your Kosmora account changed.");
+    const id = context.subjectId;
+    let copies =
+      this.observedOwners.get(id) === account
+        ? this.observedCards.get(id)?.copies
+        : undefined;
+    if (!pinnedAlbums && !copies?.length) return { copies };
+    let target = context.copyId;
+    if (!target && context.surface !== "page") {
+      try {
+        target = await this.packCopyId(context, pinnedAlbums, signal);
+      } catch {
+        // An unavailable opening still allows manual selection of an owned copy.
+        signal?.throwIfAborted();
+      }
+    }
+    const matches = (copy: OwnedCopy) =>
+      copy.id.toLowerCase() === target?.toLowerCase() &&
+      copy.subjectId === id &&
+      (context.surface === "page" ||
+        (copy.variant.veil === context.variant.veil &&
+          copy.variant.fullArt === context.variant.fullArt));
+    if (
+      pinnedAlbums &&
+      (!copies ||
+        (!copies.length && context.surface !== "page") ||
+        (target && !copies.some(matches)))
+    ) {
+      const path = "/collection/" + subjectId(id);
+      copies = await this.cached(
+        this.ownedReads,
+        id,
+        async (shared) => {
+          const details = parseInsights(await this.read(path, shared));
+          if (details.subjectId !== id)
+            throw new Error("Kosmora returned copies for a different card.");
+          return details.copies;
+        },
+        signal,
+        false,
+        [path],
+      );
+    }
+    signal?.throwIfAborted();
+    if (version !== this.accountVersion)
+      throw new Error("Your Kosmora account changed.");
+    const chosen = copies?.find(matches);
+    const problem =
+      copies?.length &&
+      !chosen &&
+      (context.copyId || context.surface !== "page")
+        ? "Choose an owned copy to use for this card."
+        : undefined;
+    return { copies, chosen, problem };
+  }
+  private async packCopyId(
+    context: CardContext,
+    readMissing: boolean,
+    signal?: AbortSignal,
+  ) {
     const ids = context.openingIds.length
       ? context.openingIds
       : this.lastAccount?.currentOpeningId
         ? [this.lastAccount.currentOpeningId]
         : [];
-    const opening = (id: string) =>
-      this.nativeOpenings.get(uuid(id).toLowerCase()) ?? [];
+    const opening = async (id: string) => {
+      id = uuid(id).toLowerCase();
+      const observed = this.nativeOpenings.get(id);
+      if (observed) return observed;
+      if (!readMissing) return [];
+      const path = "/openings/" + id;
+      return this.cached(
+        this.openingReads,
+        id,
+        async (shared) => {
+          const cards = parseOpening(await this.read(path, shared));
+          if (!cards.length || cards[0].openingId.toLowerCase() !== id)
+            throw new Error("The pack opening could not be identified.");
+          this.invalidateMissingPackCopies(cards);
+          return cards;
+        },
+        signal,
+        false,
+        [path],
+      );
+    };
     signal?.throwIfAborted();
     const matches = (c: OpeningCard) =>
       c.subjectId === context.subjectId &&
@@ -968,16 +1092,17 @@ export class GameClient implements KosmoraClient {
       let index = context.entryIndex;
       for (const id of ids) {
         const cards = await opening(id);
+        if (!cards.length) return undefined;
         if (index < cards.length) {
           const entry = [...cards].sort((a, b) => a.slot - b.slot)[index];
-          if (entry && matches(entry))
-            return copies.find((c) => c.id === entry.instanceId);
+          if (entry && matches(entry)) return entry.instanceId;
           break;
         }
         index -= cards.length;
       }
     }
     const batches = await Promise.all(ids.map(opening));
+    if (batches.some((cards) => !cards.length)) return undefined;
     const entries = batches.flat();
     if (!entries.length) return undefined;
     let ordered: OpeningCard[];
@@ -1009,7 +1134,7 @@ export class GameClient implements KosmoraClient {
     const candidates =
       entry && matches(entry) ? [entry] : entries.filter(matches);
     if (candidates.length !== 1) return undefined;
-    return copies.find((c) => c.id === candidates[0].instanceId);
+    return candidates[0].instanceId;
   }
   async remove(
     albumId: string,

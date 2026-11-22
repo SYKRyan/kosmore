@@ -20,9 +20,7 @@ My Last Listing reads confirmed submissions saved on this browser. Linked browse
   auction, sales, and local sale-rate boxes.
 - Card overlays: spot active auctions, recent sales, your listed cards, quest
   cards, and matches for friends' saved family preferences.
-- Family impact: see whether fusing, trading, selling, or losing cards in
-  Vortex would lower a family tier, accounting for other copies and the
-  current batch or selection.
+- Family Impact is unavailable in 2.0.0.
 - Friend tooltip: expand matching friends' saved families and notes in a
   separate popup with Social and Profile links.
 - Social and profile reminders: keep private family preferences and notes for
@@ -121,11 +119,10 @@ KosMore's card popup. It includes rarity, finish, family links, market
 indicators, album shortcuts, stat boxes, and four icon tabs. The last selected
 tab is remembered for the next tooltip in that browser tab.
 
-- Market (chart): completed-sale history, a price chart, and a per-finish
-  summary for Standard, Shiny, and Full art. Toggle finishes to change the
-  history and related statistics; expand recent sales with Show All. Last Sale
-  and Listed For appear in the header when data exists; Listed For opens the
-  card's Market search.
+- The Market tab shows a price chart and daily minimum, median, and maximum
+  sale prices for each selected finish, grouped by UTC day with the newest
+  first. Last Sale and Listed For appear in the header when data exists.
+  Listed For opens the card's Market search.
 - My listing history combines saved starting prices with open single-card listings. Lots and face-down listings are omitted by Services. Refresh shows the available cached data.
 - Trade (friends): current friends whose saved family preferences match the
   card. Expand a friend to see all saved families, highlighted matches,
@@ -260,6 +257,9 @@ They still support the tooltip overlay button when enabled.
 
 Family Impact Overlay
 ---------------------
+
+The overlay and its controls are disabled in 2.0.0. The description below
+applies to earlier releases.
 
 This group has its own master switch and independent Fusion, Trade, Vortex,
 and Show on Sell pages options. All default to on; existing saved choices

@@ -721,6 +721,12 @@ input.section-switch:checked::before {
 .account-row select {
   max-width: 360px;
 }
+.services-connection .account-row {
+  flex-flow: row wrap;
+}
+.services-connection .field[hidden] {
+  display: none;
+}
 .savebar {
   margin-top: 25px;
   display: flex;

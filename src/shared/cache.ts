@@ -40,6 +40,12 @@ export class ReadCache {
     this.values.delete(key);
     this.pending.delete(key);
   }
+  deleteMatching(matches: (key: string) => boolean) {
+    for (const key of this.values.keys())
+      if (matches(key)) this.values.delete(key);
+    for (const key of this.pending.keys())
+      if (matches(key)) this.pending.delete(key);
+  }
   async get<T>(
     key: string,
     load: (signal: AbortSignal) => Promise<T>,

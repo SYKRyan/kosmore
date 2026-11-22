@@ -8,7 +8,11 @@ import {
 import { ApiError } from "../kosmora/client";
 import type { CardContext, KosmoraClient, Settings } from "../shared/types";
 import { settingsForPage } from "../shared/page-settings";
-import { CardSignalProvider, type CardSignals } from "./card-signals";
+import {
+  CardSignalProvider,
+  sameOverlaySignals,
+  type CardSignals,
+} from "./card-signals";
 import { SIGNAL_BADGE_CSS, signalBadges } from "./signal-badges";
 import { el } from "./ui";
 import { observePage, affected, type PageChanges } from "./page-changes";
@@ -113,10 +117,9 @@ export class CardOverlays {
         if (!entry) continue;
         entry.visible = record.isIntersecting;
         if (this.shouldLoad(entry) && !entry.done) this.queue.add(entry);
-        else {
-          this.queue.delete(entry);
-          if (!this.shouldLoad(entry)) entry.request?.abort();
-        }
+        // A dispatched Services read continues in the worker. Let it settle
+        // into this entry's cache if the user scrolls past it.
+        else this.queue.delete(entry);
       }
       this.pump();
       this.updateSummaryStatus();
@@ -146,7 +149,7 @@ export class CardOverlays {
   private syncRefreshTimer() {
     if (this.enabled()) {
       this.refreshTimer ??= setInterval(() => {
-        if (!document.hidden && this.enabled()) this.invalidate();
+        if (!document.hidden && this.enabled()) this.invalidate(false);
       }, 300_000);
     } else {
       clearInterval(this.refreshTimer);
@@ -194,6 +197,16 @@ export class CardOverlays {
     }
     if (clear) this.entries.clear();
     this.schedule();
+  }
+  refreshCards(ids: ReadonlySet<string>) {
+    this.provider.invalidateCards(ids);
+    for (const entry of this.entries.values()) {
+      if (!ids.has(entry.context.subjectId)) continue;
+      entry.done = false;
+      entry.request?.abort();
+      if (this.shouldLoad(entry)) this.queue.add(entry);
+    }
+    this.pump();
   }
   signals(
     context: CardContext,
@@ -268,9 +281,8 @@ export class CardOverlays {
         this.remove(entry);
         this.entries.delete(root);
       } else if (entry.host && !entry.host.isConnected) {
-        entry.host = undefined;
-        entry.done = false;
-        if (this.shouldLoad(entry)) this.queue.add(entry);
+        entry.root.append(entry.host);
+        if (entry.signals) this.render(entry, entry.signals);
       } else if (
         entry.signals?.onSale &&
         this.albumArtwork(entry) !==
@@ -279,8 +291,10 @@ export class CardOverlays {
         this.render(entry, entry.signals);
       }
     }
+    const discovered = new Set<string>();
     for (const [root, context] of targets) {
       if (this.entries.has(root)) continue;
+      discovered.add(context.subjectId);
       const entry: Entry = {
         root,
         context,
@@ -292,6 +306,7 @@ export class CardOverlays {
       this.intersection.observe(root);
       if (this.isSummaryEntry(entry)) this.queue.add(entry);
     }
+    if (discovered.size) this.client.observeCardIds?.([...discovered]);
     this.pump();
     this.updateSummaryStatus();
   }
@@ -444,6 +459,11 @@ export class CardOverlays {
       : entry.context.variant.veil
         ? "veil"
         : "plain";
+    // Keep a settled overlay intact while refreshing. Only a first load needs
+    // progressive badges, coalesced into one update per paint.
+    const progressive = !entry.host;
+    let frame = 0;
+    let latest: CardSignals;
     void this.provider
       .get(
         entry.context.subjectId,
@@ -456,7 +476,12 @@ export class CardOverlays {
             },
         finish,
         (signals) => {
-          if (valid()) this.render(entry, signals);
+          if (!progressive) return;
+          latest = signals;
+          frame ||= requestAnimationFrame(() => {
+            frame = 0;
+            if (valid()) this.render(entry, latest);
+          });
         },
         entry.visible ? "foreground" : "background",
         request.signal,
@@ -468,6 +493,7 @@ export class CardOverlays {
       )
       .then(
         (signals) => {
+          if (frame) cancelAnimationFrame(frame);
           if (valid()) {
             entry.done = true;
             this.render(entry, signals);
@@ -509,7 +535,8 @@ export class CardOverlays {
     this.pump();
   }
   private render(entry: Entry, signals: CardSignals) {
-    const sameSignals = entry.signals === signals;
+    const sameSignals =
+      entry.signals && sameOverlaySignals(entry.signals, signals);
     entry.signals = signals;
     const artwork = this.albumArtwork(entry);
     const artworkChanged =

@@ -25,7 +25,12 @@ export type Request =
         | "servicesDisconnect"
         | "servicesEraseHistory";
     }
-  | { requestId: string; op: "servicesSave" | "servicesConnect"; base: string }
+  | {
+      requestId: string;
+      op: "servicesSave" | "servicesConnect" | "servicesCopyLink";
+      base: string;
+    }
+  | { requestId: string; op: "servicesFinishLink"; query: string }
   | {
       requestId: string;
       op: "servicesObserve" | "servicesRead" | "servicesPeek";

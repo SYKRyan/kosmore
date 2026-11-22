@@ -186,20 +186,36 @@ function needsServicesCards() {
   );
 }
 let cardRefresh: ReturnType<typeof setTimeout> | undefined;
-let refreshOpenCard = false;
-function refreshServiceControls(ids?: string[]) {
-  if (
-    !client.clearServiceViews(ids) &&
-    (!current || !ids?.includes(current.subjectId))
-  )
-    return;
-  refreshOpenCard ||= !ids || (!!current && ids.includes(current.subjectId));
-  clearTimeout(cardRefresh);
-  cardRefresh = setTimeout(() => {
+const changedCards = new Map<string, number | undefined>();
+function refreshServiceControls(
+  ids?: string[],
+  firstFetchedAt?: Record<string, number>,
+) {
+  if (!ids) {
+    clearTimeout(cardRefresh);
+    cardRefresh = undefined;
+    changedCards.clear();
+    client.clearServiceViews();
     overlays.invalidate();
     salesOverlays.invalidate();
-    if (refreshOpenCard && popup && current) void show(current);
-    refreshOpenCard = false;
+    if (popup && current) void show(current);
+    return;
+  }
+  for (const id of ids)
+    if (!changedCards.has(id) || firstFetchedAt?.[id] === undefined)
+      changedCards.set(id, firstFetchedAt?.[id]);
+  cardRefresh ??= setTimeout(() => {
+    cardRefresh = undefined;
+    // A cold read usually installs its own result before the broadcast settles.
+    // Replacements must also refresh older badges held by other consumers.
+    const affected = new Set<string>();
+    for (const [id, first] of changedCards)
+      if (client.serviceCardChanged(id, first)) affected.add(id);
+    changedCards.clear();
+    if (!affected.size) return;
+    overlays.refreshCards(affected);
+    salesOverlays.refreshCards(affected);
+    if (popup && current && affected.has(current.subjectId)) void show(current);
   }, 80);
 }
 function syncRelayPreferences() {
@@ -428,22 +444,10 @@ async function show(
             .then(() => client.insights(context.subjectId, abort.signal, fresh))
         : client.insights(context.subjectId, abort.signal, fresh);
     void detail.then(
-      async (d) => {
+      (d) => {
         if (!valid()) return;
         view.setInsights(d, fresh);
         if (d.copies.length) void view.loadPrivateAccount();
-        let chosen;
-        let problem: string | undefined;
-        try {
-          chosen = await client.resolveCopy(context, d.copies, abort.signal);
-          if (context.surface !== "page" && !chosen)
-            problem =
-              "The exact pack copy could not be verified. Select an owned copy explicitly.";
-        } catch {
-          problem =
-            "The pack copy could not be loaded. Select an owned copy explicitly.";
-        }
-        if (valid()) view.setCopies(chosen, problem);
       },
       (error) => {
         if (valid()) view.insightsFailed(error);
@@ -1188,7 +1192,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     message.ids.length <= 100 &&
     message.ids.every(validCardId)
   ) {
-    refreshServiceControls(message.ids);
+    refreshServiceControls(message.ids, message.firstFetchedAt);
     return false;
   }
   if (

@@ -491,11 +491,6 @@ h3 {
 .filter-status:empty {
   display: none;
 }
-.sales-toggle {
-  width: 100%;
-  margin-top: 9px;
-  font-size: 11px;
-}
 .body {
   flex: 1;
   min-height: 0;
@@ -573,7 +568,8 @@ h3 {
   border-radius: 9px;
   margin-top: 9px;
 }
-.stats {
+.stats,
+.daily-prices {
   width: 100%;
   border-collapse: collapse;
   font-size: 11px;
@@ -597,10 +593,26 @@ h3 {
 .stats td:first-child {
   text-align: left;
 }
-.sales {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+.daily-prices th,
+.daily-prices td {
+  padding: 5px 2px;
+  text-align: right;
+}
+.daily-prices th {
+  font-weight: 400;
+  color: #baabd0;
+}
+.daily-prices tbody {
+  border-top: 1px solid #ffffff12;
+}
+.daily-prices th:first-child,
+.daily-prices th:nth-child(2),
+.daily-prices td:first-of-type {
+  text-align: left;
+  vertical-align: top;
+}
+.daily-prices td:not(:first-of-type) {
+  color: #f4dba1;
 }
 .my-listings {
   list-style: none;
@@ -624,23 +636,6 @@ h3 {
   color: #f4dba1;
   text-align: right;
   font-variant-numeric: tabular-nums;
-}
-.sales li {
-  display: grid;
-  grid-template-columns: 1fr 75px auto;
-  align-items: center;
-  gap: 8px;
-  border-top: 1px solid #ffffff0a;
-  padding: 6px 0;
-  font-size: 11px;
-}
-.sales time {
-  color: #ab9ac0;
-}
-.sales b {
-  color: #f4dba1;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
 }
 .finish {
   color: #baabd0;

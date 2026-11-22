@@ -1474,9 +1474,18 @@ test("recap overlay resolves repeated subjects to their exact copies and adds on
   await expect(popup.locator(".stats")).toContainText("Shiny");
   await expect(popup.locator(".stats")).toContainText("Full art");
   expect(writeRequests).toBe(0);
+  const added = page.waitForRequest(
+    (req) =>
+      req.method() === "POST" &&
+      new URL(req.url()).pathname === `/api/albums/${ALBUM_A}/items`,
+  );
   await popup
     .getByRole("button", { name: "Space & discovery", exact: true })
     .click();
+  expect((await added).postDataJSON()).toEqual({
+    subjectIds: ["42"],
+    copyId: COPY_B,
+  });
   await expect(
     popup.getByRole("button", { name: /Space & discovery.*Already added/ }),
   ).toBeDisabled();
@@ -1485,6 +1494,24 @@ test("recap overlay resolves repeated subjects to their exact copies and adds on
   await expect(page.locator("body")).toHaveAttribute("data-advances", "0");
   await mkdir("test-results/screenshots", { recursive: true });
   await page.screenshot({ path: "test-results/screenshots/recap.png" });
+});
+test("a missing pack opening lets the player choose an owned copy in the tooltip", async () => {
+  const path = "**/api/openings/*";
+  await page.route(path, (route) => route.fulfill({ status: 404, json: {} }));
+  try {
+    await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+    await page.locator(".ko-grid-open").nth(1).hover();
+    const popup = page.locator("#kosmore-root");
+    const choice = popup.getByLabel("Owned copy");
+    const add = popup.locator(".album-add").first();
+    await expect(choice).toHaveValue("");
+    await expect(add).toBeDisabled();
+    await choice.selectOption(COPY_B);
+    await expect(add).toBeEnabled();
+    expect(writeRequests).toBe(0);
+  } finally {
+    await page.unroute(path);
+  }
 });
 test("already-added albums show a small red removal action on the right and refresh without closing", async () => {
   membership = true;
@@ -2725,7 +2752,7 @@ test("tooltip content scrolls over fusion results when the page locks the wheel"
   });
   await page.getByTestId("fusion-summary").locator(".kc-article").hover();
   const popup = page.locator("#kosmore-root");
-  await expect(popup.locator(".sales li")).toHaveCount(5);
+  await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(6);
   await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
   const content = popup.locator(".tab-content");
   await expect
@@ -2796,7 +2823,7 @@ test("mobile tooltip scrolls over Fusion results when the page cancels touch scr
 
     const popup = phone.locator("#kosmore-root");
     await expect(popup).toHaveAttribute("data-full-screen", "");
-    await expect(popup.locator(".sales li")).toHaveCount(5);
+    await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(6);
     const content = popup.locator(".body");
     await expect
       .poll(() => content.evaluate((el) => el.scrollHeight - el.clientHeight))
@@ -4374,21 +4401,16 @@ test("pinned albums precede stat boxes and market history", async () => {
   await mkdir("test-results/screenshots", { recursive: true });
   await page.screenshot({ path: "test-results/screenshots/popup-updated.png" });
 });
-test("recent sales defaults to five and expands to every returned sale", async () => {
+test("daily sale prices group the selected variants by day, newest first", async () => {
   await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
   await page.locator(".ko-grid-open").first().hover();
-  const popup = page.locator("#kosmore-root");
-  await expect(popup.locator(".sales li")).toHaveCount(5);
-  const collapsed = await popup.boundingBox();
-  await popup.getByRole("button", { name: "Show All", exact: true }).click();
-  await expect(popup.locator(".sales li")).toHaveCount(6);
-  const expanded = await popup.boundingBox();
-  expect(expanded!.width).toBeCloseTo(collapsed!.width, 2);
-  expect(expanded!.height).toBeCloseTo(collapsed!.height, 2);
-  expect(expanded!.y + expanded!.height).toBeLessThanOrEqual(1000);
-  await popup.getByRole("button", { name: "Show Less", exact: true }).click();
-  await expect(popup.locator(".sales li")).toHaveCount(5);
-  expect((await popup.boundingBox())!.height).toBeCloseTo(collapsed!.height, 2);
+  const days = page.locator("#kosmore-root .daily-prices tbody");
+  await expect(days).toHaveCount(3);
+  await expect(days.first().locator("tr")).toHaveCount(2);
+  const dates = await days
+    .locator("time")
+    .evaluateAll((times) => times.map((t) => t.getAttribute("datetime")));
+  expect(dates).toEqual([...dates].sort().reverse());
   expect(writeRequests).toBe(0);
 });
 test("popup dimensions stay fixed while data loads, filters hide content, and a new card opens", async () => {
@@ -4411,7 +4433,7 @@ test("popup dimensions stay fixed while data loads, filters hide content, and a 
     expect(initial!.height).toBeCloseTo(900, 2);
     release();
     await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_A);
-    await expect(popup.locator(".sales li")).toHaveCount(5);
+    await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(6);
     const dimensions = async () => {
       return popup.evaluate((element) => ({
         width: (element as HTMLElement).offsetWidth,
@@ -4428,7 +4450,7 @@ test("popup dimensions stay fixed while data loads, filters hide content, and a 
       .evaluate((e) => e.clientWidth);
     for (const finish of ["Standard", "Shiny", "Full art"])
       await popup.getByLabel(finish, { exact: true }).uncheck();
-    await expect(popup.locator(".sales li")).toHaveCount(0);
+    await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(0);
     expect(await dimensions()).toEqual(expected);
     expect(await popup.locator(".body").evaluate((e) => e.clientWidth)).toBe(
       bodyWidth,
@@ -4449,7 +4471,7 @@ test("variant checkboxes persist across popups and options saves without closing
   const popup = page.locator("#kosmore-root");
   await popup.getByLabel("Shiny", { exact: true }).uncheck();
   await expect(popup).toBeVisible();
-  await expect(popup.locator(".sales li")).toHaveCount(3);
+  await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(3);
   await expect
     .poll(() =>
       worker.evaluate(
@@ -5112,7 +5134,7 @@ test("Market is selected by default and Trade matches only current friends' save
   await expect(
     popup.getByRole("tabpanel", { name: "Market", exact: true }),
   ).toBeVisible();
-  await expect(popup.locator(".sales li")).toHaveCount(5);
+  await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(6);
   expect(writeRequests).toBe(0);
 });
 test("my listing history loads only on demand, keeps native newest order, refreshes and remembers its tab", async () => {
@@ -5465,7 +5487,7 @@ test("a failed friend read leaves the Market tab usable and offers Retry", async
       popup.getByRole("button", { name: "Retry matches", exact: true }),
     ).toBeVisible();
     await popup.getByRole("tab", { name: "Market", exact: true }).click();
-    await expect(popup.locator(".sales li")).toHaveCount(5);
+    await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(6);
     expect(writeRequests).toBe(0);
   } finally {
     await page.unroute("**/api/friends");
@@ -6161,7 +6183,7 @@ test("the configured dismiss delay starts after leaving and cancels on reentry",
   const card = page.locator(".kc-article"),
     popup = page.locator("#kosmore-root");
   await card.hover();
-  await expect(popup.locator(".sales li")).toHaveCount(5);
+  await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(6);
   await page.mouse.move(10, 10);
   await page.waitForTimeout(350);
   await expect(popup).toBeVisible();
@@ -6208,7 +6230,7 @@ test("a pinned popup drags, stays visible, and updates cards without moving or a
   expect(updated).toEqual(moved);
   await popup.getByRole("tab", { name: "Market", exact: true }).click();
   await popup.getByRole("button", { name: "Refresh", exact: true }).click();
-  await expect(popup.locator(".sales li")).toHaveCount(5);
+  await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(6);
   expect(await popup.boundingBox()).toEqual(moved);
   await page.screenshot({ path: "test-results/screenshots/pinned-popup.png" });
   await page.evaluate(() => {
@@ -6262,7 +6284,7 @@ test("the smallest popup keeps its tabs and footer accessible by scrolling", asy
   await page.goto("https://kosmora.io/collection");
   await page.locator(".kc-article").hover();
   const popup = page.locator("#kosmore-root");
-  await expect(popup.locator(".sales li")).toHaveCount(5);
+  await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(6);
   await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
   const bounds = (await popup.boundingBox())!;
   expect({ width: bounds.width, height: bounds.height }).toEqual({
@@ -7193,7 +7215,7 @@ test("empty market history is a centered bold message while pending and failed h
     await expect(empty).toHaveText("No Market History");
     await expect(popup.locator(".last-sold")).toBeHidden();
     await expect(
-      market.locator(".chart,.stats,.sales,.legend,.section-head"),
+      market.locator(".chart,.stats,.daily-prices,.legend,.section-head"),
     ).toHaveCount(0);
     await expect(market.locator(":scope > *")).toHaveCount(1);
     expect(
@@ -7557,7 +7579,7 @@ test("long-press multi-select supports popup hover, focus and pinning while pres
     await expect(popup.locator("h2")).toHaveText(name);
     await expect(popup.locator(".subtitle")).toContainText(finish);
     await popup.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(popup.locator(".sales li")).toHaveCount(5);
+    await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(6);
     await page.keyboard.press("Escape");
     await picks.nth(index).focus();
     await expect(popup.locator("h2")).toHaveText(name);
@@ -7608,7 +7630,7 @@ test("Sell Many picker supports hover and focus without selecting cards or closi
     await expect(pick).toHaveAttribute("aria-pressed", "false");
     await expect(popup.locator(".last-sold")).toContainText("Last Sale: $");
     await popup.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(popup.locator(".sales li")).toHaveCount(5);
+    await expect(popup.locator(".daily-prices tbody tr")).toHaveCount(6);
     await page.keyboard.press("Escape");
     await expect(popup).toHaveCount(0);
     await expect(dialog).toBeVisible();

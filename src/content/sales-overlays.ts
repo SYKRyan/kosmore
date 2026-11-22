@@ -25,6 +25,7 @@ import { formatKosmo } from "../kosmora/contracts";
 import { ApiError } from "../kosmora/client";
 import {
   CardSignalProvider,
+  sameOverlaySignals,
   type CardSignals,
   type OverlaySettings,
 } from "./card-signals";
@@ -145,12 +146,6 @@ export class SalesOverlays {
         if (entry.visible && entry.loading) this.queue.add(entry);
         else this.queue.delete(entry);
         if (entry.visible) void this.loadMyPrice(entry);
-        else {
-          entry.marketRequest?.abort();
-          entry.mineRequest?.abort();
-          entry.mineRequest = undefined;
-          entry.mineLoading = false;
-        }
       }
       this.pump();
     });
@@ -267,6 +262,17 @@ export class SalesOverlays {
     }
     this.schedule();
   }
+  refreshCards(ids: ReadonlySet<string>) {
+    this.provider.invalidateCards(ids);
+    if (!this.showsMarketPrices()) return;
+    for (const entry of this.entries.values()) {
+      if (!ids.has(entry.target.context.subjectId)) continue;
+      entry.marketRequest?.abort();
+      entry.loading = true;
+      if (entry.visible) this.queue.add(entry);
+    }
+    this.pump();
+  }
   private reserveBatchSpace(entry: Entry) {
     const size = entry.settledSize;
     if (!size?.height) return;
@@ -350,8 +356,10 @@ export class SalesOverlays {
       for (const [input, { key }] of targets)
         if (!this.entries.has(input))
           newKeyCounts.set(key, (newKeyCounts.get(key) ?? 0) + 1);
+    const discovered = new Set<string>();
     for (const [input, target] of targets) {
       if (this.entries.has(input)) continue;
+      discovered.add(target.context.subjectId);
       const host = el("div");
       host.setAttribute("data-kosmore-sales-overlay", "");
       host.setAttribute("data-subject", target.context.subjectId);
@@ -413,6 +421,8 @@ export class SalesOverlays {
       this.render(entry);
       this.intersection.observe(input);
     }
+    if (discovered.size && this.showsMarketPrices())
+      this.client.observeCardIds?.([...discovered]);
     this.refreshWarnings();
     this.updateHistoryNotice();
     this.pump();
@@ -477,6 +487,8 @@ export class SalesOverlays {
     entry.marketRequest = request;
     const valid = () =>
       !request.signal.aborted && this.valid(entry, generation);
+    const previous = entry.signals;
+    const previousError = entry.error;
     const marketJob =
       this.settings!.showSalesLastSale || this.settings!.showSalesLowestListing
         ? this.provider
@@ -489,7 +501,7 @@ export class SalesOverlays {
                   ? "veil"
                   : "plain",
               (signals) => {
-                if (valid()) {
+                if (!previous && valid() && entry.signals !== signals) {
                   entry.signals = signals;
                   this.render(entry);
                 }
@@ -499,7 +511,10 @@ export class SalesOverlays {
             )
             .then(
               (signals) => {
-                if (valid()) entry.signals = signals;
+                if (valid()) {
+                  entry.signals = signals;
+                  entry.error = undefined;
+                }
               },
               (error) => {
                 if (!valid()) return;
@@ -516,7 +531,14 @@ export class SalesOverlays {
         entry.marketRequest = undefined;
         if (valid()) {
           entry.loading = false;
-          this.render(entry);
+          if (
+            !previous ||
+            !entry.signals ||
+            !sameOverlaySignals(previous, entry.signals) ||
+            entry.error !== previousError ||
+            entry.host.getAttribute("aria-busy") === "true"
+          )
+            this.render(entry);
         } else if (entry.visible && this.valid(entry, generation)) {
           this.queue.add(entry);
         }

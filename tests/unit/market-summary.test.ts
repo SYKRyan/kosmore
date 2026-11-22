@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { summarizePrices } from "../../src/shared/market-summary";
+import {
+  dailySalePrices,
+  summarizePrices,
+} from "../../src/shared/market-summary";
 import type { Finish, MarketHistory } from "../../src/shared/types";
 
 function history(finish: Finish, values: string[]): MarketHistory {
@@ -19,6 +22,21 @@ function history(finish: Finish, values: string[]): MarketHistory {
     })),
   };
 }
+it("groups individual sales by UTC day and preserves an exact even-count median", () => {
+  const h = history("plain", ["1000001", "1000000", "0"]);
+  h.sales[2].soldAt = "2026-11-04T23:30:00-05:00";
+  expect(dailySalePrices(h)).toEqual([
+    {
+      day: "2026-11-04",
+      finish: "plain",
+      min: "1",
+      median: "1.0000005",
+      max: "1.000001",
+    },
+    { day: "2026-11-05", finish: "plain", min: "0", median: "0", max: "0" },
+  ]);
+});
+
 describe("selected-variant price boxes", () => {
   it("computes a combined median from transactions, not variant medians", () => {
     expect(

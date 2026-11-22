@@ -17,6 +17,7 @@ import {
 } from "../shared/stat-catalog";
 import { statBox } from "./stat-box";
 import { saleObservations } from "./sale-observation-store";
+import { dailySalePrices } from "../shared/market-summary";
 import { saleRates, type SaleRates } from "../shared/sale-observations";
 import { SIGNAL_BADGE_CSS, signalBadges } from "./signal-badges";
 import { cardIcon } from "./icons";
@@ -141,6 +142,9 @@ export class Popup {
   private pinned: string[] = [];
   private copyProblem?: string;
   private copiesResolved = false;
+  private ownedCopies?: OwnedCopy[];
+  private copyScope?: string;
+  private copyRequest?: AbortController;
   private albumError?: string;
   private albumRequest?: AbortController;
   private albumRefresh = false;
@@ -150,7 +154,6 @@ export class Popup {
     if (this.albumVisible) void this.loadAlbums();
     else this.albumRequest?.abort();
   });
-  private showAllSales = false;
   private openingCopyAction = false;
   private pending = false;
   private closed = false;
@@ -405,6 +408,7 @@ export class Popup {
     this.position();
   }
   dispose() {
+    this.copyRequest?.abort();
     this.albumVisibility.disconnect();
     this.friendTooltip?.ownerDisposed(this.host);
     cancelAnimationFrame(this.marketFrame);
@@ -994,6 +998,7 @@ export class Popup {
     this.notes?.setAccount(account);
     this.listingHistory?.setAccount(account);
     this.pinned = pinned;
+    void this.loadCopies();
     this.renderAlbums();
     this.albumRefresh = fresh;
     void this.loadAlbums();
@@ -1168,9 +1173,35 @@ export class Popup {
     social.href = "/social";
     area.append(social);
   }
-  setCopies(chosen?: OwnedCopy, problem?: string) {
-    this.chosen = chosen;
-    this.copyProblem = problem;
+  private async loadCopies() {
+    if (!this.context || !this.account || this.closed) return;
+    const pinned = this.settings.pinnedAlbumsEnabled && this.pinned.length > 0;
+    const scope = this.account.key + ":" + pinned;
+    if (scope === this.copyScope) return;
+    this.copyScope = scope;
+    this.copyRequest?.abort();
+    const request = new AbortController();
+    this.copyRequest = request;
+    setRequestPriority(request.signal, "interactive");
+    this.copiesResolved = false;
+    this.ownedCopies = undefined;
+    this.chosen = undefined;
+    this.copyProblem = undefined;
+    try {
+      const result = await this.client.tooltipCopies(
+        this.context,
+        this.account.key,
+        pinned,
+        request.signal,
+      );
+      if (request.signal.aborted) return;
+      this.ownedCopies = result.copies;
+      this.chosen = result.chosen;
+      this.copyProblem = result.problem;
+    } catch (error) {
+      if (request.signal.aborted) return;
+      this.copyProblem = messageOf(error);
+    }
     this.copiesResolved = true;
     this.renderAlbums();
     void this.loadAlbums();
@@ -1190,7 +1221,7 @@ export class Popup {
       !this.settings.pinnedAlbumsEnabled ||
       !this.albumVisible ||
       !this.copiesResolved ||
-      !this.details?.copies.length ||
+      !this.ownedCopies?.length ||
       !this.pinned.length ||
       this.albumRequest ||
       (!fresh && this.albums)
@@ -1248,6 +1279,12 @@ export class Popup {
     this.renderMarket();
     if (this.account)
       this.pinned = settings.pinnedAlbums[this.account.key] ?? [];
+    else if (
+      settings.pinnedAlbumsEnabled &&
+      Object.values(settings.pinnedAlbums).some((ids) => ids.length)
+    )
+      void this.loadPrivateAccount();
+    void this.loadCopies();
     this.renderAlbums();
     this.renderHeaderSignals();
     void this.loadAlbums();
@@ -1330,15 +1367,9 @@ export class Popup {
     this.marketFrame = requestAnimationFrame(() => {
       this.marketFrame = 0;
       if (this.closed) return;
-      const restoreSalesFocus =
-        this.shadow.activeElement?.matches(".sales-toggle");
       this.renderMetrics();
       this.renderHeaderPrices();
       if (this.selectedTab === "market") this.renderMarketNow();
-      if (restoreSalesFocus)
-        this.market
-          .querySelector<HTMLButtonElement>(".sales-toggle")
-          ?.focus({ preventScroll: true });
     });
   }
   private renderMarketNow() {
@@ -1476,11 +1507,10 @@ export class Popup {
         return h && !(h instanceof Error) ? [h] : [];
       },
     );
-    const sales = available
-      .flatMap((h) => h.sales)
-      .sort((a, b) => Date.parse(b.soldAt) - Date.parse(a.soldAt));
-    if (available.some((h) => h.daily?.length || h.sales.length))
-      this.marketBody.append(this.chart(available));
+    const days = available
+      .flatMap(dailySalePrices)
+      .sort((a, b) => b.day.localeCompare(a.day));
+    if (days.length) this.marketBody.append(this.chart(available));
     const table = el("table", "stats");
     table.setAttribute("aria-label", "Market summaries by variant");
     const head = el("tr");
@@ -1539,68 +1569,65 @@ export class Popup {
       if (h instanceof Error)
         this.marketBody.append(note(`${FINISH_LABEL[f]}: ${h.message}`, true));
     }
-    if (available.some((h) => !h.complete && !h.daily))
+    if (
+      available.some((h) => !h.complete && !h.daily?.length && h.sales.length)
+    )
       this.marketBody.append(
         note(
-          "The chart uses the returned sales sample. Counts and price summaries cover the reported window.",
+          "For variants with sampled sales, the chart and daily prices cover the returned sample.",
         ),
       );
-    if (sales.length) {
-      this.marketBody.append(
-        this.heading(
-          "Recent sales",
-          `Latest ${this.showAllSales ? sales.length : Math.min(5, sales.length)} of ${sales.length}`,
-        ),
-      );
-      const list = el("ol", "sales");
-      list.id = "kosmore-sales";
-      for (const s of this.showAllSales ? sales : sales.slice(0, 5)) {
-        const li = el("li"),
-          time = el(
-            "time",
-            "",
-            new Date(s.soldAt).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            }),
-          );
-        time.dateTime = s.soldAt;
-        time.title = new Date(s.soldAt).toLocaleString();
-        li.append(
-          time,
-          el("span", "finish", FINISH_LABEL[s.finish]),
-          el("b", "", formatKosmo(s.price)),
+    if (!days.length) {
+      if (available.length)
+        this.marketBody.append(
+          note(
+            available.some((h) => h.count || h.lastSale)
+              ? "Daily sale prices are unavailable for the selected variants."
+              : "No completed sales in the available variant histories.",
+          ),
         );
-        list.append(li);
-      }
-      this.marketBody.append(list);
-      if (sales.length > 5) {
-        const expand = button(
-          this.showAllSales ? "Show Less" : "Show All",
-          () => {
-            const restoreFocus = this.shadow.activeElement === expand;
-            this.showAllSales = !this.showAllSales;
-            this.renderMarket();
-            this.position();
-            if (restoreFocus)
-              this.market
-                .querySelector<HTMLButtonElement>(".sales-toggle")
-                ?.focus({ preventScroll: true });
-          },
-          "sales-toggle",
+      return;
+    }
+    const daily = el("table", "daily-prices");
+    daily.setAttribute("aria-label", "Daily sale prices by variant in Kosmo");
+    const headers = daily.createTHead().insertRow();
+    for (const title of ["Day (UTC)", "Variant", "Min", "Median", "Max"]) {
+      const th = el("th", "", title);
+      th.scope = "col";
+      headers.append(th);
+    }
+    const formatDay = new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+    let group: HTMLTableSectionElement;
+    for (const [index, prices] of days.entries()) {
+      const row = el("tr");
+      if (prices.day !== days[index - 1]?.day) {
+        group = daily.createTBody();
+        const dateHeader = el("th");
+        dateHeader.scope = "rowgroup";
+        dateHeader.rowSpan = 0;
+        const time = el(
+          "time",
+          "",
+          formatDay.format(new Date(prices.day + "T00:00:00Z")),
         );
-        expand.setAttribute("aria-expanded", String(this.showAllSales));
-        expand.setAttribute("aria-controls", list.id);
-        this.marketBody.append(expand);
+        time.dateTime = prices.day;
+        dateHeader.append(time);
+        row.append(dateHeader);
       }
-    } else if (available.length)
-      this.marketBody.append(
-        note(
-          available.some((h) => h.count || h.lastSale)
-            ? "Individual sales are unavailable. Daily prices are shown above."
-            : "No completed sales in the available variant histories.",
-        ),
-      );
+      for (const value of [
+        FINISH_LABEL[prices.finish],
+        prices.min,
+        prices.median,
+        prices.max,
+      ])
+        row.append(el("td", "", value));
+      group!.append(row);
+    }
+    this.marketBody.append(this.heading("Daily sale prices", "Kosmo"), daily);
   }
   private chart(histories: MarketHistory[]) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -1614,11 +1641,13 @@ export class Popup {
         : "Completed sale prices over the last 30 days, separated by variant",
     );
     const samples = (h: MarketHistory) =>
-      h.daily
-        ? h.daily.map((row) => ({
-            price: row.median,
-            soldAt: row.day + "T00:00:00Z",
-          }))
+      h.daily?.length
+        ? h.daily
+            .filter((row) => row.count > 0)
+            .map((row) => ({
+              price: row.median,
+              soldAt: row.day + "T00:00:00Z",
+            }))
         : h.sales;
     const values = histories.flatMap(samples).map((s) => BigInt(s.price));
     const low = values.reduce((a, b) => (a < b ? a : b)),
@@ -1702,17 +1731,18 @@ export class Popup {
         );
       return;
     }
-    const copies = this.details?.copies ?? [];
-    if (this.copyProblem) area.append(note(this.copyProblem, true));
+    const copies = this.ownedCopies ?? [];
+    if (this.copyProblem && !this.chosen)
+      area.append(note(this.copyProblem, true));
     if (!copies.length) {
-      if (showAlbums)
+      if (showAlbums && !this.copyProblem)
         area.append(
           note(
-            this.details?.copiesKnown === false
-              ? "Open this card in Kosmora to verify your copies."
-              : this.details
+            !this.copiesResolved
+              ? "Loading owned copies…"
+              : this.ownedCopies
                 ? "Own a copy of this card to add it to an album."
-                : "Loading owned copies…",
+                : "Open this card in Kosmora to verify your copies.",
           ),
         );
       return;
@@ -1820,7 +1850,7 @@ export class Popup {
   }
   private selectedCopy(): OwnedCopy | undefined {
     if (!this.copiesResolved) return undefined;
-    const copies = this.details?.copies ?? [];
+    const copies = this.ownedCopies ?? [];
     return (
       this.chosen ??
       (!this.copyProblem && copies.length === 1 ? copies[0] : undefined)
@@ -1833,11 +1863,13 @@ export class Popup {
       copy.state !== "available" ||
       this.pending ||
       this.openingCopyAction;
-    this.sellButton.title = !this.details
+    const loading =
+      !this.copiesResolved && (!!this.copyRequest || !this.details);
+    this.sellButton.title = loading
       ? "Loading owned copies…"
-      : this.details.copiesKnown === false
+      : !this.ownedCopies
         ? "Open this card in Kosmora to verify ownership."
-        : !this.details.copies.length
+        : !this.ownedCopies.length
           ? "Own a copy of this card to sell it."
           : !copy
             ? "Choose an owned copy below to sell it."
@@ -1848,11 +1880,11 @@ export class Popup {
       ["gift", this.giftButton],
       ["trade", this.tradeButton],
     ] as const) {
-      const problem = !this.details
+      const problem = loading
         ? "Loading owned copies…"
-        : this.details.copiesKnown === false
+        : !this.ownedCopies
           ? "Open this card in Kosmora to verify ownership."
-          : !this.details.copies.length
+          : !this.ownedCopies.length
             ? `Own a copy of this card to ${action} it.`
             : !copy
               ? `Choose an owned copy to ${action} it.`

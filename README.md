@@ -11,9 +11,10 @@ A browser extension that adds card insights, shortcuts, and private reminders to
 - **Card tooltips:** view market analytics, your listing history, matching friends, and private notes while browsing, including pack reveals, trade pickers, and Market Activity.
 - **Mobile-friendly controls:** open tooltips with a Kosmora overlay button, optionally center them at full size, and dismiss them without activating the control underneath.
 - **Pinned albums:** add owned copies to your favourite albums or remove cards from them through ordered tooltip shortcuts.
+  In a pack tooltip, KosMore uses the pack slot and your owned copies to select the exact copy. If the opening cannot identify it, choose a copy in the tooltip before clicking an album.
 - **Customizable statistics:** choose and reorder price, interest, readership, auction, sales, and local sale-rate boxes.
 - **Card overlays:** spot active auctions, recent sales, your listed cards, quest cards, and matches for friends' saved family preferences.
-- **Family impact:** see whether fusing, trading, selling, or losing cards in Vortex would lower a family tier, accounting for other copies and the current batch or selection.
+- **Family Impact** is unavailable in 2.0.0.
 - **Friend tooltip:** expand matching friends' saved families and notes in a separate popup with Social and Profile links.
 - **Social and profile reminders:** keep private family preferences and notes for players, with an optional pinned profile editor.
 - **Trade reminders:** see preferred families, saved notes, and a rarity breakdown of your available matching cards while proposing a trade.
@@ -70,7 +71,7 @@ Card overlays, Family Impact Overlay, Sales Overlay, profile reminders, trade re
 
 Hover a supported card, or press its overlay button when enabled, to open KosMore's card popup. It includes rarity, finish, family links, market indicators, album shortcuts, stat boxes, and four icon tabs. The last selected tab is remembered for the next tooltip in that browser tab.
 
-- **Market (chart):** completed-sale history, a price chart, and a per-finish summary for Standard, Shiny, and Full art. Toggle finishes to change the history and related statistics; expand recent sales with **Show All**. **Last Sale** and **Listed For** appear in the header when data exists; Listed For opens the card's Market search.
+- The **Market** tab shows a price chart and summaries for Standard, Shiny, and Full art. Daily sale prices show the minimum, median, and maximum for each selected finish, grouped by UTC day from newest to oldest. **Last Sale** and **Listed For** appear in the header when data exists. Listed For opens the card’s Market search.
 - **My listing history:** My listing history combines saved starting prices with open single-card listings. Lots and face-down listings are omitted by Services. Refresh shows the available cached data.
 - **Trade (friends):** current friends whose saved family preferences match the card. Expand a friend to see all saved families, highlighted matches, private notes, and **Social**/**Profile** links. One friend expands at a time; a single match opens automatically. This uses the same content and behavior as the companion friend tooltip.
 - **Notes:** private notes for the card, shared across its copies and finishes within your account. Save or cancel edits here; these notes are stored in the extension.
@@ -137,6 +138,8 @@ Add indicators to visible cards and tooltip headers. Each indicator can be confi
 Compact Market Activity and journal thumbnails omit price/signal overlays. They still support the tooltip overlay button when enabled.
 
 ### Family Impact Overlay
+
+The overlay and its controls are disabled in 2.0.0. The description below applies to earlier releases.
 
 This group has its own master switch and separate **Show on Fusion page**, **Show on Trade page**, **Show on Vortex page**, and **Show on Sell pages** checkboxes. All default to on. Card overlays and Sales Overlay price badges can be turned off separately.
 

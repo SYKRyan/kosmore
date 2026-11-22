@@ -8,7 +8,9 @@ export const validCardId = (id: unknown): id is string =>
 export function servicesBase(value: string) {
   const url = new URL(value.trim());
   if (
-    url.protocol !== "https:" ||
+    (url.protocol !== "https:" &&
+      !(url.protocol === "http:" &&
+        ["localhost", "127.0.0.1"].includes(url.hostname))) ||
     url.username ||
     url.password ||
     url.search ||
@@ -16,12 +18,14 @@ export function servicesBase(value: string) {
     /[?#]/.test(value) ||
     ["kosmora.io", "developers.kosmora.io"].includes(url.hostname)
   )
-    throw new Error("Enter the HTTPS base URL provided for KosMore Services.");
+    throw new Error("Use HTTPS, or use HTTP with localhost or 127.0.0.1 for local testing.");
   return url.origin + url.pathname.replace(/\/+$/, "").replace(/\/v1$/, "");
 }
 
-export const servicesPermission = (base: string) =>
-  `https://${new URL(base).hostname}/*`;
+export function servicesPermission(base: string) {
+  const { protocol, hostname } = new URL(base);
+  return `${protocol}//${hostname}/*`;
+}
 
 export interface ConnectionStatus {
   base: string;

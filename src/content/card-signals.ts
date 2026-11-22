@@ -33,6 +33,22 @@ export interface CardSignals {
   auctionFetchedAt?: number;
   marketName?: string;
 }
+export function sameOverlaySignals(a: CardSignals, b: CardSignals) {
+  return (
+    a === b ||
+    (a.onSale === b.onSale &&
+      a.activeAuctions === b.activeAuctions &&
+      a.saleHistory === b.saleHistory &&
+      a.quest === b.quest &&
+      a.interestedFriends === b.interestedFriends &&
+      a.lastSale?.price === b.lastSale?.price &&
+      a.lowestListingPrice === b.lowestListingPrice &&
+      !!a.staleLastSale === !!b.staleLastSale &&
+      !!a.staleListingPrice === !!b.staleListingPrice &&
+      a.auctionFetchedAt === b.auctionFetchedAt &&
+      a.marketName === b.marketName)
+  );
+}
 export type OverlaySettings = Pick<
   Settings,
   | "cardOverlaysEnabled"
@@ -79,6 +95,12 @@ export class CardSignalProvider {
     this.cache.clear();
     this.context.clear();
     this.progress.clear();
+  }
+  invalidateCards(ids: ReadonlySet<string>) {
+    const matches = (key: string) => ids.has(key.slice(0, key.indexOf(":")));
+    this.cache.deleteMatching(matches);
+    for (const key of this.progress.keys())
+      if (matches(key)) this.progress.delete(key);
   }
   private friendPreferences(
     account: Account,

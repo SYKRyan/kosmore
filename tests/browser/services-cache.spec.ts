@@ -29,6 +29,13 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await context.route("https://kosmora.io/**", async (route) => {
       const url = new URL(route.request().url());
       if (!url.pathname.startsWith("/api/")) {
+        if (url.pathname.startsWith("/media/"))
+          return route.fulfill({ status: 204 });
+        if (url.searchParams.has("scrollGrid"))
+          return route.fulfill({
+            contentType: "text/html",
+            body: `<style>main{display:grid;grid-template-columns:repeat(4,1fr)}article{height:150px}</style><main>${Array.from({ length: 200 }, (_, i) => face(String(1001 + i))).join("")}</main>`,
+          });
         const sell = url.pathname === "/market/sell";
         const id = url.searchParams.get("card") ?? "42";
         return route.fulfill({
@@ -55,6 +62,18 @@ test("uses the unified Services response on a cold cache, then reuses it across 
       }
       return route.fulfill({ json: {} });
     });
+    const row = serviceRow("42");
+    row.details.history.plain.unshift(
+      {
+        day: "2026-11-17",
+        count: 3,
+        low: "3000000",
+        median: "4000000",
+        high: "9000000",
+      },
+      { day: "2026-11-18", count: 0, low: "0", median: "0", high: "0" },
+    );
+    row.details.sales.plain.last30Days.count += 3;
     await worker.evaluate(
       async ({ service, row }) => {
         await chrome.storage.local.set({
@@ -148,7 +167,7 @@ test("uses the unified Services response on a cold cache, then reuses it across 
           throw new Error("Unexpected Services route " + route);
         };
       },
-      { service, row: serviceRow("42") },
+      { service, row },
     );
 
     const options = await context.newPage();
@@ -182,6 +201,24 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await expect(
       cards.getByRole("dialog").getByText("Last Sale: $6.50", { exact: true }),
     ).toBeVisible();
+    const daily = cards.getByRole("table", {
+      name: "Daily sale prices by variant in Kosmo",
+    });
+    await expect(daily.locator("tbody tr")).toHaveCount(2);
+    await expect(daily.locator("time").first()).toHaveAttribute(
+      "datetime",
+      "2026-11-20",
+    );
+    await expect(daily.locator("time").last()).toHaveAttribute(
+      "datetime",
+      "2026-11-17",
+    );
+    await expect(daily.locator("tbody tr").last().locator("td")).toHaveText([
+      "Standard",
+      "3",
+      "4",
+      "9",
+    ]);
     expect(paths).toEqual(["/api/collection?native=1"]);
     expect(
       await worker.evaluate(
@@ -271,6 +308,93 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     });
     await options.getByRole("button", { name: "Retry access" }).click();
     await expect(options.getByText("Linked to FixturePlayer.")).toBeVisible();
+
+    await worker.evaluate(async () => {
+      const key = "kosmore.settings";
+      const saved = await chrome.storage.local.get(key);
+      await chrome.storage.local.set({
+        [key]: { ...(saved[key] as object), showOnSaleOverlay: true },
+      });
+    });
+    gameHandle = me.handle;
+    const grid = await context.newPage();
+    await grid.goto("https://kosmora.io/collection?scrollGrid=1");
+    const tiles = grid.locator("main article");
+    const first = tiles.first().locator(".signal-badge.auction");
+    await expect(first).toBeVisible();
+    const originalBadge = await first.elementHandle();
+    for (const index of [50, 100, 150, 199, 100, 50, 0]) {
+      const tile = tiles.nth(index);
+      await tile.scrollIntoViewIfNeeded();
+      await expect(tile.locator(".signal-badge.auction")).toBeVisible();
+    }
+    expect(
+      await first.evaluate(
+        (badge, original) => badge === original,
+        originalBadge,
+      ),
+    ).toBe(true);
+    const gridBatches: string[][] = await worker.evaluate(() =>
+      (globalThis as any).servicesFixture.batches
+        .map((batch: { ids: string[] }) => batch.ids)
+        .filter((ids: string[]) => ids.some((id) => Number(id) >= 1001)),
+    );
+    expect(gridBatches.map((ids) => ids.length)).toEqual([100, 100]);
+    expect(new Set(gridBatches.flat()).size).toBe(200);
+    const totals = () =>
+      worker.evaluate(() => {
+        const fixture = (globalThis as any).servicesFixture;
+        return [fixture.batches.length, fixture.listingCalls];
+      });
+    const warm = await totals();
+    await grid.reload();
+    await expect(first).toBeVisible();
+    await tiles.last().scrollIntoViewIfNeeded();
+    await expect(tiles.last().locator(".signal-badge.auction")).toBeVisible();
+    expect(await totals()).toEqual(warm);
+
+    // A price update from another tab must still reach this grid while its
+    // adjacent card keeps the same clickable badge.
+    await tiles.first().scrollIntoViewIfNeeded();
+    const neighbor = await first.elementHandle();
+    const updated = tiles.nth(1).locator(".signal-badge.auction .badge-price");
+    await expect(updated).toHaveText("$7.5");
+    await worker.evaluate(async (base) => {
+      const id = "1002";
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const open = indexedDB.open("kosmore.services");
+        open.onsuccess = () => resolve(open.result);
+        open.onerror = () => reject(open.error);
+      });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction("cards", "readwrite");
+          tx.oncomplete = () => resolve();
+          tx.onabort = () => reject(tx.error);
+          const store = tx.objectStore("cards");
+          const get = store.get(JSON.stringify([base, id]));
+          get.onsuccess = () => {
+            const row = get.result;
+            row.card.auctions[0].price = "12000000";
+            store.put(row);
+          };
+        });
+      } finally {
+        db.close();
+      }
+      const [tab] = await chrome.tabs.query({
+        url: "https://kosmora.io/collection?scrollGrid=1",
+      });
+      await chrome.tabs.sendMessage(tab.id!, {
+        op: "servicesCardsChanged",
+        ids: [id],
+      });
+    }, service);
+    await expect(updated).toHaveText("$12");
+    expect(
+      await first.evaluate((badge, original) => badge === original, neighbor),
+    ).toBe(true);
+    expect(await totals()).toEqual(warm);
   } finally {
     await context.close();
     await rm(profile, { recursive: true, force: true });

@@ -346,14 +346,10 @@ it("resolves repeated subjects by verified opening slot plus identity", async ()
   const h = harness();
   await h.client.account();
   await h.client.receivePackData({ kind: "opening", data: opening });
-  const copies = [...card().copies, { ...card().copies[0], id: COPY_B }].map(
-    (c) => ({
-      id: c.id,
-      subjectId: "42",
-      state: c.state,
-      variant: { veil: false, fullArt: false },
-    }),
-  );
+  await h.client.observeCardDetails({
+    ...card(),
+    copies: [...card().copies, { ...card().copies[0], id: COPY_B }],
+  });
   const ctx = {
     subjectId: "42",
     name: "Northern Lights",
@@ -363,10 +359,53 @@ it("resolves repeated subjects by verified opening slot plus identity", async ()
     entryIndex: 1,
     variant: { veil: false, fullArt: false },
   } as CardContext;
-  expect((await h.client.resolveCopy(ctx, copies))?.id).toBe(COPY_B);
   expect(
-    await h.client.resolveCopy({ ...ctx, entryIndex: undefined }, copies),
+    (await h.client.tooltipCopies(ctx, "fixtureplayer", true)).chosen?.id,
+  ).toBe(COPY_B);
+  expect(
+    (
+      await h.client.tooltipCopies(
+        { ...ctx, entryIndex: undefined },
+        "fixtureplayer",
+        true,
+      )
+    ).chosen,
   ).toBeUndefined();
+  expect(h.fetcher.mock.calls.map(([path]) => path)).toEqual(["/api/me"]);
+});
+
+it("loads missing opening and ownership once for pinned albums and leaves an unowned pack slot unselected", async () => {
+  const h = harness();
+  await h.client.account();
+  const ctx: CardContext = {
+    subjectId: "42",
+    name: "Northern Lights",
+    anchor: document.body,
+    surface: "summary",
+    openingIds: [opening.id],
+    entryIndex: 0,
+    variant: { veil: false, fullArt: false },
+  };
+  expect(
+    (await h.client.tooltipCopies(ctx, "fixtureplayer", false)).copies,
+  ).toBeUndefined();
+  expect(h.fetcher).toHaveBeenCalledTimes(1);
+  expect(
+    (await h.client.tooltipCopies(ctx, "fixtureplayer", true)).chosen?.id,
+  ).toBe(COPY_A);
+  const other = await h.client.tooltipCopies(
+    { ...ctx, entryIndex: 1 },
+    "fixtureplayer",
+    true,
+  );
+  expect(other.chosen).toBeUndefined();
+  expect(other.problem).toBeTruthy();
+  expect(other.copies?.map((copy) => copy.id)).toEqual([COPY_A]);
+  expect(h.fetcher.mock.calls.map(([path]) => path)).toEqual([
+    "/api/me",
+    "/api/openings/" + opening.id,
+    "/api/collection/42",
+  ]);
 });
 
 it("pages through family counts past Kosmora's 1000-family limit", async () => {

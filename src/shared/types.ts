@@ -203,6 +203,7 @@ export interface Settings {
   pinnedAlbumHotkeys: import("./hotkeys").PinnedAlbumHotkeys;
 }
 export interface KosmoraClient {
+  observeCardIds?(ids: string[]): void;
   readonly displayAccount?: Account;
   hasInteractiveReads?(): boolean;
   hasActiveAuctions?(
@@ -293,11 +294,12 @@ export interface KosmoraClient {
     signal?: AbortSignal,
     fresh?: boolean,
   ): Promise<Album[]>;
-  resolveCopy(
+  tooltipCopies(
     context: CardContext,
-    copies: OwnedCopy[],
+    account: string,
+    pinnedAlbums: boolean,
     signal?: AbortSignal,
-  ): Promise<OwnedCopy | undefined>;
+  ): Promise<{ copies?: OwnedCopy[]; chosen?: OwnedCopy; problem?: string }>;
   add(albumId: string, copy: OwnedCopy, expectedAccount: string): Promise<void>;
   remove(
     albumId: string,

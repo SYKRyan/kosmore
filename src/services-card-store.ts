@@ -73,6 +73,20 @@ export class ServicesCardStore {
       request.onerror = () => reject(request.error);
     });
   }
+  async getCards(keys: string[]) {
+    const db = await this.open();
+    const store = db.transaction("cards").objectStore("cards");
+    return Promise.all(
+      keys.map(
+        (key) =>
+          new Promise<CachedCard | undefined>((resolve, reject) => {
+            const request = store.get(key);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          }),
+      ),
+    );
+  }
 
   async saveConnection(connection: StoredConnection) {
     const db = await this.open();

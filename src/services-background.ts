@@ -20,6 +20,17 @@ import { messageOf } from "./shared/types";
 const DAY = 86_400_000;
 const BATCH_SIZE = 100;
 const DEFERRED_CARD_KEY = "kosmore.deferredCard";
+const PENDING_LINK_KEY = "kosmore.pendingAccountLink";
+const CALLBACK_RULE_ID = 1;
+
+interface PendingLink {
+  target: string;
+  state: string;
+  verifier: string;
+  authorizationUrl: string;
+  expiresAt: number;
+  inviteHash?: string;
+}
 
 interface Session {
   token: string;
@@ -45,6 +56,7 @@ export function installServicesBackground() {
   const jobs = new Map<string, Job>();
   let flushing = false;
   let linking: AbortController | undefined;
+  let pendingLink: PendingLink | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let retryAt = 0;
   const retryCards = new Map<string, number>();
@@ -55,6 +67,9 @@ export function installServicesBackground() {
   const ready = store.connection().then(async (connection) => {
     base = connection?.base ?? "";
     session = connection?.session;
+    pendingLink = (await chrome.storage.session?.get(PENDING_LINK_KEY))?.[
+      PENDING_LINK_KEY
+    ] as PendingLink | undefined;
     const saved = (await chrome.storage?.session?.get(DEFERRED_CARD_KEY))?.[
       DEFERRED_CARD_KEY
     ] as { base?: string; player?: string; id?: unknown } | undefined;
@@ -163,6 +178,7 @@ export function installServicesBackground() {
   }
 
   async function replace(nextBase: string, nextSession?: Session) {
+    await clearPendingLink();
     generation.abort();
     generation = new AbortController();
     for (const job of jobs.values()) job.resolve();
@@ -210,55 +226,67 @@ export function installServicesBackground() {
       .replace(/=+$/, "");
   const random = () => base64url(crypto.getRandomValues(new Uint8Array(32)));
 
-  async function connect(rawBase: string, inviteCode?: string) {
-    const target = servicesBase(rawBase);
-    if (
-      !(await chrome.permissions.contains({
-        origins: [servicesPermission(target)],
-      }))
-    )
-      throw new Error("Allow access to the Services host before connecting.");
-    linking?.abort();
-    const attempt = new AbortController();
-    linking = attempt;
-    await serialize(async () => {
-      attempt.signal.throwIfAborted();
-      if (base !== target) await replace(target);
+  async function clearPendingLink() {
+    if (!pendingLink) return;
+    await chrome.storage.session.remove(PENDING_LINK_KEY);
+    pendingLink = undefined;
+    await chrome.declarativeNetRequest?.updateSessionRules({
+      removeRuleIds: [CALLBACK_RULE_ID],
     });
-    const signal = AbortSignal.any([attempt.signal, generation.signal]);
+  }
+
+  async function savePendingLink(link: PendingLink) {
+    await chrome.storage.session.set({ [PENDING_LINK_KEY]: link });
+    pendingLink = link;
+  }
+
+  async function startLink(
+    target: string,
+    inviteCode: string | undefined,
+    signal: AbortSignal,
+  ) {
     const verifier = random(),
       state = random();
-    const handoffChallenge = base64url(
-      new Uint8Array(
-        await crypto.subtle.digest(
-          "SHA-256",
-          new TextEncoder().encode(verifier),
+    const digest = async (value: string) =>
+      base64url(
+        new Uint8Array(
+          await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(value),
+          ),
         ),
-      ),
-    );
+      );
+    const inviteHash = inviteCode ? await digest(inviteCode) : undefined;
+    const existing = pendingLink;
+    if (
+      existing &&
+      existing.target === target &&
+      existing.expiresAt > Date.now() &&
+      (!inviteCode || existing.inviteHash === inviteHash)
+    )
+      return existing;
+    await clearPendingLink();
+    const expiresAt = Date.now() + 10 * 60_000;
     const redirectUri = chrome.identity.getRedirectURL("kosmore-services");
+    const handoffChallenge = await digest(verifier);
     const start = await call(target, "/v1/connect/start", signal, undefined, {
       redirectUri,
       handoffChallenge,
       state,
-      ...(inviteCode?.trim() && { inviteCode: inviteCode.trim() }),
+      ...(inviteCode && { inviteCode }),
     });
-    if (
-      !start.ok &&
-      object(
-        await start
-          .clone()
-          .json()
-          .catch(() => ({})),
-      ).error === "invite_unavailable"
-    )
-      throw new Error(
-        "This invite is unavailable. Ask the administrator for a new code.",
-      );
-    if (!start.ok)
+    if (!start.ok) {
+      if (
+        object(await start.json().catch(() => ({}))).error ===
+        "invite_unavailable"
+      )
+        throw new Error(
+          "This invite is unavailable. Ask the administrator for a new code.",
+        );
       throw new Error(
         `Services could not start account linking (HTTP ${start.status}).`,
       );
+    }
     const authorization = new URL(
       object(await start.json()).authorizationUrl as string,
     );
@@ -270,11 +298,126 @@ export function installServicesBackground() {
       throw new Error(
         "Services returned an unexpected Kosmora authorization URL.",
       );
-    const redirect = await chrome.identity.launchWebAuthFlow({
-      url: authorization.href,
-      interactive: true,
+    return {
+      target,
+      verifier,
+      state,
+      authorizationUrl: authorization.href,
+      expiresAt,
+      inviteHash,
+    };
+  }
+
+  async function connect(rawBase: string, inviteCode?: string, copy = false) {
+    const target = servicesBase(rawBase);
+    if (copy && !chrome.declarativeNetRequest?.updateSessionRules)
+      throw new Error(
+        "This browser cannot receive a sign-in link in another tab.",
+      );
+    if (
+      !(await chrome.permissions.contains({
+        origins: [servicesPermission(target)],
+      }))
+    )
+      throw new Error("Allow access to the Services host before connecting.");
+    linking?.abort();
+    const attempt = new AbortController();
+    linking = attempt;
+    const link = await serialize(async () => {
+      attempt.signal.throwIfAborted();
+      if (base !== target) await replace(target);
+      const signal = AbortSignal.any([attempt.signal, generation.signal]);
+      const flow = await startLink(target, inviteCode?.trim(), signal);
+      signal.throwIfAborted();
+      if (copy) {
+        // Route only the top-level callback for this pending sign-in.
+        const callbackHost = chrome.runtime.id + "\\.chromiumapp\\.org";
+        await savePendingLink(flow);
+        await chrome.declarativeNetRequest.updateSessionRules({
+          removeRuleIds: [CALLBACK_RULE_ID],
+          addRules: [
+            {
+              id: CALLBACK_RULE_ID,
+              action: {
+                type: chrome.declarativeNetRequest.RuleActionType.REDIRECT,
+                redirect: {
+                  regexSubstitution:
+                    chrome.runtime.getURL("link-complete.html") + "#\\1",
+                },
+              },
+              condition: {
+                regexFilter: `^https://${callbackHost}/kosmore-services\\?((code|error)=[A-Za-z0-9_-]+&state=${flow.state})$`,
+                isUrlFilterCaseSensitive: true,
+                resourceTypes: [
+                  chrome.declarativeNetRequest.ResourceType.MAIN_FRAME,
+                ],
+              },
+            },
+          ],
+        });
+      } else {
+        await clearPendingLink();
+      }
+      return flow;
     });
+    if (copy) return { url: link.authorizationUrl };
+    const signal = AbortSignal.any([attempt.signal, generation.signal]);
+    signal.throwIfAborted();
+    let redirect: string | undefined;
+    try {
+      redirect = await chrome.identity.launchWebAuthFlow({
+        url: link.authorizationUrl,
+        interactive: true,
+      });
+    } catch (error) {
+      if (/couldn.t create a browser window/i.test(messageOf(error))) {
+        await serialize(async () => {
+          signal.throwIfAborted();
+          await savePendingLink(link);
+        });
+        throw new Error(
+          "The browser could not open the sign-in window. Choose Copy Link to continue in another tab.",
+        );
+      }
+      throw error;
+    }
     if (!redirect) throw new Error("Kosmora did not complete account linking.");
+    return finishLink(link, redirect, signal);
+  }
+
+  async function finishCopiedLink(query: string) {
+    const { link, signal } = await serialize(async () => {
+      const link = pendingLink;
+      if (!link || link.target !== base || link.expiresAt <= Date.now())
+        throw new Error(
+          "This link has expired or has already been used. Return to KosMore Settings.",
+        );
+      const states = new URLSearchParams(query).getAll("state");
+      if (states.length !== 1 || states[0] !== link.state)
+        throw new Error(
+          "This callback does not match the link from KosMore Settings.",
+        );
+      await clearPendingLink();
+      const attempt = (linking ??= new AbortController());
+      return {
+        link,
+        signal: AbortSignal.any([attempt.signal, generation.signal]),
+      };
+    });
+    return finishLink(
+      link,
+      chrome.identity.getRedirectURL("kosmore-services") + "?" + query,
+      signal,
+    );
+  }
+
+  async function finishLink(
+    link: PendingLink,
+    redirect: string,
+    signal: AbortSignal,
+  ) {
+    const { target, verifier, state } = link;
+    const redirectUri = chrome.identity.getRedirectURL("kosmore-services");
     const callback = new URL(redirect);
     const code = callback.searchParams.get("code");
     if (
@@ -342,7 +485,6 @@ export function installServicesBackground() {
         handle: typeof profile.handle === "string" ? profile.handle : undefined,
       });
       history.schedule();
-      if (linking === attempt) linking = undefined;
       return status();
     });
   }
@@ -420,7 +562,7 @@ export function installServicesBackground() {
     return Math.max(1000, Number.isFinite(delay) ? delay : 15_000);
   }
 
-  async function notify(ids: string[]) {
+  async function notify(ids: string[], firstFetchedAt: Record<string, number>) {
     const tabs = await chrome.tabs.query({ url: "https://kosmora.io/*" });
     await Promise.allSettled(
       tabs.flatMap((tab) =>
@@ -429,7 +571,7 @@ export function installServicesBackground() {
           : [
               chrome.tabs.sendMessage(
                 tab.id,
-                { op: "servicesCardsChanged", ids },
+                { op: "servicesCardsChanged", ids, firstFetchedAt },
                 { frameId: 0 },
               ),
             ],
@@ -572,8 +714,9 @@ export function installServicesBackground() {
       listingRetryAt = linked.expiresAt;
     if (!Array.isArray(data.cards)) throw new Error("Invalid Services batch.");
     signal.throwIfAborted();
-    const wanted = new Set(ids),
-      changed = new Set<string>();
+    const wanted = new Set(ids);
+    const changed: string[] = [];
+    const firstFetchedAt: Record<string, number> = {};
     const cards: CachedCard[] = [];
     const privateRows: CachedListings[] = [];
     const now = Date.now();
@@ -641,7 +784,8 @@ export function installServicesBackground() {
                 card: parseServicesCard(row.details, id),
               };
         cards.push(record);
-        changed.add(id);
+        changed.push(id);
+        if (!old) firstFetchedAt[id] = fetchedAt;
       } catch {
         if (validCardId(raw?.id)) retryCards.set(raw.id, retry);
       }
@@ -650,7 +794,7 @@ export function installServicesBackground() {
     signal.throwIfAborted();
     await store.save(cards, privateRows, signal);
     signal.throwIfAborted();
-    if (changed.size) void notify([...changed]).catch(() => {});
+    if (changed.length) void notify(changed, firstFetchedAt).catch(() => {});
   }
 
   async function flush() {
@@ -661,16 +805,13 @@ export function installServicesBackground() {
         const selected = [...jobs]
           .filter(([, job]) => job.privateDemand === includeMyListings)
           .slice(0, BATCH_SIZE);
-        if (!includeMyListings) {
-          if (deferred) passive.add(deferred);
-          for (const id of passive) {
-            if (selected.length === BATCH_SIZE) break;
-            passive.delete(id);
-            if (jobs.has(id) || (retryCards.get(id) ?? 0) > Date.now())
-              continue;
-            addJob(id, false);
-            selected.push([id, jobs.get(id)!]);
-          }
+        if (deferred) passive.add(deferred);
+        for (const id of passive) {
+          if (selected.length === BATCH_SIZE) break;
+          passive.delete(id);
+          if (jobs.has(id) || (retryCards.get(id) ?? 0) > Date.now()) continue;
+          addJob(id, includeMyListings);
+          selected.push([id, jobs.get(id)!]);
         }
         const current = session,
           signal = generation.signal,
@@ -684,14 +825,16 @@ export function installServicesBackground() {
             !current.blocked &&
             current.expiresAt > Date.now() &&
             retryAt <= Date.now()
-          )
-            await refresh(
+          ) {
+            // An observation or deferred ID can outlive the miss that queued it.
+            const missing = await staleCards(
               selected.map(([id]) => id),
               url,
-              current,
-              signal,
-              includeMyListings,
             );
+            signal.throwIfAborted();
+            if (missing.length)
+              await refresh(missing, url, current, signal, includeMyListings);
+          }
         } catch {
           if (!signal.aborted) retryAt = Date.now() + 15_000;
         } finally {
@@ -738,6 +881,16 @@ export function installServicesBackground() {
     return promise;
   }
 
+  async function staleCards(ids: string[], url: string) {
+    const { freshness } = await policy;
+    const records = await store.getCards(ids.map((id) => key(url, id)));
+    const now = Date.now();
+    return ids.filter((_, index) => {
+      const row = records[index];
+      return !row || Math.min(row.freshUntil, row.fetchedAt + freshness) <= now;
+    });
+  }
+
   async function readCards(
     ids: string[],
     account: string | undefined,
@@ -751,6 +904,19 @@ export function installServicesBackground() {
       });
     if (!base) return {};
     const signal = generation.signal;
+    if (observed) {
+      if (!session || session.blocked) return {};
+      const missing = await staleCards([...new Set(ids)], base);
+      signal.throwIfAborted();
+      for (const id of missing) {
+        if (jobs.has(id)) continue;
+        passive.add(id);
+        if (passive.size > 500) passive.delete(passive.values().next().value!);
+      }
+      if (!deferred && passive.size)
+        await persistDeferred(passive.values().next().value);
+      return {};
+    }
     const { retention } = await policy;
     const now = Date.now();
     if (now - lastPrune >= 60 * 60_000) {
@@ -771,12 +937,7 @@ export function installServicesBackground() {
           !session.blocked &&
           (!session.scopes || session.scopes.includes("listings")) &&
           view.listings === undefined;
-        if (view.stale && observed && session && !session.blocked) {
-          passive.add(id);
-          if (passive.size > BATCH_SIZE)
-            passive.delete(passive.values().next().value!);
-          if (!deferred) await persistDeferred(id);
-        } else if (view.stale && !cacheOnly) {
+        if (view.stale && !cacheOnly) {
           const pending = enqueue(
             id,
             wantsMine && listingRetryAt <= Date.now(),
@@ -784,7 +945,7 @@ export function installServicesBackground() {
           if (wantsMine || !view.card) {
             await pending;
             signal.throwIfAborted();
-            if (!observed) view = await snapshot(id, account);
+            view = await snapshot(id, account);
           }
         }
         if (wantsMine && !view.missing && view.listings === undefined) {
@@ -792,7 +953,7 @@ export function installServicesBackground() {
           signal.throwIfAborted();
           view = await snapshot(id, account);
         }
-        if (!observed) result[id] = view;
+        result[id] = view;
       }),
     );
     signal.throwIfAborted();
@@ -808,6 +969,11 @@ export function installServicesBackground() {
       return false;
     const options =
       sender.url?.split(/[?#]/, 1)[0] === chrome.runtime.getURL("options.html");
+    const linkPage =
+      sender.frameId === 0 &&
+      sender.tab &&
+      sender.url?.split(/[?#]/, 1)[0] ===
+        chrome.runtime.getURL("link-complete.html");
     const game =
       sender.tab &&
       sender.frameId === 0 &&
@@ -820,10 +986,12 @@ export function installServicesBackground() {
           "servicesRetry",
           "servicesSave",
           "servicesConnect",
+          "servicesCopyLink",
           "servicesDisconnect",
           "servicesEraseHistory",
         ].includes(message.op)
       ) &&
+      !(linkPage && message.op === "servicesFinishLink") &&
       !(
         game &&
         ["servicesRead", "servicesObserve", "servicesPeek"].includes(message.op)
@@ -867,7 +1035,15 @@ export function installServicesBackground() {
               return status();
             });
           }
+          case "servicesFinishLink":
+            if (
+              typeof message.query !== "string" ||
+              message.query.length > 1024
+            )
+              throw new Error("Invalid account-linking callback.");
+            return finishCopiedLink(message.query);
           case "servicesConnect":
+          case "servicesCopyLink":
             if (typeof message.base !== "string")
               throw new Error("Invalid Services URL.");
             return connect(
@@ -875,6 +1051,7 @@ export function installServicesBackground() {
               typeof message.inviteCode === "string"
                 ? message.inviteCode
                 : undefined,
+              message.op === "servicesCopyLink",
             );
           case "servicesEraseHistory":
             if (

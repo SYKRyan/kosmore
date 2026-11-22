@@ -1,12 +1,31 @@
 {
   "manifest_version": 3,
   "name": "KosMore",
-  "version": "1.8.4",
+  "version": "2.0.2",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvPkORTFo9zmE8tNehOyAHkD0QWM1PJyBAApkGblIuf1vueA+UEQP3fxmXTEYEcCSo0FHUrDcWR7OLrFB8ESdS/7QRulrhkbCHyFRRcphxV1l99mEqreDHZ3///7TvEV9gJ9nC0y5SgVdA1s0UJV61YB1sCHKgLmYNRLfZVoVhzny9C14X2+PnfNYqfVWKGoPUrOSI5ep5sQGjzWf8JQYRCoNMYsnTBfoV6ucmYT5CRw+kV7noVGSYoEmKdfJOZRZ2uxsI5eAtKfPwOwVZQIf61Og0CKu2ifYA8OuYjTdhu/dBS7d1Bm2ZQVsB7SMgjPfTmS/yInulz6uClj19PWU8wIDAQAB",
   "description": "Card insights and pinned album shortcuts for Kosmora, including pack reveals and summaries.",
   "minimum_chrome_version": "120",
-  "permissions": ["storage", "identity", "alarms"],
-  "optional_host_permissions": ["https://*/*"],
-  "host_permissions": ["https://kosmora.io/*"],
+  "permissions": [
+    "storage",
+    "identity",
+    "alarms",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "host_permissions": [
+    "https://kosmora.io/*",
+    "https://fpanbppeaofadlmpbdlhhdmbdopclckj.chromiumapp.org/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["link-complete.html"],
+      "matches": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"]
+    }
+  ],
   "action": { "default_title": "KosMore settings" },
   "options_ui": { "page": "options.html", "open_in_tab": true },
   "background": { "service_worker": "background.js", "type": "module" },

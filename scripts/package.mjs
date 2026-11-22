@@ -43,6 +43,9 @@ function safePath(path) {
 const required = new Set(
   [
     "manifest.json",
+    "card-cache-config.json",
+    "link-complete.html",
+    "link-complete.js",
     manifest.background.service_worker,
     manifest.options_ui.page,
     ...manifest.content_scripts.flatMap((entry) => [

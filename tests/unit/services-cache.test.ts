@@ -2,7 +2,11 @@ import { webcrypto } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 import { installServicesBackground } from "../../src/services-background";
 import { GameClient } from "../../src/kosmora/client";
-import { servicesBase } from "../../src/shared/services";
+import {
+  parseServicesCard,
+  servicesBase,
+  servicesPermission,
+} from "../../src/shared/services";
 import { observedCardIds } from "../../src/page-relay-install";
 import { serviceRow } from "../fixtures/services";
 import { me } from "../fixtures/data";
@@ -24,6 +28,9 @@ vi.mock("../../src/services-card-store", () => ({
   ServicesCardStore: class {
     async connection() {
       return structuredClone(database.connection);
+    }
+    async getCards(keys: string[]) {
+      return keys.map((key) => database.cards.get(key));
     }
     async get(store: "cards" | "listings", key: string) {
       return database[store].get(key);
@@ -199,6 +206,19 @@ it("shares public batches and loads one independent listing snapshot only on pri
     preferScopedBatch: true,
   });
   expect(listingCalls).toBe(1);
+
+  // Another fetch fills a passively observed miss before the next dispatch.
+  await send(["7002"], "fixtureplayer", 1, "servicesObserve");
+  const cardKey = (id: string) =>
+    JSON.stringify([database.connection.base, id]);
+  const cached = database.cards.get(cardKey("7001"));
+  database.cards.set(cardKey("7002"), {
+    ...cached,
+    key: cardKey("7002"),
+    card: { ...cached.card, id: "7002" },
+  });
+  await send(["7003"]);
+  expect(calls.at(-1)?.ids).toEqual(["7003"]);
 });
 
 it("keeps card-heavy consumers off signed-in game card routes when Services is unavailable", async () => {
@@ -227,7 +247,65 @@ it("keeps card-heavy consumers off signed-in game card routes when Services is u
   expect(game).toHaveBeenCalledTimes(1);
 });
 
-it("normalizes a scoped tester URL and rejects non-HTTPS or credential-bearing URLs", () => {
+it("reuses a fresh card across sequential overlay reads until expiry or a newer notification", async () => {
+  let now = Date.now();
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  const send = vi.fn(async ({ requestId, ids: [id], includeMyListings }) => ({
+    requestId,
+    ok: true,
+    data: {
+      [id]: {
+        card: parseServicesCard(serviceRow(id).details, id),
+        stale: false,
+        until: now + 300_000,
+        fetchedAt: now,
+        listings: includeMyListings ? [] : undefined,
+      },
+    },
+  }));
+  vi.stubGlobal("chrome", { runtime: { sendMessage: send } });
+  const client = new GameClient();
+  try {
+    await client.insights("42");
+    await client.history("42", "plain");
+    expect(client.serviceCardChanged("42", now)).toBe(false);
+    await client.activeAuctions("42", "Northern Lights");
+    expect(send).toHaveBeenCalledTimes(1);
+    expect((await client.insights("42", undefined, false, true)).onSale).toBe(
+      false,
+    );
+    expect((await client.insights("42")).onSale).toBeUndefined();
+    expect(send).toHaveBeenCalledTimes(2);
+    now += 300_001;
+    await client.history("42", "plain");
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(client.serviceCardChanged("42", now + 1)).toBe(true);
+    await client.insights("42");
+    expect(send).toHaveBeenCalledTimes(4);
+  } finally {
+    vi.restoreAllMocks();
+  }
+});
+
+it.each(["localhost", "127.0.0.1"])(
+  "accepts local HTTP services on %s",
+  (host) => {
+    for (const port of ["", ":5214", ":65535"]) {
+      const origin = `http://${host}${port}`;
+      const base = servicesBase(origin + "/test/v1/");
+      expect(base).toBe(origin + "/test");
+      expect(servicesPermission(base)).toBe(`http://${host}/*`);
+    }
+  },
+);
+
+it("normalizes a scoped HTTPS URL and rejects unsafe service URLs", () => {
+  expect(servicesPermission("https://services.example.com:8443/test")).toBe(
+    "https://services.example.com/*",
+  );
+  expect(() => servicesBase("http://localhost.example.com")).toThrow();
+  expect(() => servicesBase("http://127.0.0.2")).toThrow();
+  expect(() => servicesBase("http://user:pass@localhost:5214")).toThrow();
   expect(servicesBase("https://services.example.com/test/v1/")).toBe(
     "https://services.example.com/test",
   );

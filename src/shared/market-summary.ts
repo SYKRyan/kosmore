@@ -23,6 +23,37 @@ function medianPrice(sorted: bigint[]): string {
   );
 }
 
+export function dailySalePrices(history: MarketHistory) {
+  if (history.daily?.length)
+    return history.daily
+      .filter((row) => row.count > 0)
+      .map((row) => ({
+        day: row.day,
+        finish: history.finish,
+        min: formatKosmo(row.low),
+        median: formatKosmo(row.median),
+        max: formatKosmo(row.high),
+      }));
+
+  const days = new Map<string, bigint[]>();
+  for (const sale of history.sales) {
+    const day = new Date(sale.soldAt).toISOString().slice(0, 10);
+    const prices = days.get(day);
+    if (prices) prices.push(BigInt(sale.price));
+    else days.set(day, [BigInt(sale.price)]);
+  }
+  return Array.from(days, ([day, prices]) => {
+    prices.sort((a, b) => (a < b ? -1 : +(a > b)));
+    return {
+      day,
+      finish: history.finish,
+      min: formatKosmo(prices[0].toString()),
+      median: medianPrice(prices),
+      max: formatKosmo(prices.at(-1)!.toString()),
+    };
+  });
+}
+
 export function summarizePrices(histories: MarketHistory[]): PriceSummary {
   if (histories.length === 1) {
     const h = histories[0];

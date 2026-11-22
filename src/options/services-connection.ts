@@ -41,8 +41,16 @@ export function servicesConnection() {
   });
   const controls = el("div", "account-row");
   const connect = el("button", "primary", "Connect");
+  const copyLink = el("button", "", "Copy Link");
   const disconnect = el("button", "", "Disconnect");
-  connect.type = disconnect.type = "button";
+  connect.type = copyLink.type = disconnect.type = "button";
+  const linkField = el("label", "field");
+  const linkInput = el("input");
+  linkInput.type = "url";
+  linkInput.readOnly = true;
+  linkInput.addEventListener("focus", () => linkInput.select());
+  linkField.append(el("span", "", "Sign-in link"), linkInput);
+  linkField.hidden = true;
   const feedback = el("div");
   feedback.setAttribute("role", "status");
   const erase = el("button", "", "Erase synced listing history");
@@ -75,8 +83,15 @@ export function servicesConnection() {
       render(messageOf(error));
     }
   });
-  controls.append(connect, retry, disconnect, erase);
-  section.append(field, inviteField, controls, feedback, el("div", "rule"));
+  controls.append(connect, copyLink, retry, disconnect, erase);
+  section.append(
+    field,
+    inviteField,
+    controls,
+    feedback,
+    linkField,
+    el("div", "rule"),
+  );
 
   let current: ConnectionStatus = { base: "" };
   let busy = false;
@@ -95,6 +110,7 @@ export function servicesConnection() {
     const linked = current.handle && url === current.base;
     connect.textContent = linked ? "Reconnect" : "Connect";
     connect.disabled = !ready || busy || !url;
+    copyLink.disabled = connect.disabled;
     retry.hidden = !(linked && current.blocked);
     retry.disabled = busy;
     invite.disabled = busy;
@@ -128,11 +144,20 @@ export function servicesConnection() {
     render();
   }
 
-  input.addEventListener("input", () => render());
+  function hideLink() {
+    linkInput.value = "";
+    linkField.hidden = true;
+  }
+  input.addEventListener("input", () => {
+    hideLink();
+    render();
+  });
   input.addEventListener("change", () => {
     const base = parsed();
     if (!base && input.value.trim()) {
-      render("Enter a valid HTTPS Services URL.");
+      render(
+        "Use HTTPS, or use HTTP with localhost or 127.0.0.1 for local testing.",
+      );
       return;
     }
     saving = saving
@@ -147,35 +172,59 @@ export function servicesConnection() {
     void saving.catch((error) => render(messageOf(error)));
   });
 
-  connect.addEventListener("click", () => {
+  function begin(copy: boolean) {
     const base = parsed();
     if (!base || busy) return;
     const access = chrome.permissions.request({
       origins: [servicesPermission(base)],
     });
     busy = true;
+    hideLink();
     render();
     void (async () => {
       let error: string | undefined;
+      let hint: string | undefined;
       try {
         if (!(await access))
           throw new Error("Allow access to this host to connect.");
         await saving.catch(() => {});
-        current = await request<ConnectionStatus>({
-          op: "servicesConnect",
-          inviteCode: invite.value.trim(),
-          base,
-        });
+        const args = { inviteCode: invite.value.trim(), base };
+        if (copy) {
+          const { url } = await request<{ url: string }>({
+            op: "servicesCopyLink",
+            ...args,
+          });
+          linkInput.value = url;
+          linkField.hidden = false;
+          try {
+            await navigator.clipboard.writeText(url);
+            hint =
+              "Link copied. Paste it into another tab in this browser and authorize KosMore.";
+          } catch {
+            linkInput.focus();
+            linkInput.select();
+            hint =
+              "Copy the sign-in link below and paste it into another tab in this browser.";
+          }
+        } else {
+          current = await request<ConnectionStatus>({
+            op: "servicesConnect",
+            ...args,
+          });
+          input.value = current.base;
+        }
         invite.value = "";
-        input.value = current.base;
       } catch (failure) {
         error = messageOf(failure);
       } finally {
         busy = false;
         render(error);
+        if (hint) feedback.replaceChildren(note(hint));
       }
     })();
-  });
+  }
+  connect.addEventListener("click", () => begin(false));
+  copyLink.addEventListener("click", () => begin(true));
   disconnect.addEventListener("click", () => {
     busy = true;
     render();
@@ -193,8 +242,10 @@ export function servicesConnection() {
     );
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[SERVICES_STATE_KEY] && !busy)
+    if (area === "local" && changes[SERVICES_STATE_KEY] && !busy) {
+      hideLink();
       void refresh().catch((error) => render(messageOf(error)));
+    }
   });
   render();
   void refresh().catch((error) => render(messageOf(error)));
