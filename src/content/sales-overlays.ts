@@ -30,7 +30,7 @@ import {
   type OverlaySettings,
 } from "./card-signals";
 import { cardIcon, headerIcon } from "./icons";
-import { MARKET_BADGE_CSS } from "./signal-badges";
+import { MARKET_BADGE_CSS, numberOneIcon, auctionBidSuffix } from "./signal-badges";
 import { el } from "./ui";
 import { observePage, affected, type PageChanges } from "./page-changes";
 
@@ -217,8 +217,14 @@ export class SalesOverlays {
       KEYS.some((key) => this.settings![key] !== settings[key]) ||
       JSON.stringify(this.settings.salesCustomMinimums) !==
         JSON.stringify(settings.salesCustomMinimums);
+    const bidsChanged = this.settings?.showAuctionBidCounts !== settings.showAuctionBidCounts;
     this.settings = settings;
-    if (!changed) return;
+    if (!changed) {
+      if (bidsChanged)
+        for (const entry of this.entries.values())
+          if (entry.signals?.lowestListing?.bids) this.render(entry);
+      return;
+    }
     if (quickChanged)
       for (const entry of this.entries.values()) this.mountQuickPrices(entry);
     this.invalidate(false);
@@ -716,7 +722,7 @@ export class SalesOverlays {
         s.showSalesLowestListing,
         s.salesLowestListingSetsPrice,
         s.salesLowestListingAdjustment,
-        entry.signals?.lowestListingPrice,
+        entry.signals?.lowestListing?.price,
       ],
       [
         "history",
@@ -744,17 +750,26 @@ export class SalesOverlays {
       const badge = canClick
         ? el("button", `price-badge ${kind}`)
         : el("span", `price-badge ${kind}`);
+      const bids = kind === "auction" && s.showAuctionBidCounts
+        ? auctionBidSuffix(entry.signals?.lowestListing?.bids)
+        : "";
       const text =
         price === undefined
           ? kind === "history" && entry.myAccount && !entry.mineError
             ? "No recorded listing"
             : "—"
-          : `$${formatKosmo(price)}`;
+          : `$${formatKosmo(price)}${bids}`;
       badge.append(cardIcon(kind), el("span", "amount", `${label} ${text}`));
+      if (
+        kind === "sale" &&
+        price !== undefined &&
+        entry.signals?.lastSale?.numberOne
+      )
+        badge.append(numberOneIcon());
       badge.toggleAttribute("data-stale-price", !!stale);
       badge.title =
         (kind === "history" ? entry.mineError : entry.error) ??
-        `${label.replace(/:$/, "")}: ${price === undefined ? "unavailable" : `${formatKosmo(price)} Kosmo`}, across all finishes.${canClick ? ` Click to set the starting price with an adjustment of ${adjustment} Kosmo.` : ""}`;
+        `${label.replace(/:$/, "")}: ${price === undefined ? "unavailable" : `${formatKosmo(price)} Kosmo${bids}`}, ${kind === "history" ? "across all finishes" : "for this finish"}.${canClick ? ` Click to set the starting price with an adjustment of ${adjustment} Kosmo.` : ""}`;
       if (kind === "auction" && entry.signals?.auctionFetchedAt)
         badge.title +=
           " Snapshot fetched " +

@@ -23,8 +23,10 @@ export function serviceDetails(id: string) {
       families: [],
       quests: [],
     },
-    auctions: [{ price: "7500000", endsAt: "2099-11-21T00:00:00Z" }],
-    sales: { plain: prices, shiny: empty, fullart: empty },
+    auctions: [
+      { finish: "plain", price: "7500000", bids: 3, endsAt: "2099-11-21T00:00:00Z" },
+    ],
+    sales: { plain: prices, shiny: empty, fullart: { ...empty } },
     history: {
       plain: [
         {

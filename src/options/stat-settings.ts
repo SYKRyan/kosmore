@@ -26,16 +26,10 @@ export class StatSettings {
       this.choices,
     );
   }
-  render(preferences: StatPreference[], collectSaleRateData = true) {
-    const disabledBadge = () => el("span", "settings-group-state", "Disabled");
+  render(preferences: StatPreference[]) {
     const definitions = visibleStats(preferences);
     this.preview.replaceChildren(
-      ...definitions.map((d) => {
-        const preview = statBox(d, d.preview);
-        if (d.id === "saleRate" && !collectSaleRateData)
-          preview.append(disabledBadge());
-        return preview;
-      }),
+      ...definitions.map((d) => statBox(d, d.preview)),
     );
     if (!definitions.length)
       this.preview.append(el("p", "empty", "No stat boxes selected."));
@@ -51,8 +45,6 @@ export class StatSettings {
         check.dataset.control = `show-${definition.id}`;
         check.setAttribute("aria-label", `Show ${definition.label}`);
         const name = el("span", "", definition.label);
-        if (definition.id === "saleRate" && !collectSaleRateData)
-          name.append(" ", disabledBadge());
         info.append(name, el("span", "sub", definition.description));
         label.append(check, info);
         check.addEventListener("change", () => {

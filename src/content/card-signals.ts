@@ -1,11 +1,12 @@
+import { latestSale } from "../shared/last-sale";
 import { ReadCache } from "../shared/cache";
 import {
   setRequestPriority,
   type RequestPriority,
 } from "../shared/request-scheduler";
 import {
-  FINISHES,
   type Account,
+  type AuctionPrice,
   type CardInsights,
   type Finish,
   type Friend,
@@ -27,7 +28,7 @@ export interface CardSignals {
   interestedFriends: number;
   quest: boolean;
   lastSale?: MarketSale;
-  lowestListingPrice?: string;
+  lowestListing?: AuctionPrice;
   staleLastSale?: boolean;
   staleListingPrice?: boolean;
   auctionFetchedAt?: number;
@@ -42,7 +43,9 @@ export function sameOverlaySignals(a: CardSignals, b: CardSignals) {
       a.quest === b.quest &&
       a.interestedFriends === b.interestedFriends &&
       a.lastSale?.price === b.lastSale?.price &&
-      a.lowestListingPrice === b.lowestListingPrice &&
+      !!a.lastSale?.numberOne === !!b.lastSale?.numberOne &&
+      a.lowestListing?.price === b.lowestListing?.price &&
+      a.lowestListing?.bids === b.lowestListing?.bids &&
       !!a.staleLastSale === !!b.staleLastSale &&
       !!a.staleListingPrice === !!b.staleListingPrice &&
       a.auctionFetchedAt === b.auctionFetchedAt &&
@@ -59,8 +62,7 @@ export type OverlaySettings = Pick<
   | "showLastSalePriceOverlay"
   | "showFriendInterestOverlay"
   | "showQuestOverlay"
-> &
-  Partial<Pick<Settings, "collectSaleRateData">>;
+>;
 export class CardSignalProvider {
   private cache = new ReadCache(150, 60_000);
   private progress = new Map<
@@ -84,7 +86,7 @@ export class CardSignalProvider {
       | "hasActiveAuctions"
       | "insights"
       | "activeAuctions"
-      | "lowestListingPrice"
+      | "lowestListing"
       | "peekAuction"
       | "peekHistory"
     >,
@@ -178,6 +180,7 @@ export class CardSignalProvider {
     demand.throwIfAborted();
     const key = [
       id,
+      displayedFinish,
       settings.showOnSaleOverlay,
       settings.showActiveAuctionsOverlay,
       settings.showLowestListingPriceOverlay,
@@ -185,7 +188,6 @@ export class CardSignalProvider {
       settings.showLastSalePriceOverlay,
       settings.showFriendInterestOverlay,
       settings.showQuestOverlay,
-      settings.collectSaleRateData,
       !!onBadgesReady,
     ].join(":");
     const empty = (): CardSignals => ({
@@ -233,9 +235,6 @@ export class CardSignalProvider {
             AbortSignal.any([shared, workAbort.signal]),
             priority,
           );
-          const priceSignal = recap
-            ? setRequestPriority(AbortSignal.any([signal]), "background")
-            : signal;
           let failed = false;
           const publish = (patch: Partial<CardSignals>) => {
             if (failed || signal.aborted) return;
@@ -299,116 +298,49 @@ export class CardSignalProvider {
               publish({ quest: card.questMember ?? false });
             });
           if (settings.showSaleHistoryOverlay)
-            add(async (ready) => {
-              let lastSale: MarketSale | undefined;
-              let historyFailed = false;
-              let hasSales = false;
+            add(async () => {
+              if (
+                !settings.showLastSalePriceOverlay &&
+                this.client.hasSaleHistory
+              ) {
+                publish({
+                  saleHistory: await this.client.hasSaleHistory(
+                    id,
+                    displayedFinish,
+                    signal,
+                  ),
+                });
+                return;
+              }
               if (settings.showLastSalePriceOverlay) {
-                const hits = FINISHES.map((finish) =>
-                  this.client.peekHistory?.(id, finish),
-                );
+                const hit = this.client.peekHistory?.(id, displayedFinish);
                 const now = Date.now();
-                if (hits.every((hit) => hit && now - hit.until < 86_400_000)) {
-                  const cached = hits
-                    .flatMap((hit) =>
-                      hit!.value.lastSale
-                        ? [hit!.value.lastSale]
-                        : hit!.value.sales,
-                    )
-                    .filter(
-                      (sale) =>
-                        Date.parse(sale.soldAt) >= now - 30 * 86_400_000,
-                    )
-                    .reduce<MarketSale | undefined>(
-                      (latest, sale) =>
-                        !latest ||
-                        Date.parse(sale.soldAt) > Date.parse(latest.soldAt)
-                          ? sale
-                          : latest,
-                      undefined,
-                    );
-                  if (cached)
+                if (hit && now - hit.until < 86_400_000) {
+                  const cached = latestSale(hit.value);
+                  if (
+                    cached &&
+                    Date.parse(cached.soldAt) >= now - 30 * 86_400_000
+                  )
                     publish({
                       saleHistory: true,
                       lastSale: cached,
-                      staleLastSale: hits.some((hit) => hit!.stale),
+                      staleLastSale: hit.stale,
                     });
                 }
               }
-              const check = async (finish: Finish, readSignal = signal) => {
-                try {
-                  if (
-                    !settings.showLastSalePriceOverlay &&
-                    this.client.hasSaleHistory
-                  ) {
-                    const present = await this.client.hasSaleHistory(
-                      id,
-                      finish,
-                      signal,
-                    );
-                    if (present) publish({ saleHistory: true });
-                    return present;
-                  }
-                  const history = await this.client.history(
-                    id,
-                    finish,
-                    readSignal,
-                  );
-                  if (history.count > 0 || history.lastSale) {
-                    hasSales = true;
-                    publish({ saleHistory: true });
-                  }
-                  if (settings.showLastSalePriceOverlay)
-                    for (const sale of history.lastSale
-                      ? [history.lastSale]
-                      : history.sales)
-                      if (
-                        !lastSale ||
-                        Date.parse(sale.soldAt) > Date.parse(lastSale.soldAt)
-                      )
-                        lastSale = sale;
-                  return history.count > 0 || !!history.lastSale;
-                } catch (error) {
-                  historyFailed = true;
-                  if (
-                    error instanceof ApiError &&
-                    (error.status === 429 || error.status === 401)
-                  )
-                    throw error;
-                  return false;
-                }
-              };
-              const finishes = [
+              const history = await this.client.history(
+                id,
                 displayedFinish,
-                ...FINISHES.filter((f) => f !== displayedFinish),
-              ];
-              if (settings.showLastSalePriceOverlay) {
-                if (recap) {
-                  for (const [index, finish] of finishes.entries()) {
-                    if (!(await check(finish))) continue;
-                    ready();
-                    await Promise.all(
-                      finishes
-                        .slice(index + 1)
-                        .map((rest) => check(rest, priceSignal)),
-                    );
-                    break;
-                  }
-                } else
-                  await Promise.all(finishes.map((finish) => check(finish)));
-                if (!historyFailed && (lastSale || current.value.lastSale))
-                  publish({
-                    saleHistory: hasSales,
-                    lastSale,
-                    staleLastSale:
-                      FINISHES.some(
-                        (finish) =>
-                          this.client.peekHistory?.(id, finish)?.stale,
-                      ) || undefined,
-                  });
-              } else {
-                for (const finish of finishes) if (await check(finish)) break;
-              }
+                signal,
+              );
+              publish({
+                saleHistory: history.count > 0 || !!history.lastSale,
+                ...(settings.showLastSalePriceOverlay && {
+                  lastSale: latestSale(history),
+                  staleLastSale: this.client.peekHistory?.(id, displayedFinish)
+                    ?.stale,
+                }),
+              });
             });
           if (settings.showActiveAuctionsOverlay)
             add(async (ready) => {
@@ -424,7 +356,7 @@ export class CardSignalProvider {
                 if (
                   await this.client.hasActiveAuctions(
                     id,
-                    card.name,
+                    displayedFinish,
                     signal,
                     matched,
                   )
@@ -433,60 +365,62 @@ export class CardSignalProvider {
                 return;
               }
               const cached = settings.showLowestListingPriceOverlay
-                ? this.client.peekAuction?.(id, card.name)
+                ? this.client.peekAuction?.(id, displayedFinish)
                 : undefined;
               const now = Date.now();
               if (
                 settings.showLowestListingPriceOverlay &&
                 cached &&
-                cached.value.lowestPrice !== undefined &&
+                cached.value.lowestListing !== undefined &&
                 now - cached.until < 86_400_000
               )
                 publish({
                   activeAuctions: true,
                   marketName: card.name,
-                  lowestListingPrice: cached.value.lowestPrice,
+                  lowestListing: cached.value.lowestListing,
                   staleListingPrice: cached.stale,
                   auctionFetchedAt: cached.fetchedAt,
                 });
               const count = recap
                 ? await this.client.activeAuctions(
                     id,
-                    card.name,
+                    displayedFinish,
                     signal,
                     false,
                     matched,
                   )
-                : await this.client.activeAuctions(id, card.name, signal);
+                : await this.client.activeAuctions(id, displayedFinish, signal);
               const activeAuctions = count > 0;
               publish({
                 activeAuctions,
                 ...(activeAuctions
                   ? { marketName: card.name }
-                  : current.value.lowestListingPrice !== undefined
+                  : current.value.lowestListing !== undefined
                     ? {
-                        lowestListingPrice: undefined,
+                        lowestListing: undefined,
                         staleListingPrice:
-                          this.client.peekAuction?.(id, card.name)?.stale ||
-                          undefined,
+                          this.client.peekAuction?.(id, displayedFinish)
+                            ?.stale || undefined,
                       }
                     : {}),
               });
               ready();
               if (activeAuctions && settings.showLowestListingPriceOverlay) {
-                const lowestListingPrice = await this.client.lowestListingPrice(
+                const lowestListing = await this.client.lowestListing(
                   id,
-                  card.name,
+                  displayedFinish,
                   signal,
                 );
-                if (lowestListingPrice !== undefined)
+                if (lowestListing !== undefined)
                   publish({
-                    lowestListingPrice,
+                    lowestListing,
                     staleListingPrice:
-                      this.client.peekAuction?.(id, card.name)?.stale ||
+                      this.client.peekAuction?.(id, displayedFinish)?.stale ||
                       undefined,
-                    auctionFetchedAt: this.client.peekAuction?.(id, card.name)
-                      ?.fetchedAt,
+                    auctionFetchedAt: this.client.peekAuction?.(
+                      id,
+                      displayedFinish,
+                    )?.fetchedAt,
                   });
               }
             });

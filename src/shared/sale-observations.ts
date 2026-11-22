@@ -183,29 +183,73 @@ const rate = (sold: number, total: number): FinishRate => ({
   percent: total ? Math.round((sold / total) * 100) : null,
 });
 
-/** This card's own settled listings that ended in the trailing window, by finish. */
+export interface CachedMarketSample {
+  history?: MarketHistory;
+  open?: number;
+}
+
+/** Estimate per finish from the latest local snapshot and passively observed listings. */
 export function saleRates(
   observations: Observations,
   subjectId: string,
   now = Date.now(),
+  cached: Partial<Record<Finish, CachedMarketSample>> = {},
 ): SaleRates {
-  const since = now - SALE_RATE_DAYS * DAY;
+  const today = new Date(now).toISOString().slice(0, 10);
+  const firstDay = new Date(now - (SALE_RATE_DAYS - 1) * DAY)
+    .toISOString()
+    .slice(0, 10);
   const counts = Object.fromEntries(
-    FINISHES.map((f) => [f, { sold: 0, total: 0 }]),
-  ) as Record<Finish, { sold: number; total: number }>;
+    FINISHES.map((f) => [
+      f,
+      { soldByDay: new Map<string, number>(), open: 0, unsold: 0 },
+    ]),
+  ) as Record<
+    Finish,
+    { soldByDay: Map<string, number>; open: number; unsold: number }
+  >;
   for (const o of observations.values()) {
-    if (
-      o.subjectId !== subjectId ||
-      o.outcome === "open" ||
-      o.endsAt < since ||
-      o.endsAt > now
-    )
+    if (o.subjectId !== subjectId) continue;
+    const count = counts[o.finish];
+    if (o.outcome === "open") {
+      if (o.endsAt > now) count.open++;
       continue;
-    counts[o.finish].total++;
-    if (o.outcome === "sold") counts[o.finish].sold++;
+    }
+    const day = new Date(o.endsAt).toISOString().slice(0, 10);
+    if (day < firstDay || o.endsAt > now) continue;
+    if (o.outcome === "unsold") count.unsold++;
+    else count.soldByDay.set(day, (count.soldByDay.get(day) ?? 0) + 1);
   }
   return Object.fromEntries(
-    FINISHES.map((f) => [f, rate(counts[f].sold, counts[f].total)]),
+    FINISHES.map((f) => {
+      const { soldByDay, open, unsold } = counts[f];
+      const history = cached[f]?.history;
+      const mergeDay = (day: string, n: number) => {
+        if (day >= firstDay && day <= today)
+          soldByDay.set(day, Math.max(n, soldByDay.get(day) ?? 0));
+      };
+      for (const row of history?.daily ?? []) mergeDay(row.day, row.count);
+      const individual = new Map<string, Set<string>>();
+      for (const sale of history?.sales ?? []) {
+        const day = new Date(sale.soldAt).toISOString().slice(0, 10);
+        const ids = individual.get(day) ?? new Set<string>();
+        ids.add(sale.auctionId);
+        individual.set(day, ids);
+      }
+      for (const [day, ids] of individual) mergeDay(day, ids.size);
+      if (history?.lastSale)
+        mergeDay(
+          new Date(history.lastSale.soldAt).toISOString().slice(0, 10),
+          1,
+        );
+      // Public daily totals and active snapshots have no listing IDs. Overlapping
+      // sources describe the same market, so use the larger count rather than adding them.
+      const sold = [...soldByDay.values()].reduce((sum, n) => sum + n, 0);
+      return [
+        f,
+        rate(sold, sold + unsold + Math.max(open, cached[f]?.open ?? 0)),
+      ];
+    }),
   ) as SaleRates;
 }
 

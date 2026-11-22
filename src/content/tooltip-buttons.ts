@@ -20,15 +20,16 @@ interface Entry {
   host: HTMLElement;
   mount: HTMLElement;
   button: HTMLButtonElement;
-  visible: boolean;
 }
 interface Mount {
   count: number;
+  isolation?: string;
   position?: { value: string; priority: string };
 }
 const LOGO = `data:image/svg+xml,${encodeURIComponent(logo)}`;
 const STYLE = `
-:host{all:initial;position:absolute;display:block;width:44px;height:44px;z-index:30;transform:translate(-50%,-50%);pointer-events:none}
+:host{all:initial;position:absolute;display:block;width:44px;height:44px;left:-14px;bottom:-14px;z-index:20;pointer-events:none}
+:host([data-inset]){left:0;bottom:0}
 button{all:initial;box-sizing:border-box;display:grid;place-items:center;width:44px;height:44px;padding:4px;border-radius:50%;pointer-events:auto;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 button[hidden]{display:none}
 img{display:block;box-sizing:border-box;width:36px;height:36px;background:#171027;border-radius:50%;box-shadow:0 2px 6px #0009;pointer-events:none}
@@ -39,24 +40,9 @@ button:focus-visible{outline:2px solid #f3dda8;outline-offset:1px}
 /** Local absolute anchors scroll with their cards, without scroll-event positioning. */
 export class TooltipButtons {
   private entries = new Map<HTMLElement, Entry>();
-  private hosts = new WeakMap<Element, Entry>();
   private mounts = new Map<HTMLElement, Mount>();
   private settings?: Settings;
-  private frame = 0;
-  private intersection: IntersectionObserver;
-  private resize: ResizeObserver;
-  constructor(private open: (context: CardContext) => void) {
-    this.intersection = new IntersectionObserver((records) => {
-      for (const record of records) {
-        const entry = this.hosts.get(record.target);
-        if (entry) {
-          entry.visible = record.isIntersecting;
-          this.visibility(entry);
-        }
-      }
-    });
-    this.resize = new ResizeObserver(() => this.schedule());
-  }
+  constructor(private open: (context: CardContext) => void) {}
   start() {
     observePage((changes) => this.scan(changes));
     window.addEventListener("resize", () => this.scan());
@@ -76,7 +62,7 @@ export class TooltipButtons {
   }
   showing(context: CardContext) {
     const entry = this.entryFor(context);
-    return !!entry?.host.isConnected && entry.visible && !entry.button.hidden;
+    return !!entry?.host.isConnected && !entry.button.hidden;
   }
   private entryFor(context: CardContext) {
     return [...this.entries.values()].find(
@@ -178,6 +164,14 @@ export class TooltipButtons {
         const mount = this.mountFor(root);
         if (!mount) continue;
         this.retainMount(mount);
+        const mountStyle = getComputedStyle(mount);
+        if (/(hidden|clip|scroll|auto)/.test(mountStyle.overflow))
+          host.setAttribute("data-inset", "");
+        else {
+          host.style.left = -14 - parseFloat(mountStyle.borderLeftWidth) + "px";
+          host.style.bottom =
+            -14 - parseFloat(mountStyle.borderBottomWidth) + "px";
+        }
         const entry: Entry = {
           root,
           context,
@@ -185,7 +179,6 @@ export class TooltipButtons {
           host,
           mount,
           button,
-          visible: true,
         };
         for (const type of [
           "pointerdown",
@@ -214,29 +207,19 @@ export class TooltipButtons {
             this.open(next);
         });
         this.entries.set(root, entry);
-        this.hosts.set(host, entry);
         mount.append(host);
-        this.intersection.observe(host);
-        this.resize.observe(root);
       }
-    this.layout();
+    const dialog = topDialog();
+    for (const entry of this.entries.values()) {
+      entry.button.hidden = !!dialog && !dialog.contains(entry.root);
+    }
   }
   private mountFor(root: HTMLElement): HTMLElement | null {
-    // Stay outside native links/buttons, but inside the same scrolling content.
-    let interactive: HTMLElement | undefined;
-    for (
-      let parent: HTMLElement | null = root;
-      parent;
-      parent = parent.parentElement
-    )
-      if (parent.matches('a[href],button,[role="button"]'))
-        interactive = parent;
-    let mount = interactive ? interactive.parentElement : root;
-    if (!interactive && /(hidden|clip)/.test(getComputedStyle(root).overflow))
-      mount = root.parentElement;
-    while (mount && getComputedStyle(mount).display === "contents")
-      mount = mount.parentElement;
-    return mount;
+    // Card-wide picker hit targets are siblings of the face. Anchor to their
+    // shared tile so both controls participate in the same local stacking context.
+    return (
+      root.closest<HTMLElement>(".pick, .ko-summary .ko-grid > li") ?? root
+    );
   }
   private retainMount(mount: HTMLElement) {
     let state = this.mounts.get(mount);
@@ -253,16 +236,21 @@ export class TooltipButtons {
       mount.style.setProperty("position", "relative");
     }
     this.mounts.set(mount, state);
-    this.resize.observe(mount);
+    if (getComputedStyle(mount).isolation !== "isolate") {
+      state.isolation = mount.style.isolation;
+      mount.style.isolation = "isolate";
+    }
   }
   private remove(entry: Entry) {
-    this.intersection.unobserve(entry.host);
-    this.resize.unobserve(entry.root);
     entry.host.remove();
     const state = this.mounts.get(entry.mount)!;
     if (--state.count) return;
     this.mounts.delete(entry.mount);
-    this.resize.unobserve(entry.mount);
+    if (
+      state.isolation !== undefined &&
+      entry.mount.style.isolation === "isolate"
+    )
+      entry.mount.style.isolation = state.isolation;
     // Existing card overlays may have adopted this same positioning anchor.
     if (
       state.position &&
@@ -279,46 +267,6 @@ export class TooltipButtons {
           state.position.priority,
         );
       else entry.mount.style.removeProperty("position");
-    }
-  }
-  private schedule() {
-    if (this.frame) return;
-    this.frame = requestAnimationFrame(() => {
-      this.frame = 0;
-      this.layout();
-    });
-  }
-  private visibility(entry: Entry) {
-    const dialog = topDialog();
-    entry.button.hidden =
-      !entry.visible || (!!dialog && !dialog.contains(entry.root));
-  }
-  private layout() {
-    if (!this.enabled()) return;
-    for (const entry of this.entries.values()) {
-      const { root, mount, host } = entry;
-      if (!root.isConnected) continue;
-      let left = 8 - mount.clientLeft,
-        top = root.offsetHeight - mount.clientTop - 8;
-      if (root !== mount) {
-        const rect = root.getBoundingClientRect(),
-          bounds = mount.getBoundingClientRect();
-        const scaleX = bounds.width / mount.offsetWidth || 1,
-          scaleY = bounds.height / mount.offsetHeight || 1;
-        left =
-          (rect.left - bounds.left) / scaleX -
-          mount.clientLeft +
-          mount.scrollLeft +
-          8;
-        top =
-          (rect.bottom - bounds.top) / scaleY -
-          mount.clientTop +
-          mount.scrollTop -
-          8;
-      }
-      host.style.left = `${left}px`;
-      host.style.top = `${top}px`;
-      this.visibility(entry);
     }
   }
 }

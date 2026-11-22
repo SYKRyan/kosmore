@@ -17,9 +17,13 @@ import {
 } from "../shared/stat-catalog";
 import { statBox } from "./stat-box";
 import { saleObservations } from "./sale-observation-store";
-import { dailySalePrices } from "../shared/market-summary";
-import { saleRates, type SaleRates } from "../shared/sale-observations";
-import { SIGNAL_BADGE_CSS, signalBadges } from "./signal-badges";
+import { dailySalePrices, type DailySalePrice } from "../shared/market-summary";
+import {
+  finishOf,
+  saleRates,
+  type SaleRates,
+} from "../shared/sale-observations";
+import { SIGNAL_BADGE_CSS, signalBadges, numberOneIcon, auctionBidSuffix } from "./signal-badges";
 import { cardIcon } from "./icons";
 import { enableMarketLink, marketSearchPath } from "./market-links";
 import type { CardSignals } from "./card-signals";
@@ -28,6 +32,7 @@ import {
   FINISHES,
   FINISH_LABEL,
   type Account,
+  type AuctionPrice,
   type Album,
   type CardContext,
   type CardInsights,
@@ -81,6 +86,7 @@ export class Popup {
   private market = el("section", "market-history");
   private marketBody = el("div", "market-body");
   private marketLegend?: HTMLElement;
+  private selectedDay?: string;
   private marketFrame = 0;
   private tradeArea = el("section", "trade-panel");
   private listingArea = el("section", "listing-history-panel");
@@ -95,7 +101,7 @@ export class Popup {
   private lastSold = el("p", "last-sold market-badge sale");
   private listedFor = el("a", "listed-for market-badge auction");
   private listingPriceStale = false;
-  private lowestListingPrice?: string | Error | null;
+  private lowestListing?: AuctionPrice | Error | null;
   private layoutStatus = el("p", "layout-status");
   private resizeBounds?: PopupBounds;
   private finishInteraction?: () => void;
@@ -108,6 +114,7 @@ export class Popup {
   private cachedTradeFriends?: Awaited<ReturnType<KosmoraClient["friends"]>>;
   private tradeError?: string;
   private insightError?: string;
+  private readonly displayedFinish: Finish | undefined;
   private activeAuctions?: number | Error;
   private auctionRequest?: AbortController;
   private tradeRequest?: AbortController;
@@ -168,7 +175,6 @@ export class Popup {
       this.closed ||
       this.observationFrame ||
       !this.context ||
-      !this.settings.collectSaleRateData ||
       !subjects.has(this.context.subjectId)
     )
       return;
@@ -196,6 +202,7 @@ export class Popup {
     private friendTooltip?: FriendTooltip,
     initialTab: PopupTab = "market",
   ) {
+    this.displayedFinish = context ? finishOf(context.variant) : undefined;
     this.placement = placement ? { ...placement } : undefined;
     if (context)
       this.notes = new CardNotes(this.notesArea, context.subjectId, client);
@@ -881,41 +888,41 @@ export class Popup {
     void this.loadActiveAuctions(fresh);
   }
   private async loadActiveAuctions(fresh = false) {
-    if (this.closed || !this.details) return;
+    if (this.closed || !this.details || !this.displayedFinish) return;
     if (!fresh && (this.auctionRequest || this.activeAuctions !== undefined))
       return;
     this.auctionRequest?.abort();
     const request = new AbortController();
     this.auctionRequest = request;
     setRequestPriority(request.signal, "interactive");
-    this.showCachedAuction(this.details.name, fresh);
+    this.showCachedAuction(fresh);
     try {
       const count = await this.client.activeAuctions(
         this.details.subjectId,
-        this.details.name,
+        this.displayedFinish,
         request.signal,
         fresh,
       );
       if (this.closed || request.signal.aborted) return;
       this.activeAuctions = count;
       if (count === 0) {
-        this.lowestListingPrice = null;
+        this.lowestListing = null;
         this.listingPriceStale = false;
       } else {
         try {
-          const price = await this.client.lowestListingPrice(
+          const listing = await this.client.lowestListing(
             this.details.subjectId,
-            this.details.name,
+            this.displayedFinish,
             request.signal,
           );
           if (!this.closed && !request.signal.aborted) {
-            if (price !== undefined || !this.listingPriceStale)
-              this.lowestListingPrice =
-                price ?? new Error("The lowest listing price is unavailable.");
-            if (price !== undefined)
+            if (listing !== undefined || !this.listingPriceStale)
+              this.lowestListing =
+                listing ?? new Error("The lowest listing price is unavailable.");
+            if (listing !== undefined)
               this.listingPriceStale = !!this.client.peekAuction?.(
                 this.details.subjectId,
-                this.details.name,
+                this.displayedFinish,
               )?.stale;
           }
         } catch (error) {
@@ -924,14 +931,14 @@ export class Popup {
             !request.signal.aborted &&
             !this.listingPriceStale
           )
-            this.lowestListingPrice = new Error(messageOf(error));
+            this.lowestListing = new Error(messageOf(error));
         }
       }
     } catch (error) {
       if (!this.closed && !request.signal.aborted) {
         this.activeAuctions = new Error(messageOf(error));
         if (!this.listingPriceStale)
-          this.lowestListingPrice = new Error(messageOf(error));
+          this.lowestListing = new Error(messageOf(error));
       }
     } finally {
       if (this.auctionRequest === request) {
@@ -944,23 +951,26 @@ export class Popup {
       }
     }
   }
-  showCachedAuction(name: string, fresh = false) {
-    if (!this.context) return;
-    const hit = this.client.peekAuction?.(this.context.subjectId, name);
+  showCachedAuction(fresh = false) {
+    if (!this.context || !this.displayedFinish) return;
+    const hit = this.client.peekAuction?.(
+      this.context.subjectId,
+      this.displayedFinish,
+    );
     if (
       hit &&
       Date.now() - hit.until < 86_400_000 &&
-      hit.value.lowestPrice !== undefined
+      hit.value.lowestListing !== undefined
     ) {
-      this.lowestListingPrice = hit.value.lowestPrice;
+      this.lowestListing = hit.value.lowestListing;
       this.listingPriceStale = fresh || hit.stale;
       this.renderHeaderPrices();
     }
   }
   insightsFailed(error: unknown) {
     this.insightError = messageOf(error);
-    if (this.lowestListingPrice === undefined)
-      this.lowestListingPrice = new Error(this.insightError);
+    if (this.lowestListing === undefined)
+      this.lowestListing = new Error(this.insightError);
     this.renderHeaderPrices();
     this.renderMetrics();
     if (!this.account) this.notes?.failed(error);
@@ -1260,6 +1270,14 @@ export class Popup {
     if (aside) h.append(el("span", "", aside));
     return h;
   }
+  setStatSettings(settings: Settings) {
+    this.settings = {
+      ...this.settings,
+      stats: settings.stats,
+      statBoxesEnabled: settings.statBoxesEnabled,
+    };
+    this.renderMarket();
+  }
   setSettings(settings: Settings) {
     if (settings.fullScreenCenteredOnOpen) this.finishInteraction?.();
     if (this.resizeBounds) {
@@ -1321,6 +1339,7 @@ export class Popup {
       ? visibleStats(this.settings.stats)
       : [];
     this.statArea.hidden = !definitions.length;
+    this.metricError.textContent = this.insightError ?? "";
     if (!definitions.length) {
       this.metrics.replaceChildren();
       return;
@@ -1338,28 +1357,10 @@ export class Popup {
         : undefined,
     );
     this.metrics.replaceChildren(
-      ...definitions.map((d) => {
-        if (d.id !== "saleRate" || this.settings.collectSaleRateData)
-          return statBox(d, d.read(snapshot));
-        const tile = button(
-          "",
-          () => this.openSettings("stat-boxes"),
-          "metric metric-disabled",
-        );
-        tile.dataset.statId = d.id;
-        tile.setAttribute(
-          "aria-label",
-          "Sale Rate: Disabled. Open Tooltip Stat Boxes settings",
-        );
-        tile.append(el("strong", "", "Disabled"), el("span", "", d.label));
-        return tile;
-      }),
+      ...definitions.map((d) => statBox(d, d.read(snapshot))),
     );
     this.priceScope.textContent = definitions.some((d) => d.source === "prices")
       ? snapshot.priceNotice
-      : "";
-    this.metricError.textContent = definitions.some((d) => d.source === "card")
-      ? (this.insightError ?? "")
       : "";
   }
   private renderMarket() {
@@ -1440,54 +1441,56 @@ export class Popup {
   private renderHeaderPrices() {
     const marketName = this.details?.name ?? this.context?.name;
     if (marketName) this.listedFor.href = marketSearchPath(marketName);
-    const finishes = FINISHES.filter((f) => !this.hidden.has(f));
-    const lastSale = lastSaleSummary(this.histories, finishes);
+    const finish = this.displayedFinish;
+    if (!finish) return;
+    const history = this.histories[finish];
+    const lastSale = lastSaleSummary(history);
     this.lastSold.hidden =
-      !finishes.length ||
-      finishes.every((finish) => {
-        const history = this.histories[finish];
-        return history && !(history instanceof Error) && history.count === 0;
-      });
+      !!history &&
+      !(history instanceof Error) &&
+      history.count === 0 &&
+      !history.lastSale;
     this.lastSold.replaceChildren(
       cardIcon("sale"),
       el("span", "market-badge-label", lastSale.label),
     );
-    const saleStale = finishes.some((finish) =>
-      this.staleHistories.has(finish),
-    );
+    if (lastSale.numberOne) this.lastSold.append(numberOneIcon());
+    const saleStale = this.staleHistories.has(finish);
     this.lastSold.toggleAttribute("data-stale-price", saleStale);
     this.lastSold.title =
       lastSale.title + (saleStale ? " Last known price." : "");
-    const price = this.lowestListingPrice;
-    this.listedFor.hidden = price === null;
+    const listing = this.lowestListing;
+    this.listedFor.hidden = listing === null;
     this.headerPrices.hidden = this.lastSold.hidden && this.listedFor.hidden;
+    const bids = listing && !(listing instanceof Error) && this.settings.showAuctionBidCounts
+      ? auctionBidSuffix(listing.bids)
+      : "";
     const label =
-      price instanceof Error
+      listing instanceof Error
         ? "Unavailable"
-        : price === null
+        : listing === null
           ? "—"
-          : price === undefined
+          : listing === undefined
             ? "Loading…"
-            : `$${formatKosmo(price)}`;
+            : `$${formatKosmo(listing.price)}${bids}`;
     this.listedFor.replaceChildren(
       cardIcon("auction"),
       el("span", "market-badge-label", `Listed For: ${label}`),
     );
     this.listedFor.title =
-      price instanceof Error
-        ? price.message
-        : price === null
+      listing instanceof Error
+        ? listing.message
+        : listing === null
           ? "No active listings for this card."
-          : price === undefined
+          : listing === undefined
             ? "Loading the lowest listing price."
-            : `Lowest observed auction price across all finishes: ${formatKosmo(price)} Kosmo.`;
+            : `Lowest observed auction price for ${FINISH_LABEL[finish]}: ${formatKosmo(listing.price)} Kosmo${bids}.`;
     this.listedFor.toggleAttribute("data-stale-price", this.listingPriceStale);
     if (this.listingPriceStale)
       this.listedFor.title = "Last known lowest listing price.";
     const fetchedAt =
       this.context &&
-      this.client.peekAuction?.(this.context.subjectId, marketName ?? "")
-        ?.fetchedAt;
+      this.client.peekAuction?.(this.context.subjectId, finish)?.fetchedAt;
     if (fetchedAt)
       this.listedFor.title +=
         " Provider snapshot fetched " +
@@ -1496,9 +1499,24 @@ export class Popup {
     if (marketName) this.listedFor.title += ` Find ${marketName} at Market.`;
   }
   private saleRates(): SaleRates | undefined {
-    return this.settings.collectSaleRateData && this.details
-      ? saleRates(saleObservations.observations, this.details.subjectId)
-      : undefined;
+    if (!this.context) return;
+    const id = this.context.subjectId;
+    const cached = Object.fromEntries(
+      FINISHES.map((finish) => {
+        const history = this.histories[finish];
+        return [
+          finish,
+          {
+            history:
+              history && !(history instanceof Error)
+                ? history
+                : this.client.peekHistory?.(id, finish)?.value,
+            open: this.client.peekAuction?.(id, finish)?.value.count,
+          },
+        ];
+      }),
+    );
+    return saleRates(saleObservations.observations, id, Date.now(), cached);
   }
   private renderMarketHistory() {
     const available = FINISHES.filter((f) => !this.hidden.has(f)).flatMap(
@@ -1510,7 +1528,7 @@ export class Popup {
     const days = available
       .flatMap(dailySalePrices)
       .sort((a, b) => b.day.localeCompare(a.day));
-    if (days.length) this.marketBody.append(this.chart(available));
+    if (days.length) this.marketBody.append(this.chart(days));
     const table = el("table", "stats");
     table.setAttribute("aria-label", "Market summaries by variant");
     const head = el("tr");
@@ -1547,17 +1565,11 @@ export class Popup {
       const sold = el(
         "td",
         "sale-rate",
-        !this.settings.collectSaleRateData
-          ? "Disabled"
-          : rate?.percent == null
-            ? "—"
-            : `${rate.percent}% (${rate.total})`,
+        rate?.percent == null ? "—" : `${rate.percent}% (${rate.total})`,
       );
-      sold.title = !this.settings.collectSaleRateData
-        ? "Sale Rate collection is disabled."
-        : rate?.total
-          ? `${rate.sold} of ${rate.total} observed ${FINISH_LABEL[f]} listings of this card sold (last 30 days).`
-          : `No settled ${FINISH_LABEL[f]} listings of this card observed yet.`;
+      sold.title = rate?.total
+        ? `Estimated from cached ${FINISH_LABEL[f]} sales and listings: ${rate.sold} of ${rate.total} sold.`
+        : "No cached sales or listings for this finish.";
       row.append(sold);
       tbody.append(row);
     }
@@ -1591,7 +1603,14 @@ export class Popup {
     const daily = el("table", "daily-prices");
     daily.setAttribute("aria-label", "Daily sale prices by variant in Kosmo");
     const headers = daily.createTHead().insertRow();
-    for (const title of ["Day (UTC)", "Variant", "Min", "Median", "Max"]) {
+    for (const title of [
+      "Day (UTC)",
+      "Variant",
+      "Sales",
+      "Min",
+      "Median",
+      "Max",
+    ]) {
       const th = el("th", "", title);
       th.scope = "col";
       headers.append(th);
@@ -1618,8 +1637,29 @@ export class Popup {
         dateHeader.append(time);
         row.append(dateHeader);
       }
-      for (const value of [
+      const key = prices.day + "/" + prices.finish;
+      row.dataset.dailyRow = key;
+      row.toggleAttribute("data-selected", this.selectedDay === key);
+      const variant = el(
+        "button",
+        "daily-variant",
         FINISH_LABEL[prices.finish],
+      );
+      variant.type = "button";
+      variant.setAttribute(
+        "aria-label",
+        "Highlight " +
+          prices.day +
+          " " +
+          FINISH_LABEL[prices.finish] +
+          " on chart",
+      );
+      const cell = el("td");
+      cell.append(variant);
+      row.append(cell);
+      row.addEventListener("click", () => this.selectDay(key, "point"));
+      for (const value of [
+        prices.count.toLocaleString(),
         prices.min,
         prices.median,
         prices.max,
@@ -1629,31 +1669,49 @@ export class Popup {
     }
     this.marketBody.append(this.heading("Daily sale prices", "Kosmo"), daily);
   }
-  private chart(histories: MarketHistory[]) {
+  private selectDay(key: string, target: "point" | "row") {
+    this.selectedDay = key;
+    for (const element of this.marketBody.querySelectorAll<
+      HTMLElement | SVGCircleElement
+    >("[data-daily-point],[data-daily-row]")) {
+      const selected =
+        (element.dataset.dailyPoint ?? element.dataset.dailyRow) === key;
+      element.toggleAttribute("data-selected", selected);
+      if (element.dataset.dailyPoint)
+        element.setAttribute("aria-pressed", String(selected));
+      if (!selected) continue;
+      const focus =
+        target === "point"
+          ? element.dataset.dailyPoint
+            ? element
+            : undefined
+          : element.querySelector<HTMLButtonElement>(".daily-variant");
+      if (focus) {
+        focus.focus({ preventScroll: true });
+        element.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    }
+  }
+  private chart(days: DailySalePrice[]) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 400 130");
     svg.classList.add("chart");
-    svg.setAttribute("role", "img");
+    svg.setAttribute("role", "group");
     svg.setAttribute(
       "aria-label",
-      histories.some((h) => h.daily)
-        ? "Daily median sale prices over the last 30 days by variant"
-        : "Completed sale prices over the last 30 days, separated by variant",
+      "Daily median sale prices by finish. Select a point to see its history row.",
     );
-    const samples = (h: MarketHistory) =>
-      h.daily?.length
-        ? h.daily
-            .filter((row) => row.count > 0)
-            .map((row) => ({
-              price: row.median,
-              soldAt: row.day + "T00:00:00Z",
-            }))
-        : h.sales;
-    const values = histories.flatMap(samples).map((s) => BigInt(s.price));
-    const low = values.reduce((a, b) => (a < b ? a : b)),
-      high = values.reduce((a, b) => (a > b ? a : b)),
-      range = high - low || 1n;
-    const start = Date.now() - 30 * 86400000;
+    // Use seven decimal places to retain half-micro medians.
+    const median = (day: DailySalePrice) => {
+      const [whole, fraction = ""] = day.median.replaceAll(",", "").split(".");
+      return BigInt(whole + fraction.padEnd(7, "0"));
+    };
+    const values = days.map(median);
+    const low = values.reduce((a, b) => (a < b ? a : b));
+    const high = values.reduce((a, b) => (a > b ? a : b));
+    const range = high - low || 1n;
+    const span = 29 * 86_400_000;
+    const start = Date.parse(new Date().toISOString().slice(0, 10)) - span;
     for (const y of [20, 55, 90]) {
       const line = document.createElementNS(svg.namespaceURI, "line");
       for (const [k, v] of Object.entries({
@@ -1666,40 +1724,64 @@ export class Popup {
         line.setAttribute(k, String(v));
       svg.append(line);
     }
-    for (const h of histories) {
-      const points = [...samples(h)]
-        .sort((a, b) => Date.parse(a.soldAt) - Date.parse(b.soldAt))
-        .map((s) => ({
-          sale: s,
+    for (const finish of FINISHES) {
+      const points = days
+        .filter((day) => day.finish === finish)
+        .sort((a, b) => a.day.localeCompare(b.day))
+        .map((day) => ({
+          day,
           x:
             12 +
-            Math.max(
-              0,
-              Math.min(1, (Date.parse(s.soldAt) - start) / (30 * 86400000)),
-            ) *
+            Math.max(0, Math.min(1, (Date.parse(day.day) - start) / span)) *
               376,
-          y: 90 - Number(((BigInt(s.price) - low) * 70000n) / range) / 1000,
+          y: 90 - Number(((median(day) - low) * 70000n) / range) / 1000,
         }));
+      if (!points.length) continue;
       const path = document.createElementNS(svg.namespaceURI, "polyline");
       path.setAttribute("points", points.map((p) => `${p.x},${p.y}`).join(" "));
       path.setAttribute("fill", "none");
-      path.setAttribute("stroke", COLORS[h.finish]);
+      path.setAttribute("stroke", COLORS[finish]);
       path.setAttribute("stroke-opacity", ".65");
       svg.append(path);
       for (const p of points) {
         const circle = document.createElementNS(svg.namespaceURI, "circle");
         circle.setAttribute("cx", String(p.x));
         circle.setAttribute("cy", String(p.y));
-        circle.setAttribute("r", "3");
-        circle.setAttribute("fill", COLORS[h.finish]);
+        circle.setAttribute("r", "5.5");
+        circle.setAttribute("fill", COLORS[finish]);
         const title = document.createElementNS(svg.namespaceURI, "title");
-        title.textContent = `${FINISH_LABEL[h.finish]} · ${formatKosmo(p.sale.price)} Kosmo · ${new Date(p.sale.soldAt).toLocaleString(undefined, h.daily ? { timeZone: "UTC" } : undefined)}`;
+        const { day, count, min, average, max } = p.day;
+        const key = day + "/" + finish;
+        const date = day.slice(8) + "/" + day.slice(5, 7);
+        const label = [
+          date,
+          "Sales " + count,
+          "Min $" + min,
+          "Avg " + (average === undefined ? "—" : "$" + average),
+          "Max $" + max,
+          FINISH_LABEL[finish],
+        ].join(" - ");
+        title.textContent = label;
+        circle.setAttribute("data-daily-point", key);
+        circle.toggleAttribute("data-selected", key === this.selectedDay);
+        circle.setAttribute("role", "button");
+        circle.setAttribute("aria-pressed", String(key === this.selectedDay));
+        circle.setAttribute("tabindex", "0");
+        circle.setAttribute("aria-label", label);
+        circle.addEventListener("click", () => this.selectDay(key, "row"));
+        circle.addEventListener("keydown", (event: Event) => {
+          const keyEvent = event as KeyboardEvent;
+          if (keyEvent.key === "Enter" || keyEvent.key === " ") {
+            keyEvent.preventDefault();
+            this.selectDay(key, "row");
+          }
+        });
         circle.append(title);
         svg.append(circle);
       }
     }
     for (const [x, text] of [
-      [12, "30 days ago"],
+      [12, "Last 30 days"],
       [340, "Today"],
     ] as const) {
       const t = document.createElementNS(svg.namespaceURI, "text");

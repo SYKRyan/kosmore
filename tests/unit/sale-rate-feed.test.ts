@@ -72,30 +72,6 @@ it("relays copies of the game's own auction GETs only, buffering until the conte
   expect(original).toHaveBeenCalledTimes(5);
 });
 
-it("pauses native auction relay without consuming the game's response", async () => {
-  const data = { items: [auction(1)], nextOffset: null };
-  const response = new Response(JSON.stringify(data));
-  const clone = vi.spyOn(response, "clone");
-  const original = vi
-    .fn()
-    .mockResolvedValueOnce(new Response(JSON.stringify(data)))
-    .mockResolvedValueOnce(response)
-    .mockImplementation(() => json(data));
-  const { win, dispatch } = fakeWindow(original);
-  installPageRelay(win);
-  await win.fetch("/api/auctions?offset=0");
-  dispatch({ type: RELAY_READY, preferences: { collectSaleRateData: false } });
-  expect(await (await win.fetch("/api/auctions?offset=1")).json()).toEqual(
-    data,
-  );
-  await flush();
-  expect(clone).not.toHaveBeenCalled();
-  expect(win.postMessage).not.toHaveBeenCalled();
-  dispatch({ type: RELAY_READY, preferences: { collectSaleRateData: true } });
-  await win.fetch("/api/auctions?offset=2");
-  await vi.waitFor(() => expect(win.postMessage).toHaveBeenCalledOnce());
-});
-
 it("never relays failed responses and never breaks the page's request", async () => {
   const { win, dispatch } = fakeWindow(
     vi.fn(() => json({ code: "rate_limited" }, 429)) as unknown as typeof fetch,

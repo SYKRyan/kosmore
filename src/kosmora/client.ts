@@ -36,6 +36,7 @@ import {
 import type { Result } from "../shared/messages";
 import type {
   Account,
+  AuctionPrice,
   Album,
   CardContext,
   CardInsights,
@@ -86,7 +87,6 @@ export class GameClient implements KosmoraClient {
   private familyCountReads = new ReadCache(40, 300_000);
   private scheduler = new RequestScheduler(3);
   private accountVersion = 0;
-  private collectSaleRateData = true;
   onVerifiedAccount?: (account: Account) => void;
   private accountListeners = new Set<() => void>();
   private historyListeners = new Set<
@@ -164,10 +164,6 @@ export class GameClient implements KosmoraClient {
   ) {}
   onAccountChange(listener: () => void) {
     this.accountListeners.add(listener);
-  }
-  setSaleRateCollection(enabled: boolean) {
-    if (this.collectSaleRateData === enabled) return;
-    this.collectSaleRateData = enabled;
   }
   /** Price histories as they arrive from the network (not cache hits), with fetch time. */
   onHistoryLoaded(
@@ -393,9 +389,7 @@ export class GameClient implements KosmoraClient {
     try {
       const history = parseHistory(raw, finish);
       this.remember(this.observedHistory, `${id}:${finish}`, history);
-      if (this.collectSaleRateData)
-        for (const listener of this.historyListeners)
-          listener(id, history, Date.now());
+      for (const listener of this.historyListeners) listener(id, history, Date.now());
     } catch {}
   }
   observeCollection(path: string, raw: unknown) {
@@ -531,12 +525,12 @@ export class GameClient implements KosmoraClient {
   }
   async activeAuctions(
     id: string,
-    name: string,
+    finish: Finish,
     signal?: AbortSignal,
     _fresh = false,
     onMatch?: () => void,
   ) {
-    return (await this.auctionSummary(id, name, signal, onMatch)).count;
+    return (await this.auctionSummary(id, finish, signal, onMatch)).count;
   }
   onListingsChanged(listener: () => void) {
     this.listingListenersChanged.add(listener);
@@ -733,42 +727,47 @@ export class GameClient implements KosmoraClient {
         .finally(() => signal?.removeEventListener("abort", cancel));
     });
   }
-  async lowestListingPrice(
+  async lowestListing(
     id: string,
-    name: string,
+    finish: Finish,
     signal?: AbortSignal,
     _fresh = false,
   ) {
-    return (await this.auctionSummary(id, name, signal)).lowestPrice;
+    return (await this.auctionSummary(id, finish, signal)).lowestListing;
   }
   async hasActiveAuctions(
     id: string,
-    name: string,
+    finish: Finish,
     signal?: AbortSignal,
     onMatch?: () => void,
   ) {
-    return (await this.activeAuctions(id, name, signal, false, onMatch)) > 0;
+    return (await this.activeAuctions(id, finish, signal, false, onMatch)) > 0;
   }
-  private auctionStats(view: CardView) {
+  private auctionStats(view: CardView, finish: Finish) {
     const open =
       view.card?.auctions.filter(
         (auction) => Date.parse(auction.endsAt) > Date.now(),
       ) ?? [];
-    let lowestPrice: string | undefined;
-    for (const row of open)
-      if (lowestPrice === undefined || BigInt(row.price) < BigInt(lowestPrice))
-        lowestPrice = row.price;
-    return { count: open.length, lowestPrice };
+    // Snapshots saved before 2.0.3 omitted auction finishes.
+    if (open.some((row) => !row.finish)) return undefined;
+    const matching = open.filter((row) => row.finish === finish);
+    let lowestListing: AuctionPrice | undefined;
+    for (const row of matching)
+      if (!lowestListing || BigInt(row.price) < BigInt(lowestListing.price))
+        lowestListing = { price: row.price, bids: row.bids };
+    return { count: matching.length, lowestListing };
   }
   private async auctionSummary(
     id: string,
-    _name: string,
+    finish: Finish,
     signal?: AbortSignal,
     onMatch?: () => void,
   ) {
     const view = await this.serviceView(id, signal);
     if (!view.card) throw new Error("Auction data is unavailable.");
-    const value = this.auctionStats(view);
+    const value = this.auctionStats(view, finish);
+    if (!value)
+      throw new Error("Auction finishes are unavailable in the cached snapshot.");
     if (value.count) onMatch?.();
     return value;
   }
@@ -908,12 +907,13 @@ export class GameClient implements KosmoraClient {
         until: view.until,
       };
   }
-  peekAuction(id: string, _name: string) {
+  peekAuction(id: string, finish: Finish) {
     const view = this.cardViews.get(id);
-    if (view?.card)
+    const value = view?.card && this.auctionStats(view, finish);
+    if (view && value)
       return {
         fetchedAt: view.fetchedAt,
-        value: this.auctionStats(view),
+        value,
         stale: view.stale || view.until <= Date.now(),
         until: view.until,
       };

@@ -72,30 +72,6 @@ export const STAT_CATALOG = [
     }),
   },
   {
-    id: "interest",
-    label: "Kosmora interest",
-    description: "Number of players interested in the card.",
-    source: "card",
-    preview: { value: "18" },
-    read: (s: StatSnapshot) => ({
-      value: s.card?.interested?.toLocaleString() ?? "—",
-      title: s.cardError ?? "Players interested in this card",
-    }),
-  },
-  {
-    id: "readership",
-    label: "Wikipedia · recorded median/day",
-    description: "Kosmora’s recorded median daily Wikipedia views.",
-    source: "card",
-    preview: { value: "1,240" },
-    read: (s: StatSnapshot) => ({
-      value: s.card?.readership?.toLocaleString() ?? "—",
-      title:
-        s.cardError ??
-        `Kosmora’s recorded median daily Wikipedia views. ${s.card?.readershipSource ?? ""}`,
-    }),
-  },
-  {
     id: "salesCount",
     label: "Sales · 30 days",
     description: "Completed-sale count across the selected variants.",
@@ -115,7 +91,7 @@ export const STAT_CATALOG = [
     id: "activeAuctions",
     label: "Active Auctions",
     description:
-      "Open, unexpired market listings for this card across all finishes.",
+      "Open, unexpired market listings matching this card and finish.",
     source: "auctions",
     preview: { value: "7" },
     read: (s: StatSnapshot) => ({
@@ -127,7 +103,7 @@ export const STAT_CATALOG = [
         s.activeAuctions instanceof Error
           ? s.activeAuctions.message
           : typeof s.activeAuctions === "number"
-            ? "Active listings for this exact card across all finishes. Counts are cached for up to 30 seconds; Refresh checks again."
+            ? "Active listings matching this card and finish. Counts are cached for up to 30 seconds; Refresh checks again."
             : (s.cardError ?? "Loading active auctions…"),
     }),
   },
@@ -135,14 +111,14 @@ export const STAT_CATALOG = [
     id: "saleRate",
     label: `Sale Rate · ${SALE_RATE_DAYS} days`,
     description:
-      "Share of this card's observed listings that sold, for the selected variants. Kosmora does not report unsold listings, so KosMore records the listings the Market shows you and settles them from sale histories.",
+      "Estimated share sold for the selected finishes. Uses 30 days of locally cached sales and auction history, including stale data. The estimate divides sales by sales plus known unsold and still-open listings. Enabling it makes no additional requests.",
     source: "observed",
     preview: { value: "67% · 3" },
     read: (s: StatSnapshot) => saleRateValue(s),
   },
 ] as const satisfies readonly StatDefinition[];
 function saleRateValue(s: StatSnapshot): StatValue {
-  const basis = `Observed locally from listings KosMore saw on the Market, settled from sale histories. Listings ended in the last ${SALE_RATE_DAYS} days.`;
+  const basis = `Estimated from locally cached sales, unsold outcomes and open auctions over ${SALE_RATE_DAYS} days. Cached snapshots may be stale.`;
   if (!s.saleRates) return { value: "—", title: "Loading card details…" };
   const rate = combinedRate(s.saleRates, s.finishes);
   const parts = FINISHES.filter((f) => s.finishes.includes(f)).map((f) => {

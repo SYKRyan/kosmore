@@ -27,8 +27,6 @@ it("migrates older settings without resetting pins or the original six-stat orde
     "minPrice",
     "medianPrice",
     "maxPrice",
-    "interest",
-    "readership",
     "salesCount",
     "activeAuctions",
     "saleRate",
@@ -38,14 +36,15 @@ it("migrates older settings without resetting pins or the original six-stat orde
 });
 it("preserves saved order and disabled stats, discards corrupt IDs and adds new catalog entries", () => {
   const saved = parseStats([
-    { id: "readership", enabled: false },
+    { id: "maxPrice", enabled: false },
     { id: "minPrice", enabled: true },
     { id: "readership", enabled: true },
+    { id: "interest", enabled: true },
     { id: "unknown", enabled: true },
     null,
   ]);
   expect(saved.slice(0, 2)).toEqual([
-    { id: "readership", enabled: false },
+    { id: "maxPrice", enabled: false },
     { id: "minPrice", enabled: true },
   ]);
   expect(saved).toHaveLength(STAT_CATALOG.length);
@@ -71,8 +70,6 @@ it("renders every definition through the same component and preserves partial hi
     "12",
     "18",
     "24",
-    "18",
-    "1,240",
     "80+",
     "—",
     "—",
@@ -82,9 +79,7 @@ it("renders every definition through the same component and preserves partial hi
     expect(box.dataset.statId).toBe(STAT_CATALOG[index].id);
   const empty = statSnapshot(undefined, {}, [], "Card request failed");
   expect(STAT_CATALOG.every((d) => d.read(empty).value === "—")).toBe(true);
-  expect(STAT_CATALOG.find((d) => d.id === "interest")!.read(empty).title).toBe(
-    "Card request failed",
-  );
+
 });
 it("reorders and toggles the settings preview without persisting a draft until Save", async () => {
   let preferences = defaultStats();
@@ -113,8 +108,6 @@ it("reorders and toggles the settings preview without persisting a draft until S
   ).toEqual([
     "medianPrice",
     "maxPrice",
-    "interest",
-    "readership",
     "salesCount",
     "activeAuctions",
     "saleRate",

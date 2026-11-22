@@ -1,5 +1,5 @@
 import { amount, count, date, object, text } from "../kosmora/contracts";
-import type { Finish, MarketHistory } from "./types";
+import type { AuctionPrice, Finish, MarketHistory } from "./types";
 
 export const SERVICES_STATE_KEY = "kosmore.servicesConnectionChanged";
 export const validCardId = (id: unknown): id is string =>
@@ -48,7 +48,7 @@ export interface ServicesCard {
   rarity: string;
   families: { id: string; name: string }[];
   quests: string[];
-  auctions: { price: string; endsAt: string }[];
+  auctions: (AuctionPrice & { finish: Finish; endsAt: string })[];
   markets: Record<Finish, MarketHistory>;
 }
 
@@ -128,7 +128,12 @@ export function parseServicesCard(value: unknown, id: string): ServicesCard {
     quests: card.quests.map((raw) => text(object(raw).id)),
     auctions: data.auctions.map((raw) => {
       const row = object(raw);
-      return { price: amount(row.price), endsAt: date(row.endsAt) };
+      return {
+        finish: serviceFinish(row.finish),
+        price: amount(row.price),
+        ...(typeof row.bids === "number" && Number.isSafeInteger(row.bids) && row.bids >= 0 && { bids: row.bids }),
+        endsAt: date(row.endsAt),
+      };
     }),
     markets,
   };

@@ -18,6 +18,7 @@ import {
   FINISHES,
   messageOf,
   type CardContext,
+  type Settings,
   type Finish,
 } from "../shared/types";
 import {
@@ -37,6 +38,7 @@ import { ProfileReminders } from "./profile-reminders";
 import { TradeInterest } from "./trade-interest";
 import { MarketOutcomes } from "./market-outcomes";
 import { HistoryResolver, listenToPageRelay } from "./sale-rate-feed";
+import { finishOf } from "../shared/sale-observations";
 import { saleObservations } from "./sale-observation-store";
 import { FusionFamilyImpact } from "./fusion-family";
 import { FAMILY_IMPACT_AVAILABLE } from "../shared/feature-availability";
@@ -90,7 +92,6 @@ fusionFamily?.start();
 const tooltipButtons = new TooltipButtons(openFromButton);
 tooltipButtons.start();
 const marketOutcomes = new MarketOutcomes(saleObservations);
-let stopSaleRate: (() => void) | undefined;
 const historyResolver = new HistoryResolver(saleObservations);
 window.addEventListener("message", (event) => {
   if (
@@ -228,7 +229,6 @@ function syncRelayPreferences() {
       type: RELAY_READY,
       preferences: {
         servicesCards: needsServicesCards(),
-        collectSaleRateData: settings.collectSaleRateData,
         packOpenings: pageSettings().enabled,
         inventory: settings.showRemainingPackCount,
         fusion: family && settings.showFusionFamilyOverlay,
@@ -246,25 +246,6 @@ function syncRelayPreferences() {
     },
     location.origin,
   );
-}
-function syncSaleRate() {
-  client.setSaleRateCollection(settings.collectSaleRateData);
-  if (settings.collectSaleRateData && !stopSaleRate) {
-    const stops = [
-      marketOutcomes.start(),
-      listenToPageRelay(saleObservations, window, false),
-      client.onHistoryLoaded((id, history, loadedAt) =>
-        historyResolver.receive(id, history, loadedAt),
-      ),
-    ];
-    stopSaleRate = () => {
-      for (const stop of stops) stop();
-    };
-  } else if (!settings.collectSaleRateData) {
-    stopSaleRate?.();
-    stopSaleRate = undefined;
-  }
-  syncRelayPreferences();
 }
 const remainingPacks = new RemainingPacks(
   client,
@@ -301,7 +282,12 @@ const preferencesReady = Promise.all([
 ]).then(([finishes, state, savedSettings]) => {
   marketFinishes = finishes;
   settings = savedSettings;
-  syncSaleRate();
+  marketOutcomes.start();
+  listenToPageRelay(saleObservations, window, false);
+  client.onHistoryLoaded((id, history, loadedAt) =>
+    historyResolver.receive(id, history, loadedAt),
+  );
+  syncRelayPreferences();
   friendTooltip.setSettings(pageSettings());
   void friendTooltip.restore();
   navigationHotkeys.start();
@@ -435,7 +421,7 @@ async function show(
       Object.values(settings.pinnedAlbums).some((ids) => ids.length)
     )
       void view.loadPrivateAccount();
-    view.showCachedAuction(context.name, fresh);
+    view.showCachedAuction(fresh);
     loadHeaderSignals(view, context, abort.signal);
     const detail =
       client.hasObservedCopies(context.subjectId) && !client.displayAccount
@@ -457,12 +443,7 @@ async function show(
     const settled = new Set<Finish>();
     updateTooltipHistory = (finishes) => {
       if (!valid()) return;
-      const needed = settings.collectSaleRateData
-        ? [
-            ...finishes,
-            ...FINISHES.filter((finish) => !finishes.includes(finish)),
-          ]
-        : finishes;
+      const needed = [...new Set([finishOf(context.variant), ...finishes])];
       for (const [finish, job] of historyJobs) {
         if (needed.includes(finish)) continue;
         job.abort();
@@ -473,10 +454,7 @@ async function show(
         const job = new AbortController();
         historyJobs.set(finish, job);
         const signal = AbortSignal.any([abort.signal, job.signal]);
-        setRequestPriority(
-          signal,
-          finishes.includes(finish) ? "interactive" : "background",
-        );
+        setRequestPriority(signal, "interactive");
         const hit = client.peekHistory(context.subjectId, finish);
         if (hit && Date.now() - hit.until < 86_400_000)
           view.setHistory(finish, hit.value, fresh || hit.stale);
@@ -539,7 +517,7 @@ function createView(
             const hit = client.peekHistory(context.subjectId, finish);
             if (hit) view.setHistory(finish, hit.value, hit.stale);
           }
-          view.showCachedAuction(context.name);
+          view.showCachedAuction();
         })
         .catch(() => {});
     },
@@ -1118,6 +1096,49 @@ window.addEventListener("focus", recheckAccount);
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) recheckAccount();
 });
+function applySettings(next: Settings) {
+  const previous = settings;
+  settings = next;
+  // Stat preferences only change what the tooltip draws from its local snapshot.
+  if (
+    JSON.stringify({
+      ...previous,
+      stats: next.stats,
+      statBoxesEnabled: next.statBoxesEnabled,
+    }) === JSON.stringify(next)
+  ) {
+    popup?.setStatSettings(pageSettings());
+    return;
+  }
+  syncRelayPreferences();
+  if (
+    previous.useOverlayButtonInsteadOfHover !==
+    settings.useOverlayButtonInsteadOfHover
+  )
+    navigationAway();
+  friendTooltip.setSettings(pageSettings());
+  navigationHotkeys.settingsChanged();
+  if (previous.packOpeningHotkeysEnabled && !settings.packOpeningHotkeysEnabled)
+    packOpeningHotkeys.reset();
+  else if (!settings.hotkeysEnabled) packOpeningHotkeys.cancelHotkeyActions();
+  if (!settings.hotkeysEnabled || !settings.hoverTooltipHotkeysEnabled)
+    heldTooltipKeys.clear();
+  overlays.setSettings(settings);
+  salesOverlays.setSettings(settings);
+  fusionFamily?.setSettings(settings);
+  tooltipButtons.setSettings(settings);
+  if (!pageSettings().enabled) hide();
+  else if (popup) {
+    popup.setSettings(pageSettings());
+    updateTooltipHistory?.(marketFinishes);
+    if (current && activeRequest)
+      loadHeaderSignals(popup, current, activeRequest.signal);
+  } else if (pinnedState.pinned) {
+    createView(null);
+  }
+  packOpeningHotkeys.dismissFoundPackAutomatically();
+  remainingPacks.refresh();
+}
 chrome.storage.onChanged.addListener((changes, area) => {
   const observed = changes["kosmore.gameAccountHint"]?.newValue;
   if (
@@ -1128,8 +1149,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   )
     client.observeIdentity(null);
   if (area === "local" && changes[SERVICES_STATE_KEY]) refreshServiceControls();
-  if (area === "local" && settings.collectSaleRateData)
-    saleObservations.external(changes);
+  if (area === "local") saleObservations.external(changes);
   if (
     area === "local" &&
     Object.keys(changes).some((key) => key.startsWith("kosmore.friend."))
@@ -1139,36 +1159,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (popup && current && activeRequest)
       loadHeaderSignals(popup, current, activeRequest.signal);
   }
-  if (area === "local" && changes[SETTINGS_KEY]) {
-    const previousOverlayMode = settings.useOverlayButtonInsteadOfHover;
-    const previousPackHotkeys = settings.packOpeningHotkeysEnabled;
-    settings = parseSettings(changes[SETTINGS_KEY].newValue);
-    syncSaleRate();
-    if (previousOverlayMode !== settings.useOverlayButtonInsteadOfHover)
-      navigationAway();
-    friendTooltip.setSettings(pageSettings());
-    navigationHotkeys.settingsChanged();
-    if (previousPackHotkeys && !settings.packOpeningHotkeysEnabled)
-      packOpeningHotkeys.reset();
-    else if (!settings.hotkeysEnabled) packOpeningHotkeys.cancelHotkeyActions();
-    if (!settings.hotkeysEnabled || !settings.hoverTooltipHotkeysEnabled)
-      heldTooltipKeys.clear();
-    overlays.setSettings(settings);
-    salesOverlays.setSettings(settings);
-    fusionFamily?.setSettings(settings);
-    tooltipButtons.setSettings(settings);
-    if (!pageSettings().enabled) hide();
-    else if (popup) {
-      popup.setSettings(pageSettings());
-      updateTooltipHistory?.(marketFinishes);
-      if (current && activeRequest)
-        loadHeaderSignals(popup, current, activeRequest.signal);
-    } else if (pinnedState.pinned) {
-      createView(null);
-    }
-    packOpeningHotkeys.dismissFoundPackAutomatically();
-    remainingPacks.refresh();
-  }
+  if (area === "local" && changes[SETTINGS_KEY])
+    applySettings(parseSettings(changes[SETTINGS_KEY].newValue));
   if (
     area === "local" &&
     changes[MARKET_FINISHES_KEY] &&

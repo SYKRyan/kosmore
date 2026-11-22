@@ -568,6 +568,11 @@ h3 {
   border-radius: 9px;
   margin-top: 9px;
 }
+.chart circle { cursor: pointer; stroke: transparent; stroke-width: 6px; pointer-events: all; }
+.chart circle:hover, .chart circle:focus-visible, .chart circle[data-selected] { stroke: #fff0bd; stroke-width: 3px; }
+.daily-prices tr[data-daily-row] { cursor: pointer; }
+.daily-prices tr[data-selected] { background: #493957; box-shadow: inset 3px 0 #f5cd68; }
+.daily-prices .daily-variant { font: inherit; color: inherit; padding: 0; border: 0; background: none; cursor: pointer; }
 .stats,
 .daily-prices {
   width: 100%;

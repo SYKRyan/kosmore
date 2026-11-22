@@ -36,14 +36,14 @@ const OPTIONS = [
     show: "showSalesLastSale",
     click: "salesLastSaleSetsPrice",
     adjustment: "salesLastSaleAdjustment",
-    help: "Last sale price across all finishes in Kosmora’s 30-day history.",
+    help: "Last sale price for this finish in Kosmora’s 30-day history.",
   },
   {
     name: "Lowest Listed",
     show: "showSalesLowestListing",
     click: "salesLowestListingSetsPrice",
     adjustment: "salesLowestListingAdjustment",
-    help: "Lowest current listing price across all finishes: highest bid, or starting price when there are no bids.",
+    help: "Lowest current listing price for this finish: highest bid, or starting price when there are no bids.",
   },
   {
     name: "My Last Listing",

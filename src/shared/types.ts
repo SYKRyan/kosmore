@@ -62,6 +62,10 @@ export interface Friend {
   handle: string;
   key: string;
 }
+export interface AuctionPrice {
+  price: string;
+  bids?: number;
+}
 export interface MarketSale {
   price: string;
   soldAt: string;
@@ -168,7 +172,6 @@ export interface Settings {
   salesQuickPricesEnabled: boolean;
   salesQuickPrices: number[];
   statBoxesEnabled: boolean;
-  collectSaleRateData: boolean;
   pinnedAlbumsEnabled: boolean;
   closeTooltipWhenAddedToAlbum: boolean;
   applyCloseBehaviorToPinnedTooltips: boolean;
@@ -181,6 +184,7 @@ export interface Settings {
   showLastSalePriceOverlay: boolean;
   showActiveAuctionsOverlay: boolean;
   showLowestListingPriceOverlay: boolean;
+  showAuctionBidCounts: boolean;
   showOnSaleOverlay: boolean;
   showFriendInterestOverlay: boolean;
   showQuestOverlay: boolean;
@@ -208,7 +212,7 @@ export interface KosmoraClient {
   hasInteractiveReads?(): boolean;
   hasActiveAuctions?(
     id: string,
-    name: string,
+    finish: Finish,
     signal?: AbortSignal,
     onMatch?: () => void,
   ): Promise<boolean>;
@@ -219,13 +223,13 @@ export interface KosmoraClient {
   ): Promise<boolean>;
   peekAuction?(
     id: string,
-    name: string,
+    finish: Finish,
   ):
     | {
         until: number;
         stale: boolean;
         fetchedAt?: number;
-        value: { count: number; lowestPrice?: string };
+        value: { count: number; lowestListing?: AuctionPrice };
       }
     | undefined;
   peekHistory?(
@@ -272,17 +276,17 @@ export interface KosmoraClient {
   ): Promise<CardInsights>;
   activeAuctions(
     subjectId: string,
-    name: string,
+    finish: Finish,
     signal?: AbortSignal,
     fresh?: boolean,
     onMatch?: () => void,
   ): Promise<number>;
-  lowestListingPrice(
+  lowestListing(
     subjectId: string,
-    name: string,
+    finish: Finish,
     signal?: AbortSignal,
     fresh?: boolean,
-  ): Promise<string | undefined>;
+  ): Promise<AuctionPrice | undefined>;
   history(
     subjectId: string,
     finish: Finish,

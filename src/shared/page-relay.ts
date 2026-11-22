@@ -6,7 +6,6 @@
 export const RELAY_DATA = "kosmore.pageData";
 export const RELAY_READY = "kosmore.relayReady";
 export interface RelayPreferences {
-  collectSaleRateData: boolean;
   servicesCards?: boolean;
   packOpenings: boolean;
   inventory?: boolean;

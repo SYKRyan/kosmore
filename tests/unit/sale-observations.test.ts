@@ -182,6 +182,21 @@ it("reports each card's own rate per finish over 30 days, ignoring other cards",
   expect(combinedRate(rates, ["fullart"]).percent).toBeNull();
 });
 
+it("combines stale daily counts and observations without counting the same market twice", () => {
+  const h = history("plain", []);
+  h.daily = [
+    { day: "2026-11-04", count: 3, low: "1", median: "2", high: "3" },
+    { day: "2026-10-01", count: 50, low: "1", median: "2", high: "3" },
+  ];
+  const result = saleRates(
+    log(obs("sold"), obs("unsold"), obs("open", -1)),
+    "42",
+    NOW,
+    { plain: { history: h, open: 2 } },
+  );
+  expect(result.plain).toEqual({ sold: 3, total: 6, percent: 50 });
+});
+
 function memoryStorage(initial: Record<string, unknown> = {}) {
   const data: Record<string, unknown> = structuredClone(initial);
   const storage = {

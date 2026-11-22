@@ -76,7 +76,6 @@ export const defaults = (): Settings => ({
   salesQuickPricesEnabled: false,
   salesQuickPrices: [],
   statBoxesEnabled: true,
-  collectSaleRateData: true,
   pinnedAlbumsEnabled: true,
   closeTooltipWhenAddedToAlbum: false,
   applyCloseBehaviorToPinnedTooltips: false,
@@ -89,6 +88,7 @@ export const defaults = (): Settings => ({
   showLastSalePriceOverlay: true,
   showActiveAuctionsOverlay: true,
   showLowestListingPriceOverlay: true,
+  showAuctionBidCounts: true,
   showOnSaleOverlay: true,
   showFriendInterestOverlay: true,
   showQuestOverlay: true,
@@ -173,6 +173,7 @@ export function parseSettings(value: unknown): Settings {
     "autoDismissFoundPack",
     "showRemainingPackCount",
     "cardOverlaysEnabled",
+    "showAuctionBidCounts",
     "salesOverlaysEnabled",
     "showSalesLastSale",
     "salesLastSaleSetsPrice",
@@ -184,7 +185,6 @@ export function parseSettings(value: unknown): Settings {
     "salesCustomMinimumsEnabled",
     "salesQuickPricesEnabled",
     "statBoxesEnabled",
-    "collectSaleRateData",
     "pinnedAlbumsEnabled",
   ] as const)
     if (typeof v[key] === "boolean") d[key] = v[key];

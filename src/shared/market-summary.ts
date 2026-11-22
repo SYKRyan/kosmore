@@ -23,36 +23,71 @@ function medianPrice(sorted: bigint[]): string {
   );
 }
 
+/** Round the arithmetic mean to the nearest micro-Kosmo. */
+function meanPrice(sum: bigint, count: number) {
+  const n = BigInt(count);
+  return formatKosmo(((sum + n / 2n) / n).toString());
+}
+
 export function dailySalePrices(history: MarketHistory) {
+  const days = new Map<string, bigint[]>();
+  const seen = new Set<string>();
+  for (const sale of history.sales) {
+    if (seen.has(sale.auctionId) || (history.daily?.length && sale.numberOne))
+      continue;
+    seen.add(sale.auctionId);
+    const day = new Date(sale.soldAt).toISOString().slice(0, 10);
+    const prices = days.get(day) ?? [];
+    prices.push(BigInt(sale.price));
+    days.set(day, prices);
+  }
+  const mean = (prices: bigint[]) =>
+    meanPrice(
+      prices.reduce((a, b) => a + b, 0n),
+      prices.length,
+    );
   if (history.daily?.length)
     return history.daily
       .filter((row) => row.count > 0)
-      .map((row) => ({
-        day: row.day,
-        finish: history.finish,
-        min: formatKosmo(row.low),
-        median: formatKosmo(row.median),
-        max: formatKosmo(row.high),
-      }));
-
-  const days = new Map<string, bigint[]>();
-  for (const sale of history.sales) {
-    const day = new Date(sale.soldAt).toISOString().slice(0, 10);
-    const prices = days.get(day);
-    if (prices) prices.push(BigInt(sale.price));
-    else days.set(day, [BigInt(sale.price)]);
-  }
+      .map((row) => {
+        const prices = days.get(row.day);
+        const low = BigInt(row.low),
+          high = BigInt(row.high),
+          median = BigInt(row.median);
+        let average: string | undefined;
+        if (row.count === 1 || low === high) average = formatKosmo(row.median);
+        else if (row.count === 2) average = meanPrice(low + high, 2);
+        else if (row.count === 3) average = meanPrice(low + median + high, 3);
+        else if (
+          prices?.length === row.count &&
+          prices.every((price) => price >= low && price <= high)
+        )
+          average = mean(prices);
+        return {
+          day: row.day,
+          count: row.count,
+          finish: history.finish,
+          average,
+          min: formatKosmo(row.low),
+          median: formatKosmo(row.median),
+          max: formatKosmo(row.high),
+        };
+      });
   return Array.from(days, ([day, prices]) => {
     prices.sort((a, b) => (a < b ? -1 : +(a > b)));
     return {
       day,
       finish: history.finish,
+      count: prices.length,
+      average: mean(prices),
       min: formatKosmo(prices[0].toString()),
       median: medianPrice(prices),
       max: formatKosmo(prices.at(-1)!.toString()),
     };
   });
 }
+
+export type DailySalePrice = ReturnType<typeof dailySalePrices>[number];
 
 export function summarizePrices(histories: MarketHistory[]): PriceSummary {
   if (histories.length === 1) {

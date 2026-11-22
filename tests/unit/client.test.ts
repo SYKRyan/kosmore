@@ -503,15 +503,15 @@ it("uses Services for market counts, summaries and price chips without game requ
   const results = await Promise.all([
     client.hasSaleHistory("42", "plain"),
     client.hasSaleHistory("42", "veil"),
-    client.activeAuctions("42", "Fixture"),
-    client.lowestListingPrice("42", "Fixture"),
+    client.activeAuctions("42", "plain"),
+    client.lowestListing("42", "plain"),
     client.history("42", "plain"),
   ]);
   expect(results).toEqual([
     true,
     false,
     1,
-    "7500000",
+    { price: "7500000", bids: 3 },
     expect.objectContaining({
       count: 1,
       median: "6500000",

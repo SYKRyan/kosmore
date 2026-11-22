@@ -1,45 +1,41 @@
-import { FINISH_LABEL, type Finish } from "./types";
-import type { HistoryState } from "./stat-catalog";
-export function lastSaleSummary(
-  histories: HistoryState,
-  finishes: Finish[],
-): { label: string; title: string } {
-  if (!finishes.length)
-    return {
-      label: "Last Sale: —",
-      title: "Select a variant to see its latest returned sale.",
-    };
-  if (finishes.some((finish) => !histories[finish]))
+import { FINISH_LABEL, type MarketHistory, type MarketSale } from "./types";
+
+export function latestSale(history: MarketHistory) {
+  return (
+    history.lastSale ??
+    history.sales.reduce<MarketSale | undefined>(
+      (latest, sale) =>
+        !latest || Date.parse(sale.soldAt) > Date.parse(latest.soldAt)
+          ? sale
+          : latest,
+      undefined,
+    )
+  );
+}
+
+export function lastSaleSummary(history: MarketHistory | Error | undefined) {
+  if (!history)
     return {
       label: "Last Sale: Loading…",
-      title: "Loading completed sales for the selected variants.",
+      title: "Loading completed sales for this finish.",
     };
-  const partial = finishes.some(
-    (finish) =>
-      histories[finish] instanceof Error ||
-      !(
-        (histories[finish] as { complete: boolean; daily?: unknown })
-          .complete || (histories[finish] as { daily?: unknown }).daily
-      ),
-  );
-  const sales = finishes.flatMap((finish) => {
-    const history = histories[finish];
-    if (!history || history instanceof Error) return [];
-    return history.lastSale ? [history.lastSale] : history.sales;
-  });
-  const latest = sales.sort(
-    (a, b) => Date.parse(b.soldAt) - Date.parse(a.soldAt),
-  )[0];
+  if (history instanceof Error)
+    return { label: "Last Sale: Unavailable", title: history.message };
+  const latest = latestSale(history);
+  const partial = !history.complete && !history.daily;
   if (!latest)
     return {
-      label: partial ? "Last Sale: Unavailable" : "Last Sale: No sales",
-      title:
-        "No completed sale is available in the returned 30-day histories for the selected variants.",
+      label:
+        partial || history.count > 0
+          ? "Last Sale: Unavailable"
+          : "Last Sale: No sales",
+      title: "No completed sale price is available for this finish.",
     };
   const cents = (BigInt(latest.price) + 5000n) / 10000n;
   const price = `${(cents / 100n).toLocaleString("en-US")}.${String(cents % 100n).padStart(2, "0")}`;
   return {
+    numberOne: latest.numberOne,
     label: `Last Sale: $${price}${partial ? " (partial)" : ""}`,
-    title: `${FINISH_LABEL[latest.finish]} · ${new Date(latest.soldAt).toLocaleString()} · Kosmo.${latest.numberOne ? " #1 copy." : ""} Most recent returned sale across selected variants.${partial ? " Some history is incomplete or unavailable." : ""}`,
+    title: `${FINISH_LABEL[latest.finish]} · ${new Date(latest.soldAt).toLocaleString()} · Kosmo.${latest.numberOne ? " #1 copy." : ""}${partial ? " Some history is incomplete or unavailable." : ""}`,
   };
 }

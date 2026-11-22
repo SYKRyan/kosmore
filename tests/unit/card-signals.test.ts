@@ -4,41 +4,36 @@ import { defaults } from "../../src/shared/settings";
 import { parseHistory, parseInsights } from "../../src/kosmora/contracts";
 import { ApiError } from "../../src/kosmora/client";
 import { card, prices } from "../fixtures/data";
-import type { Finish } from "../../src/shared/types";
+import type { AuctionPrice, Finish } from "../../src/shared/types";
 const iconSettings = () => ({
   ...defaults(),
-  collectSaleRateData: false,
   showLastSalePriceOverlay: false,
   showLowestListingPriceOverlay: false,
 });
 afterEach(() => vi.unstubAllGlobals());
-it("publishes independent badges while market reads are pending and withholds a partial last-sale price", async () => {
+it("keeps simultaneous reads and progress separate for different finishes of the same subject", async () => {
   const h = harness();
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
   h.client.history.mockImplementation(async (_id, finish) => {
-    if (finish === "fullart") await held;
-    return parseHistory(prices(1), finish);
+    if (finish === "veil") await held;
+    return parseHistory(prices(finish === "veil" ? 0 : 1), finish);
   });
   const updates = vi.fn();
-  const first = h.provider.get("42", defaults(), "plain", updates);
-  const secondUpdates = vi.fn();
-  const second = h.provider.get("42", defaults(), "veil", secondUpdates);
-  await vi.waitFor(() =>
-    expect(updates).toHaveBeenCalledWith(
-      expect.objectContaining({ quest: true, saleHistory: true }),
-    ),
-  );
-  expect(
-    updates.mock.calls.every(([signals]) => signals.lastSale === undefined),
-  ).toBe(true);
-  release();
-  expect((await first).lastSale).toBeDefined();
-  expect(await second).toEqual(await first);
-  expect(secondUpdates).toHaveBeenLastCalledWith(await first);
-  expect(h.client.history).toHaveBeenCalledTimes(3);
+  const shiny = h.provider.get("42", defaults(), "veil", updates);
+  try {
+    const plain = await h.provider.get("42", defaults(), "plain");
+    expect(plain.lastSale?.finish).toBe("plain");
+    expect(updates.mock.calls.every(([signals]) => !signals.lastSale)).toBe(
+      true,
+    );
+  } finally {
+    release();
+  }
+  expect((await shiny).saleHistory).toBe(false);
+  expect(h.client.history).toHaveBeenCalledTimes(2);
 });
 function harness() {
   const data: Record<string, unknown> = {
@@ -61,8 +56,8 @@ function harness() {
   });
   const client = {
     activeAuctions: vi.fn(async () => 0),
-    lowestListingPrice: vi.fn(
-      async (): Promise<string | undefined> => undefined,
+    lowestListing: vi.fn(
+      async (): Promise<AuctionPrice | undefined> => undefined,
     ),
     account: vi.fn(async () => ({
       key: "fixtureplayer",
@@ -124,7 +119,7 @@ it("keeps current listings and completed sales independent, including ordinary a
     saleHistory: true,
   });
 });
-it("uses the latest returned sale across every finish and loads listing prices only when requested", async () => {
+it("uses the latest returned sale for the displayed finish and loads listing prices only when requested", async () => {
   const h = harness();
   const settings = {
     ...defaults(),
@@ -133,7 +128,7 @@ it("uses the latest returned sale across every finish and loads listing prices o
     showQuestOverlay: false,
   };
   h.client.activeAuctions.mockResolvedValue(2);
-  h.client.lowestListingPrice.mockResolvedValue("8000000");
+  h.client.lowestListing.mockResolvedValue({price: "8000000", bids: 1});
   h.client.history.mockImplementation(async (_id, finish) => {
     const data = prices(1);
     data.prices.sales[0].price = finish === "veil" ? "99000000" : "12000000";
@@ -142,14 +137,10 @@ it("uses the latest returned sale across every finish and loads listing prices o
     return parseHistory(data, finish);
   });
   const result = await h.provider.get("42", settings, "plain");
-  expect(result.lastSale).toMatchObject({ finish: "veil", price: "99000000" });
-  expect(result.lowestListingPrice).toBe("8000000");
-  expect(h.client.history.mock.calls.map((call) => call[1])).toEqual([
-    "plain",
-    "veil",
-    "fullart",
-  ]);
-  expect(h.client.lowestListingPrice).toHaveBeenCalledTimes(1);
+  expect(result.lastSale).toMatchObject({ finish: "plain", price: "12000000" });
+  expect(result.lowestListing).toEqual({price: "8000000", bids: 1});
+  expect(h.client.history.mock.calls.map((call) => call[1])).toEqual(["plain"]);
+  expect(h.client.lowestListing).toHaveBeenCalledTimes(1);
   h.provider.reset();
   const withoutPrices = await h.provider.get(
     "42",
@@ -165,17 +156,17 @@ it("uses the latest returned sale across every finish and loads listing prices o
     activeAuctions: true,
   });
   expect(withoutPrices.lastSale).toBeUndefined();
-  expect(withoutPrices.lowestListingPrice).toBeUndefined();
-  expect(h.client.lowestListingPrice).toHaveBeenCalledTimes(1);
+  expect(withoutPrices.lowestListing).toBeUndefined();
+  expect(h.client.lowestListing).toHaveBeenCalledTimes(1);
 });
-it("retains confirmed icons but hides uncertain prices after history or listing-price failures", async () => {
+it("uses the matching sale even when other finishes or the listing price are unavailable", async () => {
   const h = harness();
   h.client.history.mockImplementation(async (_id, finish) => {
     if (finish === "veil") throw new ApiError("Unavailable", 503);
     return parseHistory(prices(1), finish);
   });
   h.client.activeAuctions.mockResolvedValue(2);
-  h.client.lowestListingPrice.mockRejectedValue(
+  h.client.lowestListing.mockRejectedValue(
     new ApiError("Unavailable", 503),
   );
   const result = await h.provider.get(
@@ -190,8 +181,8 @@ it("retains confirmed icons but hides uncertain prices after history or listing-
   );
   expect(result.saleHistory).toBe(true);
   expect(result.activeAuctions).toBe(true);
-  expect(result.lastSale).toBeUndefined();
-  expect(result.lowestListingPrice).toBeUndefined();
+  expect(result.lastSale?.finish).toBe("plain");
+  expect(result.lowestListing).toBeUndefined();
 });
 it("shows On Sale only for your own listed copies, independently of public auction counts", async () => {
   const h = harness();
@@ -285,11 +276,11 @@ it("honors the auction toggle independently and propagates market throttling", a
     h.provider.get("42", iconSettings(), "plain"),
   ).rejects.toMatchObject({ status: 429, retryAt: 123 });
 });
-it("deduplicates card checks and stops sale-history reads after the first confirmed positive", async () => {
+it("deduplicates concurrent checks for the same card and finish", async () => {
   const h = harness();
   const result = await Promise.all([
     h.provider.get("42", iconSettings(), "plain"),
-    h.provider.get("42", iconSettings(), "veil"),
+    h.provider.get("42", iconSettings(), "plain"),
   ]);
   expect(result).toEqual([
     {
@@ -408,11 +399,7 @@ it("honors each toggle and skips card details when friends have no family prefer
     interestedFriends: 0,
     quest: false,
   });
-  expect(h.client.history.mock.calls.map((c) => c[1])).toEqual([
-    "veil",
-    "plain",
-    "fullart",
-  ]);
+  expect(h.client.history.mock.calls.map((c) => c[1])).toEqual(["veil"]);
   expect(h.client.friends).not.toHaveBeenCalled();
   expect(h.client.account).not.toHaveBeenCalled();
 });
@@ -535,7 +522,7 @@ it("discards a canceled per-card quest check after reset", async () => {
 
 it("stops at the first positive finish even while collecting settlement evidence", async () => {
   const h = harness();
-  const settings = { ...iconSettings(), collectSaleRateData: true };
+  const settings = iconSettings();
   await expect(h.provider.get("42", settings, "veil")).resolves.toMatchObject({
     saleHistory: true,
   });

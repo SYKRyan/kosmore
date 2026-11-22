@@ -36,13 +36,20 @@ test("uses the unified Services response on a cold cache, then reuses it across 
             contentType: "text/html",
             body: `<style>main{display:grid;grid-template-columns:repeat(4,1fr)}article{height:150px}</style><main>${Array.from({ length: 200 }, (_, i) => face(String(1001 + i))).join("")}</main>`,
           });
+        const finish = url.searchParams.get("finish");
+        const faceClass =
+          finish === "shiny"
+            ? "kc-veil"
+            : finish === "fullart"
+              ? "kc-fa"
+              : "kc-rare";
         const sell = url.pathname === "/market/sell";
         const id = url.searchParams.get("card") ?? "42";
         return route.fulfill({
           contentType: "text/html",
           body: sell
             ? singleSellFixture()
-            : `<main><a href="/card/${id}">${face(id)}</a></main>`,
+            : `<main><a href="/card/${id}">${face(id, "Northern Lights", faceClass)}</a></main>`,
         });
       }
       paths.push(url.pathname + url.search);
@@ -63,6 +70,21 @@ test("uses the unified Services response on a cold cache, then reuses it across 
       return route.fulfill({ json: {} });
     });
     const row = serviceRow("42");
+    row.details.sales.plain.lastSale.numberOne = true;
+    Object.assign(row.details.sales.shiny, {
+      ...row.details.sales.plain,
+      lastSale: {
+        price: "12500000",
+        at: "2026-11-21T00:00:00Z",
+        numberOne: false,
+      },
+    });
+    row.details.auctions.push({
+      finish: "shiny",
+      price: "1000000",
+      bids: 0,
+      endsAt: "2099-11-21T00:00:00Z",
+    });
     row.details.history.plain.unshift(
       {
         day: "2026-11-17",
@@ -79,6 +101,7 @@ test("uses the unified Services response on a cold cache, then reuses it across 
         await chrome.storage.local.set({
           "kosmore.settings": {
             schemaVersion: 1,
+            collectSaleRateData: false,
             showOnSaleOverlay: false,
             showFriendInterestOverlay: false,
             pinnedAlbumsEnabled: false,
@@ -201,6 +224,28 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await expect(
       cards.getByRole("dialog").getByText("Last Sale: $6.50", { exact: true }),
     ).toBeVisible();
+    await expect(
+      cards.getByRole("dialog").getByText("Listed For: $7.5"),
+    ).toBeVisible();
+    const listedFor = cards.locator(".listed-for .market-badge-label");
+    const priceBadge = cards.locator("main .signal-badge.auction .badge-price");
+    await expect(listedFor).toHaveText("Listed For: $7.5 - 3 bids");
+    await expect(priceBadge).toHaveText("$7.5 - 3 bids");
+    const overlaySettings = options.locator("#card-overlays");
+    const activeAuctions = overlaySettings.getByLabel("Show active auctions icon on cards", { exact: true });
+    const bidSwitch = overlaySettings.getByRole("switch", { name: "Show bid counts", exact: true });
+    await expect(overlaySettings.locator(
+      ".settings-subsetting:has(#lowest-listing-price-overlay) + .settings-subsetting #show-auction-bid-counts",
+    )).toBeVisible();
+    await activeAuctions.uncheck();
+    await expect(bidSwitch).toBeDisabled();
+    await activeAuctions.check();
+    await expect(bidSwitch).toBeEnabled();
+    await bidSwitch.uncheck();
+    await expect(listedFor).toHaveText("Listed For: $7.5");
+    await expect(priceBadge).toHaveText("$7.5");
+    await bidSwitch.check();
+    await expect(priceBadge).toHaveText("$7.5 - 3 bids");
     const daily = cards.getByRole("table", {
       name: "Daily sale prices by variant in Kosmo",
     });
@@ -216,9 +261,62 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await expect(daily.locator("tbody tr").last().locator("td")).toHaveText([
       "Standard",
       "3",
+      "3",
       "4",
       "9",
     ]);
+    const popup = cards.getByRole("dialog");
+    await expect(popup.locator(".last-sold .number-one")).toHaveText("#1");
+    await expect(
+      cards.locator("main .signal-badge.sale .number-one"),
+    ).toHaveText("#1");
+    const saleRate = popup.locator('[data-stat-id="saleRate"]');
+    for (const enabled of [false, true]) {
+      await worker.evaluate(async (enabled) => {
+        const key = "kosmore.settings";
+        const saved = (await chrome.storage.local.get(key))[key] as Record<
+          string,
+          unknown
+        >;
+        await chrome.storage.local.set({
+          [key]: { ...saved, stats: [{ id: "saleRate", enabled }] },
+        });
+      }, enabled);
+      await expect(saleRate).toHaveCount(enabled ? 1 : 0);
+    }
+    const point = popup.getByRole("button", {
+      name: "17/11 - Sales 3 - Min $3 - Avg $5.333333 - Max $9 - Standard",
+      exact: true,
+    });
+    await point.click();
+    await expect(daily.locator("tr[data-selected] button")).toBeFocused();
+    await daily.locator("tr[data-daily-row]").first().click();
+    await expect(popup.locator("circle[data-selected]")).toBeFocused();
+    await expect(popup.locator("circle[data-selected]")).toHaveAttribute(
+      "data-daily-point",
+      "2026-11-20/plain",
+    );
+    await popup.getByLabel("Shiny", { exact: true }).uncheck();
+    await cards.goto("https://kosmora.io/collection?finish=shiny");
+    const tile = cards.locator('main a[href="/card/42"]');
+    await tile.hover();
+    await expect(popup.getByLabel("Shiny", { exact: true })).not.toBeChecked();
+    await expect(popup.locator(".last-sold")).toHaveText("Last Sale: $12.50");
+    await expect(popup.locator(".listed-for")).toHaveText("Listed For: $1");
+    await expect(tile.locator(".signal-badge.sale .badge-price")).toHaveText(
+      "$12.5",
+    );
+    await expect(tile.locator(".signal-badge.auction .badge-price")).toHaveText(
+      "$1",
+    );
+    await cards.goto("https://kosmora.io/collection?finish=fullart");
+    await tile.hover();
+    await expect(
+      popup.getByRole("heading", { name: "Northern Lights" }),
+    ).toBeVisible();
+    await expect(popup.locator(".last-sold")).toBeHidden();
+    await expect(popup.locator(".listed-for")).toBeHidden();
+    await cards.goto("https://kosmora.io/collection");
     expect(paths).toEqual(["/api/collection?native=1"]);
     expect(
       await worker.evaluate(
@@ -231,6 +329,21 @@ test("uses the unified Services response on a cold cache, then reuses it across 
       sales.getByRole("button", { name: "Verify account" }),
     ).toBeVisible();
     expect(paths).toEqual(["/api/collection?native=1"]);
+    await expect(
+      sales
+        .getByRole("button", { name: /^Last Sale: / })
+        .locator(".number-one"),
+    ).toHaveText("#1");
+    await sales.getByRole("button", { name: /^Last Sale: / }).click();
+    await expect(sales.getByTestId("sell-start")).toHaveValue("6.5");
+    const lowestButton = sales.getByRole("button", { name: /^Lowest Listed:/ });
+    await expect(lowestButton.locator(".amount")).toHaveText("Lowest Listed: $7.5 - 3 bids");
+    await bidSwitch.uncheck();
+    await expect(lowestButton.locator(".amount")).toHaveText("Lowest Listed: $7.5");
+    await bidSwitch.check();
+    await expect(lowestButton.locator(".amount")).toHaveText("Lowest Listed: $7.5 - 3 bids");
+    await lowestButton.click();
+    await expect(sales.getByTestId("sell-start")).toHaveValue("7.5");
     await sales.getByRole("button", { name: "Verify account" }).click();
     await expect(
       sales.getByText("My Last Listing:", { exact: false }).first(),
@@ -358,7 +471,7 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await tiles.first().scrollIntoViewIfNeeded();
     const neighbor = await first.elementHandle();
     const updated = tiles.nth(1).locator(".signal-badge.auction .badge-price");
-    await expect(updated).toHaveText("$7.5");
+    await expect(updated).toHaveText("$7.5 - 3 bids");
     await worker.evaluate(async (base) => {
       const id = "1002";
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -375,7 +488,8 @@ test("uses the unified Services response on a cold cache, then reuses it across 
           const get = store.get(JSON.stringify([base, id]));
           get.onsuccess = () => {
             const row = get.result;
-            row.card.auctions[0].price = "12000000";
+            row.card.auctions[0].price = "1234000000";
+            row.card.auctions[0].bids = 1;
             store.put(row);
           };
         });
@@ -390,7 +504,7 @@ test("uses the unified Services response on a cold cache, then reuses it across 
         ids: [id],
       });
     }, service);
-    await expect(updated).toHaveText("$12");
+    await expect(updated).toHaveText("$1,234 - 1 bid");
     expect(
       await first.evaluate((badge, original) => badge === original, neighbor),
     ).toBe(true);

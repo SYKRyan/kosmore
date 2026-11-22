@@ -77,7 +77,6 @@ export function installPageRelay(win: Window = window) {
   }
   let ready = false;
   let preferences: RelayPreferences | undefined;
-  let observationEpoch = 0;
   const send = (
     message:
       | RelayMessage
@@ -107,10 +106,7 @@ export function installPageRelay(win: Window = window) {
       event.data?.type !== RELAY_READY
     )
       return;
-    const previous = preferences?.collectSaleRateData;
     preferences = event.data.preferences;
-    if (previous !== undefined && previous !== preferences?.collectSaleRateData)
-      observationEpoch++;
     if (ready) return;
     ready = true;
     for (const item of buffer.splice(0))
@@ -410,33 +406,26 @@ export function installPageRelay(win: Window = window) {
       ) {
         const auction = RELAY_AUCTIONS.test(url.pathname);
         const enabled = () =>
-          auction
-            ? preferences?.collectSaleRateData !== false
-            : url.pathname === "/api/families"
-              ? preferences?.familyMilestones !== false
-              : url.pathname === "/api/vortex/lobby"
-                ? preferences?.vortex !== false
-                : preferences?.fusion !== false;
-        const epoch = observationEpoch;
+          auction ||
+          (url.pathname === "/api/families"
+            ? preferences?.familyMilestones !== false
+            : url.pathname === "/api/vortex/lobby"
+              ? preferences?.vortex !== false
+              : preferences?.fusion !== false);
         if (enabled())
           void response
             .then((res) => {
-              if (
-                !res.ok ||
-                !enabled() ||
-                (auction && epoch !== observationEpoch)
-              )
-                return;
+              if (!res.ok || !enabled()) return;
               const copy = res.clone();
               const forward = () => {
-                if (!enabled() || (auction && epoch !== observationEpoch)) {
+                if (!enabled()) {
                   void copy.body?.cancel().catch(() => {});
                   return;
                 }
                 void copy
                   .json()
                   .then((data: unknown) => {
-                    if (enabled() && (!auction || epoch === observationEpoch))
+                    if (enabled())
                       relay({
                         type: RELAY_DATA,
                         path: url.pathname,

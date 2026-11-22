@@ -134,6 +134,7 @@ export function parseHistory(v: unknown, finish: Finish): MarketHistory {
       auctionId: uuid(s.auctionId),
       price: amount(s.price),
       soldAt: date(s.soldAt),
+      ...(s.numberOne === true && { numberOne: true }),
       finish,
     };
   });

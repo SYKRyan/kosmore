@@ -174,10 +174,13 @@ export class CardOverlays {
         settings.showLowestListingPriceOverlay ||
       this.settings?.showFriendInterestOverlay !==
         settings.showFriendInterestOverlay ||
-      this.settings?.showQuestOverlay !== settings.showQuestOverlay ||
-      this.settings?.collectSaleRateData !== settings.collectSaleRateData;
+      this.settings?.showQuestOverlay !== settings.showQuestOverlay;
+    const bidsChanged = this.settings?.showAuctionBidCounts !== settings.showAuctionBidCounts;
     this.settings = settings;
     if (changed) this.invalidate();
+    else if (bidsChanged)
+      for (const entry of this.entries.values())
+        if (entry.signals?.lowestListing?.bids) this.render(entry, entry.signals, true);
   }
   invalidate(clear = true) {
     this.generation++;
@@ -534,14 +537,14 @@ export class CardOverlays {
       });
     this.pump();
   }
-  private render(entry: Entry, signals: CardSignals) {
+  private render(entry: Entry, signals: CardSignals, force = false) {
     const sameSignals =
       entry.signals && sameOverlaySignals(entry.signals, signals);
     entry.signals = signals;
     const artwork = this.albumArtwork(entry);
     const artworkChanged =
       artwork !== (entry.albumSale?.host.parentElement ?? undefined);
-    if (sameSignals && entry.host?.isConnected && !artworkChanged) return;
+    if (!force && sameSignals && entry.host?.isConnected && !artworkChanged) return;
     if (artworkChanged) this.removeAlbumSale(entry);
     if (
       !signals.onSale &&

@@ -104,8 +104,9 @@ function backupSettings(value: unknown): Settings {
     normalizeFamilyTokens(names, "in the family blacklist");
   }
   for (const [key, field] of Object.entries(raw)) {
-    // Accept legacy backups containing the removed Next Batch options.
+    // Retired settings can still appear in format-version-1 backups.
     if (
+      key === "collectSaleRateData" ||
       /^fusion(?:Enabled|NextBatchEnabled|RespectFamilyImpact|RespectBlacklist|RespectPriceThreshold|ExcludeFullArts|ExcludeShiny|ExcludeNumberOnes|PriceThreshold)$/.test(
         key,
       )
@@ -212,7 +213,8 @@ function backupSettings(value: unknown): Settings {
     const ids = array(raw.stats, "Stat preferences").map((value) => {
       const stat = record(value, "Stat preference");
       if (
-        !STAT_CATALOG.some((s) => s.id === stat.id) ||
+        (!STAT_CATALOG.some((s) => s.id === stat.id) &&
+          stat.id !== "interest" && stat.id !== "readership") ||
         typeof stat.enabled !== "boolean"
       )
         throw new Error(

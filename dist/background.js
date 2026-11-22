@@ -258,28 +258,6 @@ var F = [
 		})
 	},
 	{
-		id: "interest",
-		label: "Kosmora interest",
-		description: "Number of players interested in the card.",
-		source: "card",
-		preview: { value: "18" },
-		read: (e) => ({
-			value: e.card?.interested?.toLocaleString() ?? "—",
-			title: e.cardError ?? "Players interested in this card"
-		})
-	},
-	{
-		id: "readership",
-		label: "Wikipedia · recorded median/day",
-		description: "Kosmora’s recorded median daily Wikipedia views.",
-		source: "card",
-		preview: { value: "1,240" },
-		read: (e) => ({
-			value: e.card?.readership?.toLocaleString() ?? "—",
-			title: e.cardError ?? `Kosmora’s recorded median daily Wikipedia views. ${e.card?.readershipSource ?? ""}`
-		})
-	},
-	{
 		id: "salesCount",
 		label: "Sales · 30 days",
 		description: "Completed-sale count across the selected variants.",
@@ -293,18 +271,18 @@ var F = [
 	{
 		id: "activeAuctions",
 		label: "Active Auctions",
-		description: "Open, unexpired market listings for this card across all finishes.",
+		description: "Open, unexpired market listings matching this card and finish.",
 		source: "auctions",
 		preview: { value: "7" },
 		read: (e) => ({
 			value: typeof e.activeAuctions == "number" ? e.activeAuctions.toLocaleString() : "—",
-			title: e.activeAuctions instanceof Error ? e.activeAuctions.message : typeof e.activeAuctions == "number" ? "Active listings for this exact card across all finishes. Counts are cached for up to 30 seconds; Refresh checks again." : e.cardError ?? "Loading active auctions…"
+			title: e.activeAuctions instanceof Error ? e.activeAuctions.message : typeof e.activeAuctions == "number" ? "Active listings matching this card and finish. Counts are cached for up to 30 seconds; Refresh checks again." : e.cardError ?? "Loading active auctions…"
 		})
 	},
 	{
 		id: "saleRate",
 		label: "Sale Rate · 30 days",
-		description: "Share of this card's observed listings that sold, for the selected variants. Kosmora does not report unsold listings, so KosMore records the listings the Market shows you and settles them from sale histories.",
+		description: "Estimated share sold for the selected finishes. Uses 30 days of locally cached sales and auction history, including stale data. The estimate divides sales by sales plus known unsold and still-open listings. Enabling it makes no additional requests.",
 		source: "observed",
 		preview: { value: "67% · 3" },
 		read: (e) => I(e)
@@ -318,7 +296,7 @@ function I(e) {
 	let t = d(e.saleRates, e.finishes), n = `${s.filter((t) => e.finishes.includes(t)).map((t) => {
 		let n = e.saleRates[t];
 		return `${c[t]}: ${n.total ? `${n.sold} of ${n.total} sold` : "none observed"}`;
-	}).join(" · ")}. Observed locally from listings KosMore saw on the Market, settled from sale histories. Listings ended in the last 30 days.`;
+	}).join(" · ")}. Estimated from locally cached sales, unsold outcomes and open auctions over 30 days. Cached snapshots may be stale.`;
 	return t.percent === null ? {
 		value: "—",
 		title: n
@@ -718,7 +696,6 @@ var ge = "kosmore.settings", _e = () => ({
 	salesQuickPricesEnabled: !1,
 	salesQuickPrices: [],
 	statBoxesEnabled: !0,
-	collectSaleRateData: !0,
 	pinnedAlbumsEnabled: !0,
 	closeTooltipWhenAddedToAlbum: !1,
 	applyCloseBehaviorToPinnedTooltips: !1,
@@ -731,6 +708,7 @@ var ge = "kosmore.settings", _e = () => ({
 	showLastSalePriceOverlay: !0,
 	showActiveAuctionsOverlay: !0,
 	showLowestListingPriceOverlay: !0,
+	showAuctionBidCounts: !0,
 	showOnSaleOverlay: !0,
 	showFriendInterestOverlay: !0,
 	showQuestOverlay: !0,
@@ -757,7 +735,7 @@ function ve(e) {
 		t.familyBlacklist = he(n.familyBlacklist, "in the family blacklist");
 	} catch {}
 	typeof n.enabled == "boolean" && (t.enabled = n.enabled);
-	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.tooltipTakesFocus.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.hotkeysEnabled.navigationHotkeysEnabled.hoverTooltipHotkeysEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.cardOverlaysEnabled.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.salesDiscountEnabled.salesCustomMinimumsEnabled.salesQuickPricesEnabled.statBoxesEnabled.collectSaleRateData.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
+	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.tooltipTakesFocus.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.hotkeysEnabled.navigationHotkeysEnabled.hoverTooltipHotkeysEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.cardOverlaysEnabled.showAuctionBidCounts.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.salesDiscountEnabled.salesCustomMinimumsEnabled.salesQuickPricesEnabled.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
 	for (let e of [
 		"salesLastSaleAdjustment",
 		"salesLowestListingAdjustment",
@@ -1631,7 +1609,9 @@ function Ie(r, i) {
 		auctions: s.auctions.map((t) => {
 			let n = e(t);
 			return {
+				finish: Fe(n.finish),
 				price: a(n.price),
+				...typeof n.bids == "number" && Number.isSafeInteger(n.bids) && n.bids >= 0 && { bids: n.bids },
 				endsAt: o(n.endsAt)
 			};
 		}),

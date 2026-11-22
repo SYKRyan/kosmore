@@ -240,8 +240,8 @@ it("keeps card-heavy consumers off signed-in game card routes when Services is u
   const all = await Promise.allSettled([
     client.insights("42"),
     client.history("42", "plain"),
-    client.lowestListingPrice("42", "Fixture"),
-    client.activeAuctions("42", "Fixture"),
+    client.lowestListing("42", "plain"),
+    client.activeAuctions("42", "plain"),
   ]);
   expect(all.every((value) => value.status === "rejected")).toBe(true);
   expect(game).toHaveBeenCalledTimes(1);
@@ -269,7 +269,7 @@ it("reuses a fresh card across sequential overlay reads until expiry or a newer 
     await client.insights("42");
     await client.history("42", "plain");
     expect(client.serviceCardChanged("42", now)).toBe(false);
-    await client.activeAuctions("42", "Northern Lights");
+    await client.activeAuctions("42", "plain");
     expect(send).toHaveBeenCalledTimes(1);
     expect((await client.insights("42", undefined, false, true)).onSale).toBe(
       false,

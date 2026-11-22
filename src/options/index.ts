@@ -44,12 +44,12 @@ type FeatureKey =
   | "navigationHotkeysEnabled"
   | "hoverTooltipHotkeysEnabled"
   | "packOpeningHotkeysEnabled"
+  | "showAuctionBidCounts"
   | "showRemainingPackCount"
   | "cardOverlaysEnabled"
   | "familyImpactOverlaysEnabled"
   | "salesOverlaysEnabled"
   | "statBoxesEnabled"
-  | "collectSaleRateData"
   | "pinnedAlbumsEnabled";
 const featureGroups = new Map<
   HTMLElement,
@@ -662,9 +662,19 @@ const listingPriceOverlay = overlayPriceToggle(
   auctionOverlay,
   "lowest-listing-price-overlay",
   "Show lowest listed price",
-  "Lowest current listing price across all finishes: highest bid, or starting price when there are no bids.",
+  "Lowest current listing price for this finish: highest bid, or starting price when there are no bids.",
   (checked) => {
     draft.showLowestListingPriceOverlay = checked;
+  },
+);
+const showAuctionBidCounts = overlayPriceToggle(
+  auctionOverlay,
+  "show-auction-bid-counts",
+  "Show bid counts",
+  "Append the listing’s bid count to auction prices on cards, in tooltips, and on sell buttons.",
+  (checked) => {
+    draft.showAuctionBidCounts = checked;
+    void persistFeature(overlays, "showAuctionBidCounts", showAuctionBidCounts);
   },
 );
 const onSaleOverlay = checkboxSetting(
@@ -687,7 +697,7 @@ const lastSalePriceOverlay = overlayPriceToggle(
   saleOverlay,
   "last-sale-price-overlay",
   "Show last sale price",
-  "Last sale price across all finishes in Kosmora’s 30-day history.",
+  "Last sale price for this finish in Kosmora’s 30-day history.",
   (checked) => {
     draft.showLastSalePriceOverlay = checked;
   },
@@ -795,31 +805,13 @@ const salesEnabled = sectionToggle(
 );
 const statSettings = new StatSettings((preferences) => {
   draft.stats = preferences;
-  statSettings.render(draft.stats, draft.collectSaleRateData);
+  statSettings.render(draft.stats);
 });
 const statsEnabled = sectionToggle(
   statSettings.host,
   "statBoxesEnabled",
   "Enable stat boxes",
 );
-const saleRateControls = el("div", "settings-group-independent");
-const collectSaleRate = checkboxSetting(
-  "collectSaleRateData",
-  "Collect Sale Rate data",
-  "Record listing outcomes for Sale Rate. Pause collection to reduce background work.",
-  async (checked) => {
-    draft.collectSaleRateData = checked;
-    statSettings.render(draft.stats, checked);
-    await persistFeature(
-      statSettings.host,
-      "collectSaleRateData",
-      collectSaleRate,
-    );
-    statSettings.render(draft.stats, draft.collectSaleRateData);
-  },
-  saleRateControls,
-);
-collectSaleRate.setAttribute("role", "switch");
 delay.addEventListener("input", () => {
   draft.hoverDelayMs = Number(delay.value);
 });
@@ -1067,7 +1059,6 @@ groupControls({
   keys: ["statBoxesEnabled", "stats"],
   render: renderSettings,
 });
-statSettings.host.querySelector(":scope > .savebar")!.before(saleRateControls);
 groupControls({
   host: salesSettings.host,
   name: "sales overlay settings",
@@ -1217,7 +1208,6 @@ function renderSettings() {
     FAMILY_IMPACT_AVAILABLE && draft.familyImpactOverlaysEnabled;
   salesEnabled.checked = draft.salesOverlaysEnabled;
   statsEnabled.checked = draft.statBoxesEnabled;
-  collectSaleRate.checked = draft.collectSaleRateData;
   albumsEnabled.checked = draft.pinnedAlbumsEnabled;
   enabled.checked = draft.enabled;
   disableHoverInPulsar.checked = draft.disableHoverTooltipInPulsar;
@@ -1241,6 +1231,8 @@ function renderSettings() {
   auctionOverlay.checked = draft.showActiveAuctionsOverlay;
   listingPriceOverlay.checked = draft.showLowestListingPriceOverlay;
   listingPriceOverlay.disabled = !draft.showActiveAuctionsOverlay;
+  showAuctionBidCounts.checked = draft.showAuctionBidCounts;
+  showAuctionBidCounts.disabled = !draft.showActiveAuctionsOverlay;
   onSaleOverlay.checked = draft.showOnSaleOverlay;
   friendOverlay.checked = draft.showFriendInterestOverlay;
   questOverlay.checked = draft.showQuestOverlay;
@@ -1253,7 +1245,7 @@ function renderSettings() {
       ? draft
       : { ...draft, familyImpactOverlaysEnabled: false },
   );
-  statSettings.render(draft.stats, draft.collectSaleRateData);
+  statSettings.render(draft.stats);
   hotkeySettings.render(draft.hotkeys);
   packHotkeySettings.render(draft.packOpeningHotkeys);
   tooltipHotkeySettings.render(draft.hoverTooltipHotkeys);
@@ -1686,7 +1678,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     ["autoSkipOpening", autoSkipOpening],
     ["autoDismissFoundPack", autoDismissFoundPack],
     ["showRemainingPackCount", showRemainingPackCount],
-    ["collectSaleRateData", collectSaleRate],
+    ["showAuctionBidCounts", showAuctionBidCounts],
   ] as const) {
     if (draft[key] === saved[key]) {
       draft[key] = next[key];
@@ -1694,7 +1686,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
     saved[key] = next[key];
   }
-  statSettings.render(draft.stats, draft.collectSaleRateData);
+  statSettings.render(draft.stats);
   for (const { field, input } of popupInputs) {
     if (field !== "popupWidth" && field !== "popupHeight") continue;
     if (draft[field] === saved[field]) {

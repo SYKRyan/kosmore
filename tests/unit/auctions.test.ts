@@ -153,8 +153,10 @@ it("filters elapsed auctions from the Services snapshot and refreshes the tab vi
           until: Date.now() + 300_000,
           card: {
             auctions: [
-              { price: "10", endsAt: "2000-01-01T00:00:00Z" },
-              { price: "20", endsAt: "2099-01-01T00:00:00Z" },
+              { finish: "plain", price: "10", endsAt: "2000-01-01T00:00:00Z" },
+              { finish: "veil", price: "2", endsAt: "2099-01-01T00:00:00Z" },
+              { finish: "plain", price: "30", bids: 8, endsAt: "2099-01-01T00:00:00Z" },
+              { finish: "plain", price: "20", bids: 1, endsAt: "2099-01-01T00:00:00Z" },
             ],
           },
         },
@@ -165,12 +167,14 @@ it("filters elapsed auctions from the Services snapshot and refreshes the tab vi
   try {
     const client = new GameClient(fetcher as typeof fetch);
     await client.account();
-    expect(await client.activeAuctions("42", "Card")).toBe(1);
-    expect(client.peekAuction("42", "Card")?.value.lowestPrice).toBe("20");
+    expect(await client.activeAuctions("42", "plain")).toBe(2);
+    expect(client.peekAuction("42", "plain")?.value.lowestListing).toEqual({price: "20", bids: 1});
+    expect(await client.lowestListing("42", "veil")).toEqual({price: "2", bids: undefined});
+    expect(await client.activeAuctions("42", "fullart")).toBe(0);
     handle = "SecondPlayer";
     await client.account();
-    expect(client.peekAuction("42", "Card")).toBeUndefined();
-    expect(await client.lowestListingPrice("42", "Card")).toBe("20");
+    expect(client.peekAuction("42", "plain")).toBeUndefined();
+    expect(await client.lowestListing("42", "plain")).toEqual({price: "20", bids: 1});
     expect(send.mock.calls.map(([call]) => call.account)).toEqual([
       undefined,
       undefined,

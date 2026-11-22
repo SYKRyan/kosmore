@@ -59,5 +59,16 @@ export class HistoryResolver {
       loadedAt,
     );
     if (changed.length) this.store.resolved(changed);
+    this.store.recordMany(
+      history.sales.map((sale) => [
+        sale.auctionId,
+        {
+          subjectId,
+          finish: sale.finish,
+          outcome: "sold",
+          endsAt: Date.parse(sale.soldAt),
+        },
+      ]),
+    );
   }
 }

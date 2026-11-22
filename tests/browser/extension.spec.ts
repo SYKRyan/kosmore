@@ -846,6 +846,16 @@ test("overlay button: touch opens a linked card without navigation, overlaps its
     await phone.screenshot({
       path: "test-results/screenshots/tooltip-button-phone.png",
     });
+    const covered = await button.evaluate(element => {
+      const r = element.getBoundingClientRect();
+      const cover = document.createElement("div");
+      cover.style.cssText = "position:fixed;inset:0;z-index:2";
+      document.body.append(cover);
+      const above = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === cover;
+      cover.remove();
+      return above;
+    });
+    expect(covered).toBe(true);
     await tap(button);
     await expect(phone.locator("#kosmore-root")).toContainText(
       "Northern Lights",
@@ -910,7 +920,7 @@ test("overlay button: follows replaced cards and scroll clipping without changin
     e.before(clip);
     clip.append(e);
   });
-  await expect(tooltipButton()).toBeHidden();
+  await expect(tooltipButton()).not.toBeInViewport();
   await page.locator("#clip").evaluate((e) => (e.scrollTop = e.scrollHeight));
   await expect(tooltipButton()).toBeVisible();
   await page
@@ -5980,7 +5990,7 @@ test("market overlays show sale and listing prices at top right and quest before
       options
         .locator("#card-overlays")
         .getByText(
-          "Last sale price across all finishes in Kosmora’s 30-day history.",
+          "Last sale price for this finish in Kosmora’s 30-day history.",
           { exact: true },
         ),
     ).toBeVisible();
@@ -7252,53 +7262,6 @@ test("empty market history is a centered bold message while pending and failed h
     release();
     await page.unroute("**/api/cards/*/prices?**");
   }
-});
-test("the header shows the newest completed sale across selected variants", async () => {
-  await page.route("**/api/cards/*/prices*", async (route) => {
-    const finish = new URL(route.request().url()).searchParams.get("finish")!;
-    const amount =
-      finish === "fullart"
-        ? "12345000"
-        : finish === "veil"
-          ? "90000000"
-          : "2000000";
-    const day = finish === "fullart" ? "03" : finish === "veil" ? "02" : "01";
-    const fixture = prices(1);
-    await route.fulfill({
-      json: {
-        prices: {
-          ...fixture.prices,
-          low: amount,
-          median: amount,
-          high: amount,
-          sales: [
-            {
-              ...fixture.prices.sales[0],
-              price: amount,
-              soldAt: `2026-11-${day}T00:00:00Z`,
-            },
-          ],
-        },
-      },
-    });
-  });
-  try {
-    await page.goto("https://kosmora.io/collection");
-    await page.locator(".kc-article").hover();
-    const popup = page.locator("#kosmore-root");
-    await expect(popup.locator(".top .last-sold")).toHaveText(
-      "Last Sale: $12.35",
-    );
-    await popup.getByLabel("Full art", { exact: true }).uncheck();
-    await expect(popup.locator(".last-sold")).toHaveText("Last Sale: $90.00");
-    await popup.getByLabel("Shiny", { exact: true }).uncheck();
-    await expect(popup.locator(".last-sold")).toHaveText("Last Sale: $2.00");
-    await popup.getByLabel("Standard", { exact: true }).uncheck();
-    await expect(popup.locator(".last-sold")).toBeHidden();
-  } finally {
-    await page.unroute("**/api/cards/*/prices*");
-  }
-  expect(writeRequests).toBe(0);
 });
 test("activity buttons replace hover and focus across boxes and journal rows without activating native controls", async () => {
   await page.goto("https://kosmora.io/market?tab=overview&view=mine");
@@ -9604,86 +9567,6 @@ test("performance: quest badges appear before slow market results and survive a 
   } finally {
     release();
     await page.unroute("**/api/auctions?**");
-  }
-});
-
-test("sale rate: pauses live from Stat Boxes and opens that section from the disabled tile", async () => {
-  const options = await context.newPage();
-  try {
-    await options.goto(
-      `chrome-extension://${extensionId}/options.html#stat-boxes`,
-    );
-    const group = options.locator("#stat-boxes");
-    const toggle = group.getByRole("switch", {
-      name: "Collect Sale Rate data",
-    });
-    const saleRateRow = group
-      .locator(".stat-choice")
-      .filter({ has: options.getByLabel(/^Show Sale Rate/) });
-    await expect(toggle).toBeChecked();
-    await expect(
-      group
-        .locator(":scope > .settings-group-independent + .savebar")
-        .getByRole("button", { name: "Save", exact: true }),
-    ).toBeVisible();
-    await page.goto("https://kosmora.io/collection");
-    await page.locator(".kc-article").hover();
-    const popup = page.locator("#kosmore-root");
-    await expect(popup.locator(".stats tbody")).toContainText("Standard");
-    await toggle.uncheck();
-    await expect(
-      saleRateRow.getByText("Disabled", { exact: true }),
-    ).toBeVisible();
-    await expect(saleRateRow.getByLabel(/^Show Sale Rate/)).toBeEnabled();
-    const tile = popup.getByRole("button", { name: /Sale Rate: Disabled/ });
-    await expect(tile).toBeVisible();
-    await expect(tile.locator("strong")).toHaveCSS("font-size", "11px");
-    await expect(tile.locator("strong")).toHaveCSS("white-space", "nowrap");
-    await expect(popup.locator(".stats tbody .sale-rate").first()).toHaveText(
-      "Disabled",
-    );
-    const openedPage = context.waitForEvent("page");
-    await tile.click();
-    const linked = await openedPage;
-    try {
-      await expect(linked).toHaveURL(/options\.html#stat-boxes$/);
-      await expect(
-        linked.getByRole("switch", { name: "Collect Sale Rate data" }),
-      ).not.toBeChecked();
-    } finally {
-      await linked.close();
-    }
-    await toggle.check();
-    await expect(
-      saleRateRow.getByText("Disabled", { exact: true }),
-    ).toHaveCount(0);
-    await expect(tile).toHaveCount(0);
-  } finally {
-    await options.close();
-  }
-});
-
-test("disabled market overlays make no market reads while other badges load", async () => {
-  await pulsarSettings({
-    showQuestOverlay: true,
-    showActiveAuctionsOverlay: false,
-    showSaleHistoryOverlay: false,
-  });
-  const marketRequests: string[] = [];
-  const countMarket = (request: { url(): string }) => {
-    const path = new URL(request.url()).pathname;
-    if (path === "/api/auctions" || path.endsWith("/prices"))
-      marketRequests.push(path);
-  };
-  page.on("request", countMarket);
-  try {
-    await page.goto("https://kosmora.io/collection");
-    await expect(
-      page.locator("[data-kosmore-card-overlays] .quest"),
-    ).toBeVisible();
-    expect(marketRequests).toEqual([]);
-  } finally {
-    page.off("request", countMarket);
   }
 });
 

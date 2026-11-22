@@ -180,6 +180,27 @@ it("ignores retired Next Batch settings in legacy backups", () => {
   });
   expect(validateBackup(legacy).settings).toEqual(source.settings);
 });
+it("imports backups from before bid counts and preserves an explicit off setting", async () => {
+  const source = backup();
+  const legacy = JSON.parse(serializeBackup(source));
+  delete legacy.settings.showAuctionBidCounts;
+  legacy.settings.collectSaleRateData = false;
+  legacy.settings.stats.push(
+    { id: "interest", enabled: true },
+    { id: "readership", enabled: false },
+  );
+  const current = backup();
+  current.settings.showAuctionBidCounts = false;
+  for (const mode of ["merge", "replace"] as const) {
+    const destination = memory();
+    await applyImport(prepareImport(legacy, mode, {}), destination.storage);
+    expect(destination.data()[SETTINGS_KEY]).toEqual(source.settings);
+    const disabled = parseBackup(serializeBackup(current));
+    await applyImport(prepareImport(disabled, mode, destination.data()), destination.storage);
+    expect(destination.data()[SETTINGS_KEY]).toEqual(current.settings);
+  }
+});
+
 it("imports pre-tooltip-hotkey backups without changing existing shortcut groups", async () => {
   const source = backup();
   source.settings.hotkeysEnabled = false;

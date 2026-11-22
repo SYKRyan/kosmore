@@ -28,12 +28,22 @@ it("groups individual sales by UTC day and preserves an exact even-count median"
   expect(dailySalePrices(h)).toEqual([
     {
       day: "2026-11-04",
+      count: 2,
+      average: "1.000001",
       finish: "plain",
       min: "1",
       median: "1.0000005",
       max: "1.000001",
     },
-    { day: "2026-11-05", finish: "plain", min: "0", median: "0", max: "0" },
+    {
+      day: "2026-11-05",
+      count: 1,
+      average: "0",
+      finish: "plain",
+      min: "0",
+      median: "0",
+      max: "0",
+    },
   ]);
 });
 
