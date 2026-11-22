@@ -1,12 +1,8 @@
-KosMore Services supplies shared card prices, sales history, and auction snapshots. In Settings, enter your Services URL and connect your Kosmora account. If your administrator issued a tester invite, enter it before connecting. Open single-card listings load for the linked game account when a feature needs them. Public auction prices are delayed by five minutes at the provider.
-
-My Last Listing reads confirmed submissions saved on this browser. Linked browsers sync through Services on connection, on startup, and about every five minutes while a Kosmora tab is open. Use Verify account if the Sell page does not yet know who is signed in. Disconnect keeps shared history. Erase synced listing history in Settings clears it across linked browsers on their next sync.
-
----
-
 # KosMore
 
 A browser extension that adds card insights, shortcuts, and private reminders to Kosmora.
+
+Connect your Kosmora account in **Settings → Connected Account** to load shared card prices, sales history, and auction snapshots from KosMore Services. Public auction prices have a five-minute provider delay. Linking the same player in another browser also brings over confirmed listing prices. Settings, notes, and pinned shortcuts move through **Backup & restore**.
 
 - **Card tooltips:** view market analytics, your listing history, matching friends, and private notes while browsing, including pack reveals, trade pickers, and Market Activity.
 - **Mobile-friendly controls:** open tooltips with a Kosmora overlay button, optionally center them at full size, and dismiss them without activating the control underneath.
@@ -14,14 +10,12 @@ A browser extension that adds card insights, shortcuts, and private reminders to
   In a pack tooltip, KosMore uses the pack slot and your owned copies to select the exact copy. If the opening cannot identify it, choose a copy in the tooltip before clicking an album.
 - **Customizable statistics:** choose and reorder price, interest, readership, auction, sales, and local sale-rate boxes.
 - **Card overlays:** spot active auctions, recent sales, your listed cards, quest cards, and matches for friends' saved family preferences.
-- **Family Impact** is unavailable in 2.0.0.
 - **Friend tooltip:** expand matching friends' saved families and notes in a separate popup with Social and Profile links.
 - **Social and profile reminders:** keep private family preferences and notes for players, with an optional pinned profile editor.
 - **Trade reminders:** see preferred families, saved notes, and a rarity breakdown of your available matching cards while proposing a trade.
 - **Sales Overlay:** compare market and listing prices, fill starting prices from presets or discounts, and flag prices below your rarity minimums.
 - **Hotkeys:** assign shortcuts for 20 Kosmora destinations and for controls in the card tooltip.
 - **Pack opening hotkeys:** open packs, inspect cards, and use summary actions with configurable shortcuts.
-- **Fusion batches:** opt in to fill the Fusion tray with eligible copies using your saved filters.
 - **Backup & restore:** export and import settings, album shortcuts, family preferences, and private notes across browsers or computers.
 - **Account-aware data:** keep album shortcuts and private reminders associated with the correct Kosmora account.
 
@@ -41,7 +35,9 @@ Keep the extracted folder in place; the browser loads the extension from that lo
 
 ### Update an existing installation
 
-Unpacked installations require a manual update.
+**Upgrading from 2.0.0 or an earlier unpacked build with a different extension ID?** Export your backup before replacing any files. Since 2.0.1, unpacked builds share a stable extension ID. Extract the new build into a separate permanent folder, disable the old installation, and use **Load unpacked** on the new folder. Import your backup, reconnect under **Connected Account**, and refresh your Kosmora tabs. Check your notes and pinned albums before removing the old installation.
+
+For updates between builds that already share the stable ID, use the existing folder.
 
 1. Optionally export a backup through **KosMore settings → Backup & restore**.
 2. Extract the new release ZIP and replace the extension files in the same installation folder.
@@ -61,7 +57,7 @@ Use Node.js 22.12 or newer and the pnpm version declared in `package.json`.
 
 The sections below follow the order shown in settings. Each feature group's top-right switch **saves and applies immediately**. Other options use that group's **Save** and **Cancel** buttons. Turning a group off disables its options and Save/Cancel buttons while preserving its saved preferences. Unsaved option edits remain available when you turn it back on in the same settings page.
 
-Card overlays, Family Impact Overlay, Sales Overlay, profile reminders, trade reminders, and navigation hotkeys can work with card hover tooltips turned off. Features displayed inside the card tooltip need that tooltip enabled.
+Card overlays, Sales Overlay, profile reminders, trade reminders, and navigation hotkeys can work with card hover tooltips turned off. Features displayed inside the card tooltip need that tooltip enabled.
 
 **Disable in Pulsar**, available separately under Hover tooltip and Card overlays, applies to Constellation, Aion, Photon, Horizon, and Umbra. Vortex and the Pulsar hub keep their normal settings.
 
@@ -118,9 +114,9 @@ Show, hide, and reorder individual statistics above the tooltip tabs. Settings i
 - **Active Auctions:** open, unexpired listings for the card across all finishes.
 - **Sale Rate · 30 days:** the share of locally observed, settled listings that sold, followed by the sample size. For example, **50% · 4** means two of four settled listings sold.
 
-Price calculations use the sale history returned by Kosmora. Sampled or incomplete data is identified in the tooltip. New stat boxes are enabled automatically without resetting your existing choices or ordering.
+Price calculations use the sales summary for each finish from Services. Interest and Wikipedia readership come from card details observed on Kosmora and can show a dash until the game loads those details. New stat boxes are enabled automatically without resetting your existing choices or ordering.
 
-Sale Rate uses listings this browser sees while you browse the Market and through KosMore's existing auction reads. Fresh sale histories resolve their outcomes. It is a local sample, so it does not represent every listing on Kosmora. A dash means no settled sample is available; **0%** means a settled sample exists with no sales. The Market tab's **Sold** column shows the rate and sample size separately for each finish. **Refresh** checks fresh histories but cannot recover listings this browser never saw. **Collect Sale Rate data** at the bottom of Tooltip Stat Boxes is on by default. Turn it off to pause collection and settlement on open tabs. The Sale Rate box keeps its place and opens the setting when clicked while paused.
+Sale Rate uses listings this browser observes while you browse the Market. Outcomes come from the game's auction responses, ended Market tiles, and sale histories the game loads. A dash means the browser has no settled sample. **0%** means it observed settled listings and none sold. The Market tab's **Sold** column shows the rate and sample size for each finish. **Collect Sale Rate data** at the bottom of Tooltip Stat Boxes is on by default. Turn it off to pause collection and settlement on open tabs.
 
 Sale observations stay in this browser, are limited to 20,000 listings with 35-day retention, and are excluded from backups. Only listings ending within the last 30 days contribute to the displayed rate.
 
@@ -139,18 +135,7 @@ Compact Market Activity and journal thumbnails omit price/signal overlays. They 
 
 ### Family Impact Overlay
 
-The overlay and its controls are disabled in 2.0.0. The description below applies to earlier releases.
-
-This group has its own master switch and separate **Show on Fusion page**, **Show on Trade page**, **Show on Vortex page**, and **Show on Sell pages** checkboxes. All default to on. Card overlays and Sales Overlay price badges can be turned off separately.
-
-The **Blacklist** subsection contains **Use Family Blacklist**, off by default, and the same searchable family tokens used for friend interests. Enable it, add families, then save the group. An otherwise Safe card matching any listed family shows a red **Blacklist** tag across all family-impact screens; tier-loss warnings keep their normal labels. Matching runs only while rendering with the feature enabled, reusing loaded card families without extra reads. Turning it off preserves the saved tokens, and backups include both the option and list.
-
-- **Fusion:** badges at the bottom left of card art show **✓ Safe** or **⚠ Loses Asteroids I**. Checks count all economic families, other copies, and cards already in the tray. Complete batches follow selection order; cards waiting for a batch have a dashed outline. A `+1` identifies another affected family.
-- **Trade:** check your card choices against losing one copy, keeping the family contribution when you still own another copy.
-- **Vortex:** check stake cards and the card picker against losing one copy. Counts and ownership refresh after spins.
-- **Sale screens:** Sell Many updates badges while you select or deselect cards, before Continue. Selected cards and prospective additions account for the current selection, including cards hidden by filters or pagination. Single-sale and batch-sale drafts show badges beneath each listing's price controls, outside the card art. Checks assume the submitted copies sell; removing a listing recalculates the remaining batch, including shared families and copies across finishes.
-
-Badges do not block native actions. Sale checks reserve space with a gray **Calculating…** badge while loading, then show Safe or family impact without changing the row height. Batch sale badges sit at the bottom right of each listing. Unavailable sale impact stays gray; other family checks stay hidden while required data is unknown.
+Family Impact and its settings are disabled in the current build. The earlier Fusion **Next Batch** helper has also been removed. Check family tiers in Kosmora when choosing copies to fuse, trade, stake, or sell.
 
 ### Friend tooltip
 
@@ -183,7 +168,7 @@ Preferences are private to your extension installation and account; saving them 
 
 ### Trade reminders
 
-When proposing a trade, KosMore shows the selected player's saved family preferences and a **Possible Interest** breakdown of your matching cards.
+When proposing a trade, KosMore shows the selected player's saved family preferences. **Possible Interest** can show a breakdown by rarity once the game has loaded complete, sendable collection results for the matching families.
 
 - On **Their card**, family badges sit below the “Only the cards…” text, above the breakdown and search bar.
 - On **Your card**, the families and breakdown sit below the trade rule and above the search bar.
@@ -210,7 +195,7 @@ Show price helpers beneath the starting-price field on both the single sell scre
 
 Discount, Quick Prices, and Custom Rarity Minimums are off by default. Price buttons fill only that card’s starting price and respect Kosmora’s minimum for its rarity. Review and submit listings using Kosmora’s usual sale controls.
 
-My Last Listing uses submission time to select the latest confirmed starting price across finishes. Its local Sell badge also works offline after account verification.
+My Last Listing uses submission time to select the latest confirmed starting price across finishes. Its local Sell badge also works offline after account verification. Use **Verify account** if the Sell page has yet to identify the signed-in player. Confirmed prices sync on connection, at browser startup, and about every five minutes while a Kosmora tab is open.
 
 ### Hotkeys
 
@@ -248,10 +233,19 @@ Backups include saved feature preferences, ordered pinned album shortcuts, marke
 - **Merge:** retain destination-only entries and use backup values for matching settings and notes.
 - **Replace:** remove existing supported entries absent from the backup. This requires confirmation; export the destination's data first if you want to keep a copy.
 
-Save or cancel unsaved settings edits before importing. Unsaved edits, temporary per-tab tooltip state, Sale Rate observations, and disposable listing-history/price caches are excluded from backups. JSON files contain readable private notes, so store them somewhere you trust.
+Save or cancel unsaved settings edits before importing. Backups exclude the Services connection, confirmed listing history, cached market data, Sale Rate observations, and per-tab tooltip state. Reconnect the same player to recover previously synced starting prices. Backup files contain readable private notes, so store them somewhere you trust.
 
 ### Connected account
 
-Keep a signed-in Kosmora tab open, then select the account whose pinned albums you want to configure. Use **Refresh accounts** after opening another game tab or changing accounts.
+1. Enter the **KosMore Services API base URL** from your administrator. Enter your tester invite code if you received one.
+2. Choose **Connect**, allow access to the Services host when prompted, and approve KosMore in the Kosmora sign-in window.
+3. If the browser cannot open that window, choose **Copy Link** and paste the link into a new tab in the same browser profile. This also works as the first sign-in option. If the clipboard is unavailable, copy the **Sign-in link** field manually. The link expires after ten minutes.
+4. Return to Settings and check the linked handle. Private open listings load on demand when the signed-in game account matches. The provider covers open single-card listings and omits lots and face-down listings.
+
+If Settings reports that access is blocked, ask the administrator to restore access and select **Retry access**. Use **Reconnect** for a new sign-in when needed. If an invite is reported as unavailable, request a new one.
+
+**Disconnect** ends the player's Services sessions and retains synced listing history. **Erase synced listing history** asks for confirmation and clears that player's synced prices across linked browsers on their next sync.
+
+For pinned albums, keep a signed-in Kosmora tab open, then select the account whose albums you want to configure. Use **Refresh accounts** after opening another game tab or changing accounts.
 
 The selection controls album configuration in settings. Features on Kosmora pages use the account signed in on that page. Pinned shortcuts, friend reminders, and card notes retain their account associations, including when transferred in a backup. Market finish filters are shared across accounts in this browser.

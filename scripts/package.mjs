@@ -106,7 +106,7 @@ for (const path of files) {
     );
   contents.set(path, data);
 }
-contents.set("README.txt", await readFile(resolve(root, "README.txt")));
+contents.set("README.md", await readFile(resolve(root, "README.md")));
 const releaseNotes = await readFile(
   resolve(root, "docs", "release-notes", `${version}.md`),
   "utf8",
