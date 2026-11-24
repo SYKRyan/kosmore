@@ -16,19 +16,14 @@ export function latestSale(history: MarketHistory) {
 export function lastSaleSummary(history: MarketHistory | Error | undefined) {
   if (!history)
     return {
-      label: "Last Sale: Loading…",
       title: "Loading completed sales for this finish.",
     };
   if (history instanceof Error)
-    return { label: "Last Sale: Unavailable", title: history.message };
+    return { title: history.message };
   const latest = latestSale(history);
   const partial = !history.complete && !history.daily;
   if (!latest)
     return {
-      label:
-        partial || history.count > 0
-          ? "Last Sale: Unavailable"
-          : "Last Sale: No sales",
       title: "No completed sale price is available for this finish.",
     };
   const cents = (BigInt(latest.price) + 5000n) / 10000n;

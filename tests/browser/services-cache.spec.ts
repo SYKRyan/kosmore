@@ -170,6 +170,8 @@ test("uses the unified Services response on a cold cache, then reuses it across 
           }
           if (route === "/v1/cards/details") {
             state.batches.push(body);
+            if (body.ids.includes("502"))
+              await new Promise<void>((resolve) => Object.assign(state, { releaseRecap: resolve }));
             if (state.blocked) return new Response(null, { status: 403 });
             const now = Date.now();
             return Response.json({
@@ -317,8 +319,9 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await expect(
       popup.getByRole("heading", { name: "Northern Lights" }),
     ).toBeVisible();
-    await expect(popup.locator(".last-sold")).toBeHidden();
-    await expect(popup.locator(".listed-for")).toBeHidden();
+    await expect(popup.locator(".last-sold")).toHaveText("Last Sale: -");
+    await expect(popup.locator(".listed-for")).toHaveText("Listed For: -");
+    await expect(popup.locator(".listed-for")).not.toHaveAttribute("href");
     await cards.goto("https://kosmora.io/collection");
     expect(paths).toEqual(["/api/collection?native=1"]);
     expect(
@@ -383,11 +386,60 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await expect(market.getByRole("status")).toHaveText("No Market History");
     await expect(market.locator(".note.error:not(:empty)")).toHaveCount(0);
     await expect(missingPopup.locator(".metric-error")).toBeEmpty();
-    await expect(missingPopup.locator(".header-prices")).toBeHidden();
+    await expect(missingPopup.locator(".header-prices [aria-disabled=true]")).toHaveCount(2);
     await missingCard.reload();
     await missingTile.hover();
     await expect(missingPopup.locator(".metric-error")).toHaveText("This card is unavailable.");
     await missingCard.close();
+
+    const recap = await context.newPage();
+    await recap.route("**/packs/open?recap=1", (route) => route.fulfill({
+      contentType: "text/html",
+      body: `<style>@keyframes entrance { from { opacity: .9 } to { opacity: 1 } }
+        .ko-grid > li { height: 100vh; animation: entrance 60s both }</style>
+        <div class="ko-summary"><ul class="ko-grid"><li>${face("42")}</li><li>${face("502")}</li></ul></div>`,
+    }));
+    await recap.goto("https://kosmora.io/packs/open?recap=1");
+    const star = recap.locator("[data-kosmore-pack-summary-status] .kosmore-star");
+    await expect(recap.locator(".ko-grid > li").first().locator(".signal-badge.sale")).toBeVisible();
+    await expect(star).toHaveCSS("animation-name", "spin");
+    await expect.poll(() => worker.evaluate(() => !!(globalThis as any).servicesFixture.releaseRecap)).toBe(true);
+    await recap.locator(".kc-article").last().hover();
+    const recapPopup = recap.getByRole("dialog");
+    const last = recapPopup.locator(".last-sold"), listed = recapPopup.locator(".listed-for");
+    await expect(last).toHaveText("Last Sale: -");
+    await expect(listed).toHaveText("Listed For: -");
+    await expect(listed).toBeDisabled();
+    await expect(listed).not.toHaveAttribute("href");
+    await expect(last).toHaveCSS("color", "rgb(177, 173, 184)");
+    const positions = () => recapPopup.locator(".market-badge").evaluateAll((badges) =>
+      badges.map((badge) => [badge.clientWidth, badge.clientHeight, (badge as HTMLElement).offsetLeft]));
+    const loadingPositions = await positions();
+    await worker.evaluate(() => (globalThis as any).servicesFixture.releaseRecap());
+    await expect(last).toContainText("Last Sale: $6.50");
+    await expect(listed).toHaveAttribute("href", /\/market\?q=/);
+    expect(await positions()).toEqual(loadingPositions);
+    await expect(recap.locator(".ko-grid .signal-badge.auction")).toHaveCount(2);
+    await expect(star).toHaveCSS("animation-name", "none");
+    await expect(star).toHaveCSS("color", "rgb(134, 239, 172)");
+    const alignmentError = await star.evaluate((icon) => {
+      const label = icon.parentElement!;
+      const baseline = document.createElement("span");
+      baseline.style.display = "inline-block";
+      label.append(baseline);
+      const context = document.createElement("canvas").getContext("2d")!;
+      context.font = getComputedStyle(label).font;
+      const ink = context.measureText("KOSMORE");
+      const textCenter = baseline.getBoundingClientRect().bottom +
+        (ink.actualBoundingBoxDescent - ink.actualBoundingBoxAscent) / 2;
+      baseline.remove();
+      const box = icon.getBoundingClientRect();
+      return Math.abs(box.top + box.height / 2 - textCenter);
+    });
+    expect(alignmentError).toBeLessThanOrEqual(1);
+    expect(await recap.locator(".ko-grid > li").last().evaluate((el) =>
+      el.getAnimations().some((animation) => animation.playState === "running"))).toBe(true);
+    await recap.close();
 
     const gameAccountPage = await context.newPage();
     await gameAccountPage.goto("https://kosmora.io/account");

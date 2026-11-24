@@ -12,6 +12,17 @@ export function packSummaryStatus(grid: HTMLElement) {
     labelCss +
       `
     :host { display: block; margin: 0 0 6px; text-align: start; }
+    .kosmore-label { display: inline-block; }
+    .kosmore-star {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      margin-inline-end: 5px;
+      background: currentColor;
+      clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+      font-size: inherit;
+      vertical-align: calc(0.5cap - 7px);
+    }
     .loading { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     :host(:not([data-loading])) .kosmore-label { color: #86efac; }
     :host([data-cooldown="first"]) .kosmore-label { color: #fdba74; }
@@ -24,40 +35,13 @@ export function packSummaryStatus(grid: HTMLElement) {
   `,
   );
   const label = el("span", "kosmore-label");
-  const icon = el("span", "kosmore-star", "✦");
+  const icon = el("span", "kosmore-star");
   icon.setAttribute("aria-hidden", "true");
   label.append(icon, el("span", "", "KosMore"));
   const status = el("span", "loading");
   status.setAttribute("role", "status");
   host.attachShadow({ mode: "open" }).append(style, label, status);
-  let settling: object | undefined;
   let cooldownUntil = 0;
-
-  async function settle(token: object) {
-    // Wait for Kosmora's staggered entrance animations on the grid items.
-    const entrances = [...grid.children].flatMap((card) =>
-      card
-        .getAnimations()
-        .filter(
-          (animation) =>
-            animation instanceof CSSAnimation &&
-            (animation.playState === "running" || animation.pending) &&
-            Number.isFinite(animation.effect?.getComputedTiming().endTime),
-        ),
-    );
-    await Promise.allSettled(entrances.map((animation) => animation.finished));
-    // Give the final overlays a paint before removing the loading state.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        if (settling !== token) return;
-        settling = undefined;
-        host.removeAttribute("data-loading");
-        host.removeAttribute("data-cooldown");
-        cooldownUntil = 0;
-        status.textContent = "";
-      }),
-    );
-  }
 
   return {
     grid,
@@ -76,14 +60,14 @@ export function packSummaryStatus(grid: HTMLElement) {
         : "Rate limited. Waiting to retry card overlays…";
     },
     setLoading(loading: boolean) {
+      if (loading === host.hasAttribute("data-loading")) return;
+      host.toggleAttribute("data-loading", loading);
       if (loading) {
-        settling = undefined;
-        if (host.hasAttribute("data-loading")) return;
-        host.setAttribute("data-loading", "");
         status.textContent = "Loading card overlays…";
-      } else if (host.hasAttribute("data-loading") && !settling) {
-        const token = (settling = {});
-        void settle(token);
+      } else {
+        host.removeAttribute("data-cooldown");
+        cooldownUntil = 0;
+        status.textContent = "";
       }
     },
   };

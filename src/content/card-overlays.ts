@@ -28,6 +28,7 @@ interface Entry {
   key: string;
   visible: boolean;
   done: boolean;
+  hasRenderedResult?: boolean;
   request?: AbortController;
   signals?: CardSignals;
   host?: HTMLElement;
@@ -354,6 +355,7 @@ export class CardOverlays {
     const loading = [...this.entries.values()].some(
       (entry) =>
         this.isSummaryEntry(entry) &&
+        !entry.hasRenderedResult &&
         !entry.done &&
         (entry.request || this.notBefore !== Infinity),
     );
@@ -518,6 +520,7 @@ export class CardOverlays {
           if (valid()) {
             entry.done = true;
             this.render(entry, signals);
+            entry.hasRenderedResult = true;
           }
         },
         (error) => {

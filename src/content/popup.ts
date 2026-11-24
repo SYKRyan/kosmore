@@ -299,6 +299,7 @@ export class Popup {
     );
     headerDetails.append(identity, titleActions);
     this.headerPrices.append(this.lastSold, this.listedFor);
+    this.listedFor.setAttribute("role", "link");
     enableMarketLink(this.listedFor);
     top.append(titleRow, headerDetails, this.headerPrices);
     const tabs = el("div", "tabs");
@@ -388,6 +389,7 @@ export class Popup {
     this.selectTab(this.placement?.tab ?? initialTab, false);
     if (context) {
       this.renderMetrics();
+      this.renderHeaderPrices();
       this.renderMarket();
       this.renderAlbums();
     }
@@ -1465,19 +1467,14 @@ export class Popup {
   }
   private renderHeaderPrices() {
     const marketName = this.details?.name ?? this.context?.name;
-    if (marketName) this.listedFor.href = marketSearchPath(marketName);
     const finish = this.displayedFinish;
     if (!finish) return;
     const history = this.histories[finish];
     const lastSale = lastSaleSummary(history);
-    this.lastSold.hidden =
-      !!history &&
-      !(history instanceof Error) &&
-      history.count === 0 &&
-      !history.lastSale;
+    this.lastSold.setAttribute("aria-disabled", String(!lastSale.label));
     this.lastSold.replaceChildren(
       cardIcon("sale"),
-      el("span", "market-badge-label", lastSale.label),
+      el("span", "market-badge-label", lastSale.label ?? "Last Sale: -"),
     );
     if (lastSale.numberOne) this.lastSold.append(numberOneIcon());
     const saleStale = this.staleHistories.has(finish);
@@ -1485,20 +1482,14 @@ export class Popup {
     this.lastSold.title =
       lastSale.title + (saleStale ? " Last known price." : "");
     const listing = this.lowestListing;
-    this.listedFor.hidden =
-      listing === null || (this.missingNumberOne && listing instanceof CardNotFoundError);
-    this.headerPrices.hidden = this.lastSold.hidden && this.listedFor.hidden;
-    const bids = listing && !(listing instanceof Error) && this.settings.showAuctionBidCounts
-      ? auctionBidSuffix(listing.bids)
+    const price = listing && !(listing instanceof Error) ? listing : undefined;
+    if (price && marketName) this.listedFor.href = marketSearchPath(marketName);
+    else this.listedFor.removeAttribute("href");
+    this.listedFor.setAttribute("aria-disabled", String(!this.listedFor.hasAttribute("href")));
+    const bids = price && this.settings.showAuctionBidCounts
+      ? auctionBidSuffix(price.bids)
       : "";
-    const label =
-      listing instanceof Error
-        ? "Unavailable"
-        : listing === null
-          ? "—"
-          : listing === undefined
-            ? "Loading…"
-            : `$${formatKosmo(listing.price)}${bids}`;
+    const label = price ? `$${formatKosmo(price.price)}${bids}` : "-";
     this.listedFor.replaceChildren(
       cardIcon("auction"),
       el("span", "market-badge-label", `Listed For: ${label}`),
@@ -1522,7 +1513,7 @@ export class Popup {
         " Provider snapshot fetched " +
         new Date(fetchedAt).toLocaleTimeString() +
         ". Auction prices are delayed five minutes.";
-    if (marketName) this.listedFor.title += ` Find ${marketName} at Market.`;
+    if (price && marketName) this.listedFor.title += ` Find ${marketName} at Market.`;
   }
   private saleRates(): SaleRates | undefined {
     if (!this.context) return;

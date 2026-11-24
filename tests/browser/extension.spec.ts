@@ -5651,10 +5651,10 @@ test("card market indicators remain independent while tooltip headers use price 
         popup.locator(".header-signals .auction,.header-signals .sale"),
       ).toHaveCount(0);
       await expect(popup.locator(".last-sold")).toHaveText(
-        history ? "Last Sale: $12.00" : "Last Sale: No sales",
+        history ? "Last Sale: $12.00" : "Last Sale: -",
       );
       await expect(popup.locator(".listed-for")).toHaveText(
-        auctions ? "Listed For: $10" : "Listed For: —",
+        auctions ? "Listed For: $10" : "Listed For: -",
       );
       await page.keyboard.press("Escape");
       await page.mouse.move(10, 10);
@@ -7153,7 +7153,7 @@ test("tooltip header shows family badges and matching inline market prices indep
     await expect(listed).toHaveAttribute("title", /Last known/);
     mode = "none";
     await popup.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(listed).toBeHidden();
+    await expect(listed).toHaveText("Listed For: -");
     await expect(last).toBeVisible();
     mode = "listed";
     await popup.getByRole("button", { name: "Refresh", exact: true }).click();
@@ -7173,7 +7173,7 @@ test("tooltip header shows family badges and matching inline market prices indep
     await page.unroute("**/api/auctions?**");
   }
 });
-test("tooltip price badges hide independently for absent history and listings and return after refresh", async () => {
+test("tooltip price badges keep their positions as history and listings change", async () => {
   let hasHistory = false,
     hasListings = false;
   await page.route("**/api/cards/*/prices?**", (route) =>
@@ -7195,25 +7195,25 @@ test("tooltip price badges hide independently for absent history and listings an
       listed = popup.locator(".listed-for"),
       row = popup.locator(".header-prices"),
       refresh = popup.getByRole("button", { name: "Refresh", exact: true });
-    await expect(last).toBeHidden();
-    await expect(listed).toBeHidden();
-    await expect(row).toBeHidden();
+    await expect(last).toHaveText("Last Sale: -");
+    await expect(listed).toHaveText("Listed For: -");
+    await expect(row).toBeVisible();
     await mkdir("test-results/screenshots", { recursive: true });
     await popup.screenshot({
-      path: "test-results/screenshots/tooltip-no-price-badges.png",
+      path: "test-results/screenshots/tooltip-empty-prices.png",
     });
     hasListings = true;
     await refresh.click();
     await expect(listed).toBeVisible();
     await expect(listed).toHaveText("Listed For: $8");
-    await expect(last).toBeHidden();
+    await expect(last).toHaveText("Last Sale: -");
     await expect(row).toBeVisible();
     hasHistory = true;
     hasListings = false;
     await refresh.click();
     await expect(last).toBeVisible();
     await expect(last).toHaveText("Last Sale: $12.00");
-    await expect(listed).toBeHidden();
+    await expect(listed).toHaveText("Listed For: -");
     await expect(row).toBeVisible();
     hasListings = true;
     await refresh.click();
@@ -7222,9 +7222,9 @@ test("tooltip price badges hide independently for absent history and listings an
     hasHistory = false;
     hasListings = false;
     await refresh.click();
-    await expect(last).toBeHidden();
-    await expect(listed).toBeHidden();
-    await expect(row).toBeHidden();
+    await expect(last).toHaveText("Last Sale: -");
+    await expect(listed).toHaveText("Listed For: -");
+    await expect(row).toBeVisible();
     expect(writeRequests).toBe(0);
   } finally {
     await page.unroute("**/api/cards/*/prices?**");
@@ -7263,7 +7263,7 @@ test("empty market history is a centered bold message while pending and failed h
     release();
     const empty = market.locator("strong");
     await expect(empty).toHaveText("No Market History");
-    await expect(popup.locator(".last-sold")).toBeHidden();
+    await expect(popup.locator(".last-sold")).toHaveText("Last Sale: -");
     await expect(
       market.locator(".chart,.stats,.daily-prices,.legend,.section-head"),
     ).toHaveCount(0);
@@ -7292,7 +7292,7 @@ test("empty market history is a centered bold message while pending and failed h
     await expect(market).toContainText("503");
     await expect(popup.locator(".last-sold")).toBeVisible();
     await expect(popup.locator(".last-sold")).toHaveText(
-      "Last Sale: Unavailable",
+      "Last Sale: -",
     );
     await expect(
       market.getByText("No Market History", { exact: true }),
@@ -8963,7 +8963,7 @@ test("sale screens show only badges for confirmed market history and active auct
     await page.unroute("**/api/auctions?**");
   }
 });
-test("pack summary star waits for offscreen overlays and the final card entrance", async () => {
+test("pack summary star stops when offscreen overlays finish during a card entrance", async () => {
   await worker.evaluate(async () => {
     const key = "kosmore.settings";
     const saved = (await chrome.storage.local.get(key))[key] as object;
@@ -9035,16 +9035,9 @@ test("pack summary star waits for offscreen overlays and the final card entrance
     await expect(
       grid.locator("[data-kosmore-card-overlays] .sale"),
     ).toHaveCount(6);
-    await page.evaluate(async () => {
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-      );
-    });
-    await expect(star).toHaveCSS("animation-name", "spin");
-    await last.evaluate((element) => {
-      element.getAnimations().forEach((animation) => animation.finish());
-    });
     await expect(star).toHaveCSS("animation-name", "none");
+    expect(await last.evaluate((element) =>
+      element.getAnimations().some((animation) => animation.playState === "running"))).toBe(true);
     await expect(star).toHaveCSS("color", "rgb(134, 239, 172)");
     await expect(badge.getByText("KosMore")).toHaveCSS(
       "color",
@@ -9361,7 +9354,7 @@ test("live recap prices do not hold up badges on later visible cards", async () 
       await cards.nth(1).locator(".ko-grid-open").hover();
       const popup = page.locator("#kosmore-root");
       await expect(popup).toBeVisible();
-      await expect(popup.getByText("Listed For: Loading…")).toBeVisible();
+      await expect(popup.getByText("Listed For: -")).toBeVisible();
       await expect.poll(() => openingReads).toBe(1);
     }
     releasePrice();

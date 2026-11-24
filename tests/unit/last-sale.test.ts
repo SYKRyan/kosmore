@@ -28,14 +28,12 @@ it("uses the newest sale in the displayed history, including a zero price", () =
   expect(lastSaleSummary(h).label).toBe("Last Sale: $0.00");
 });
 it("distinguishes pending, no sales, failed and partial histories", () => {
-  expect(lastSaleSummary(undefined).label).toBe("Last Sale: Loading…");
+  expect(lastSaleSummary(undefined)).toEqual({ title: "Loading completed sales for this finish." });
   const h = history("plain", "1234567890", "2026-11-01T00:00:00Z");
-  expect(lastSaleSummary({ ...h, sales: [], count: 0 }).label).toBe(
-    "Last Sale: No sales",
-  );
-  expect(lastSaleSummary(new Error("unavailable")).label).toBe(
-    "Last Sale: Unavailable",
-  );
+  expect(lastSaleSummary({ ...h, sales: [], count: 0 })).toEqual({
+    title: "No completed sale price is available for this finish.",
+  });
+  expect(lastSaleSummary(new Error("unavailable"))).toEqual({ title: "unavailable" });
   expect(lastSaleSummary({ ...h, complete: false }).label).toBe(
     "Last Sale: $1,234.57 (partial)",
   );

@@ -85,6 +85,16 @@ it("continues the recap queue immediately, yields to interactive reads, and give
     expect(started()).toEqual(["60", "61", "62"]);
     await vi.advanceTimersByTimeAsync(1);
     expect(started()).toEqual(["60", "61", "62", "70"]);
+    const status = document.querySelector("[data-kosmore-pack-summary-status]")!;
+    expect(status.hasAttribute("data-loading")).toBe(true);
+    pending.get("70")!.finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(status.hasAttribute("data-loading")).toBe(false);
+    overlays.invalidate(false);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(started().at(-1)).toBe("70");
+    expect(get.mock.calls.filter(([id]) => id === "70")).toHaveLength(2);
+    expect(status.hasAttribute("data-loading")).toBe(false);
   } finally {
     vi.clearAllTimers();
     vi.useRealTimers();

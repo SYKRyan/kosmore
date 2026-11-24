@@ -82,7 +82,8 @@
   font-size: 11px;
 }
 .header-prices {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
   justify-content: flex-start;
   gap: 6px;
@@ -101,9 +102,11 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-.header-prices[hidden],
-.market-badge[hidden] {
-  display: none;
+.market-badge[aria-disabled="true"] {
+  background: #25232b;
+  border-color: #56515f;
+  color: #b1adb8;
+  cursor: default;
 }
 .market-badge svg {
   flex: 0 0 auto;
