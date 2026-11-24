@@ -3743,16 +3743,16 @@ test("settings groups are ordered with separate account controls and a fixed anc
       name: "Social Reminders",
       exact: true,
     });
-    await expect(socialIcon).toHaveCSS("color", "rgb(198, 179, 216)");
+    await expect(socialIcon).toHaveCSS("color", "rgb(164, 191, 210)");
     await socialLink.click();
     await expect(socialLink).toHaveAttribute("aria-current", "location");
-    await expect(socialIcon).toHaveCSS("color", "rgb(255, 229, 167)");
+    await expect(socialIcon).toHaveCSS("color", "rgb(66, 239, 220)");
     await options
       .getByRole("checkbox", { name: "Show on social page" })
       .focus();
     await options.evaluate(() => window.scrollTo(0, 0));
     await expect(socialLink).not.toHaveAttribute("aria-current", "location");
-    await expect(socialIcon).toHaveCSS("color", "rgb(255, 229, 167)");
+    await expect(socialIcon).toHaveCSS("color", "rgb(66, 239, 220)");
     await nav
       .getByRole("link", { name: "Connected Account", exact: true })
       .click();

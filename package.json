@@ -1,6 +1,6 @@
 {
   "name": "kosmore",
-  "version": "2.0.11",
+  "version": "2.0.14",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.25.0",
