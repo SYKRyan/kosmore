@@ -492,7 +492,10 @@ async function show(
             },
             (error) => {
               if (signal.aborted || !valid()) return;
-              view.setHistory(finish, new Error(messageOf(error)));
+              view.setHistory(
+                finish,
+                error instanceof Error ? error : new Error(messageOf(error)),
+              );
             },
           )
           .finally(() => {

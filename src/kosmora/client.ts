@@ -3,7 +3,7 @@ import {
   FRIENDS_TTL,
   type NativeReadCache,
 } from "../shared/native-read-cache";
-import { validCardId, type CardView } from "../shared/services";
+import { CardNotFoundError, validCardId, type CardView } from "../shared/services";
 import {
   localSaleStatus,
   nativeSaleBaseline,
@@ -561,13 +561,13 @@ export class GameClient implements KosmoraClient {
       !!this.lastAccount &&
       this.observedOwners.get(id) === this.lastAccount.key;
     const card = view.card;
+    if (!card && view.missing && !view.accessBlocked)
+      throw new CardNotFoundError("This card is unavailable.");
     if (!card)
       throw new Error(
         view.accessBlocked
           ? "Services access is blocked. Open Settings to retry after approval."
-          : view.missing
-            ? "This card is unavailable."
-            : "Card data is temporarily unavailable.",
+          : "Card data is temporarily unavailable.",
       );
     return {
       subjectId: id,
@@ -1026,6 +1026,8 @@ export class GameClient implements KosmoraClient {
   ) {
     const view = await this.serviceView(id, signal);
     const history = view.card?.markets[finish];
+    if (!history && view.missing && !view.accessBlocked)
+      throw new CardNotFoundError("Market history is unavailable.");
     if (!history) throw new Error("Market history is unavailable.");
     const observed = this.observedHistory.get(`${id}:${finish}`);
     return observed ? { ...history, sales: observed.sales } : history;

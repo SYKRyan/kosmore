@@ -64,6 +64,8 @@ export interface CardView {
   until: number;
 }
 
+export class CardNotFoundError extends Error {}
+
 export function serviceFinish(value: unknown): Finish {
   if (value === "shiny") return "veil";
   if (value === "plain" || value === "fullart") return value;

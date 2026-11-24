@@ -149,6 +149,7 @@ export function resolveCard(
   const anchor = (summary ?? reveal ?? root) as HTMLElement;
   return {
     subjectId: id,
+    numberOne: !!face.querySelector(".kc-no1"),
     name:
       (batchHead?.querySelector(".bsell-name")?.textContent?.trim() ||
         undefined) ??
@@ -181,6 +182,7 @@ export function contextKey(c: CardContext): string {
     c.surface,
     c.variant.veil,
     c.variant.fullArt,
+    !!c.numberOne,
     c.openingIds.join(","),
     c.entryIndex,
   ].join(":");

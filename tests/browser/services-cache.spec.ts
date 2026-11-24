@@ -177,7 +177,10 @@ test("uses the unified Services response on a cold cache, then reuses it across 
               cards: body.ids.map((id: string) => ({
                 ...row,
                 id,
-                details: { ...row.details, card: { ...row.details.card, id } },
+                status: id === "43" ? "notFound" : row.status,
+                details: id === "43"
+                  ? null
+                  : { ...row.details, card: { ...row.details.card, id } },
                 fetchedAtUtc: new Date(now).toISOString(),
                 freshUntilUtc: new Date(now + 300_000).toISOString(),
                 myListings: row.myListings.map((listing) => ({
@@ -368,6 +371,24 @@ test("uses the unified Services response on a cold cache, then reuses it across 
         /\/api\/(?:collection|cards|auctions|me\/auctions)/.test(path),
       ),
     ).toEqual(["/api/collection?native=1"]);
+    const missingCard = await context.newPage();
+    await missingCard.goto("https://kosmora.io/collection?card=43");
+    const missingTile = missingCard.locator(".kc-article");
+    await missingTile.locator("footer").evaluate((footer) => {
+      footer.insertAdjacentHTML("beforeend", '<span class="kc-no1">#1</span>');
+    });
+    await missingTile.hover();
+    const missingPopup = missingCard.getByRole("dialog");
+    const market = missingPopup.getByRole("tabpanel", { name: "Market" });
+    await expect(market.getByRole("status")).toHaveText("No Market History");
+    await expect(market.locator(".note.error:not(:empty)")).toHaveCount(0);
+    await expect(missingPopup.locator(".metric-error")).toBeEmpty();
+    await expect(missingPopup.locator(".header-prices")).toBeHidden();
+    await missingCard.reload();
+    await missingTile.hover();
+    await expect(missingPopup.locator(".metric-error")).toHaveText("This card is unavailable.");
+    await missingCard.close();
+
     const gameAccountPage = await context.newPage();
     await gameAccountPage.goto("https://kosmora.io/account");
     await cards.bringToFront();

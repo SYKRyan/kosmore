@@ -13,6 +13,7 @@ export interface Variant {
 }
 export interface CardContext {
   subjectId: string;
+  numberOne?: boolean;
   copyId?: string;
   name: string;
   variant: Variant;

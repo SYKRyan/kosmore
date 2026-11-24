@@ -65,6 +65,7 @@ import {
   type PopupTab,
 } from "../shared/popup-layout";
 import { lastSaleSummary } from "../shared/last-sale";
+import { CardNotFoundError } from "../shared/services";
 export interface PopupPlacement {
   left: number;
   top: number;
@@ -114,7 +115,10 @@ export class Popup {
   private tradeResult?: TradeMatches;
   private cachedTradeFriends?: Awaited<ReturnType<KosmoraClient["friends"]>>;
   private tradeError?: string;
-  private insightError?: string;
+  private insightError?: Error;
+  private get missingNumberOne() {
+    return !!this.context?.numberOne && this.insightError instanceof CardNotFoundError;
+  }
   private readonly displayedFinish: Finish | undefined;
   private activeAuctions?: number | Error;
   private auctionRequest?: AbortController;
@@ -976,12 +980,12 @@ export class Popup {
     }
   }
   insightsFailed(error: unknown) {
-    this.insightError = messageOf(error);
+    this.insightError = error instanceof Error ? error : new Error(messageOf(error));
     if (this.lowestListing === undefined)
-      this.lowestListing = new Error(this.insightError);
+      this.lowestListing = this.insightError;
     this.renderHeaderPrices();
     this.renderMetrics();
-    if (!this.account) this.notes?.failed(error);
+    if (!this.account && !this.missingNumberOne) this.notes?.failed(error);
     this.renderTrade();
   }
   setHistory(finish: Finish, result: MarketHistory | Error, stale = false) {
@@ -996,6 +1000,17 @@ export class Popup {
       return;
     if (stale) this.staleHistories.add(finish);
     else this.staleHistories.delete(finish);
+    if (this.context?.numberOne && result instanceof CardNotFoundError)
+      result = {
+        finish,
+        days: 30,
+        count: 0,
+        sales: [],
+        complete: true,
+        low: null,
+        median: null,
+        high: null,
+      };
     this.histories[finish] = result;
     this.renderMarket();
   }
@@ -1132,7 +1147,7 @@ export class Popup {
     const area = this.tradeArea;
     area.replaceChildren(this.heading("Friends who may be interested"));
     if (this.insightError) {
-      area.append(note(this.insightError, true));
+      area.append(note(this.insightError.message, !this.missingNumberOne));
       return;
     }
     if (!this.account || !this.details) {
@@ -1347,7 +1362,9 @@ export class Popup {
       ? visibleStats(this.settings.stats)
       : [];
     this.statArea.hidden = !definitions.length;
-    this.metricError.textContent = this.insightError ?? "";
+    this.metricError.textContent = this.missingNumberOne
+      ? ""
+      : this.insightError?.message ?? "";
     if (!definitions.length) {
       this.metrics.replaceChildren();
       return;
@@ -1358,7 +1375,7 @@ export class Popup {
         ? this.histories
         : {},
       FINISHES.filter((f) => !this.hidden.has(f)),
-      this.insightError,
+      this.insightError?.message,
       this.activeAuctions,
       definitions.some((d) => d.id === "saleRate")
         ? this.saleRates()
@@ -1468,7 +1485,8 @@ export class Popup {
     this.lastSold.title =
       lastSale.title + (saleStale ? " Last known price." : "");
     const listing = this.lowestListing;
-    this.listedFor.hidden = listing === null;
+    this.listedFor.hidden =
+      listing === null || (this.missingNumberOne && listing instanceof CardNotFoundError);
     this.headerPrices.hidden = this.lastSold.hidden && this.listedFor.hidden;
     const bids = listing && !(listing instanceof Error) && this.settings.showAuctionBidCounts
       ? auctionBidSuffix(listing.bids)
