@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { launchTestBrowser } from "./browser";
 import { albums, face, me } from "../fixtures/data";
-import { singleSellFixture } from "../fixtures/sell-many";
+import { sellManyFixture, singleSellFixture } from "../fixtures/sell-many";
 import { serviceRow } from "../fixtures/services";
 
 test("uses the unified Services response on a cold cache, then reuses it across tabs", async () => {
@@ -374,6 +374,52 @@ test("uses the unified Services response on a cold cache, then reuses it across 
         /\/api\/(?:collection|cards|auctions|me\/auctions)/.test(path),
       ),
     ).toEqual(["/api/collection?native=1"]);
+    await test.step("repeat quick and adjusted market prices on both sale screens", async () => {
+      await worker.evaluate(async () => {
+        const key = "kosmore.settings";
+        const saved = (await chrome.storage.local.get(key))[key] as object;
+        await chrome.storage.local.set({
+          [key]: {
+            ...saved,
+            salesQuickPricesEnabled: true,
+            salesQuickPrices: [1499],
+            salesLastSaleAdjustment: -0.5,
+            salesLowestListingAdjustment: -0.25,
+          },
+        });
+      });
+      await sales.route("**/market/sell/batch?*", (route) =>
+        route.fulfill({ contentType: "text/html", body: sellManyFixture(true) }),
+      );
+      for (const batch of [false, true]) {
+        await sales.goto("https://kosmora.io/market/sell" + (batch ? "/batch?s=42.v,46.f" : ""));
+        const listing = sales.locator(batch ? ".bsell-row" : ".sell-form").first();
+        const input = listing.getByRole("textbox", { name: /Starting price/ });
+        await input.evaluate((el) => {
+          el.dataset.edits = "0";
+          el.addEventListener("input", () => { el.dataset.edits = String(Number(el.dataset.edits) + 1); });
+        });
+        for (const [buttonName, value] of [
+          [/^\$1,499$/, "1499"],
+          [/^Last Sale:/, batch ? "12" : "6"],
+          [/^Lowest Listed:/, batch ? "1" : "7.25"],
+        ] as const) {
+          await input.fill("149");
+          const button = listing.getByRole("button", { name: buttonName });
+          await button.click();
+          await expect(input).toHaveValue(value);
+          const edits = await input.getAttribute("data-edits");
+          await button.dblclick();
+          await expect(input).toHaveValue(value);
+          expect(await input.getAttribute("data-edits")).toBe(edits);
+          const model = await input.evaluate((el) =>
+            (window as unknown as { priceModel: Record<string, string> }).priceModel[el.getAttribute("aria-label")!]);
+          expect(model).toBe(value);
+        }
+        if (batch)
+          await expect(sales.locator(".bsell-row").nth(1).getByRole("textbox")).toHaveValue("12.00");
+      }
+    });
     const missingCard = await context.newPage();
     await missingCard.goto("https://kosmora.io/collection?card=43");
     const missingTile = missingCard.locator(".kc-article");

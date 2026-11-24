@@ -129,6 +129,14 @@ export function editableSalesInput(input: HTMLInputElement): boolean {
 export function fillSalesInput(input: HTMLInputElement, value: string): void {
   if (!editableSalesInput(input))
     throw new Error("This starting price is read-only.");
+  // Reapplying an unchanged amount must not send another edit to the game's formatter.
+  const displayed = input.value;
+  if (
+    displayed === value ||
+    (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(displayed) &&
+      displayed.replaceAll(",", "") === value)
+  )
+    return;
   const win = input.ownerDocument.defaultView!;
   // Bypass the instance value tracker so controlled inputs see a user-style edit.
   Object.getOwnPropertyDescriptor(
@@ -136,7 +144,12 @@ export function fillSalesInput(input: HTMLInputElement, value: string): void {
     "value",
   )!.set!.call(input, value);
   input.dispatchEvent(
-    new win.Event("input", { bubbles: true, composed: true }),
+    new win.InputEvent("input", {
+      bubbles: true,
+      composed: true,
+      inputType: "insertReplacementText",
+      data: value,
+    }),
   );
   input.dispatchEvent(
     new win.Event("change", { bubbles: true, composed: true }),

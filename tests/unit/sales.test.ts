@@ -9,6 +9,26 @@ beforeEach(() => {
   document.body.innerHTML = "";
   history.replaceState(null, "", "/collection");
 });
+it("only edits the field when the selected price differs from the displayed amount", () => {
+  const input = document.createElement("input");
+  document.body.append(input);
+  const edit = vi.fn();
+  const change = vi.fn();
+  input.addEventListener("input", edit);
+  input.addEventListener("change", change);
+  fillSalesInput(input, "1499");
+  fillSalesInput(input, "1499");
+  expect(input.value).toBe("1499");
+  input.value = "1,499";
+  fillSalesInput(input, "1499");
+  expect(input.value).toBe("1,499");
+  expect(edit).toHaveBeenCalledTimes(1);
+  expect(change).toHaveBeenCalledTimes(1);
+  input.value = "149";
+  fillSalesInput(input, "1499");
+  expect(input.value).toBe("1499");
+  expect(edit).toHaveBeenCalledTimes(2);
+});
 it("associates each batch price with its own card and excludes other controls and routes", () => {
   history.replaceState(null, "", "/market/sell/batch");
   document.body.innerHTML =
