@@ -16,7 +16,19 @@ import {
   type ListingMetadata,
 } from "../kosmora/my-listings";
 import { isPopupLayoutChange, type PopupLayoutChange } from "./popup-layout";
+import {
+  validSaleChange,
+  type ListedCopies,
+  type SaleChange,
+} from "./sale-status";
 export type Request =
+  | {
+      requestId: string;
+      op: "listingCopiesObserved";
+      accountKey: string;
+      subjectId: string;
+      copies: ListedCopies;
+    }
   | {
       requestId: string;
       op:
@@ -69,6 +81,7 @@ export type Request =
       subjectId: string;
       records: RecordedListing[];
       receipts?: ListingReceipt[];
+      changes?: SaleChange[];
     }
   | {
       requestId: string;
@@ -119,12 +132,23 @@ export function isRequest(x: unknown): x is Request {
   const r = x as Request;
   return (
     validId(r.requestId) &&
-    ((r.op === "listingObserved" &&
+    ((r.op === "listingCopiesObserved" &&
       /^[a-z0-9_]{1,24}$/.test(r.accountKey) &&
-      r.subjectId === "0" &&
-      Array.isArray(r.rows) &&
-      r.rows.length <= 500 &&
-      r.rows.every(validPersonalListing)) ||
+      /^[1-9]\d{0,17}$/.test(r.subjectId) &&
+      r.copies &&
+      Number.isSafeInteger(r.copies.at) &&
+      r.copies.at > 0 &&
+      r.copies.at <= Date.now() &&
+      Array.isArray(r.copies.auctionIds) &&
+      r.copies.auctionIds.every(
+        (id) => typeof id === "string" && listingCopyId(id) === id,
+      )) ||
+      (r.op === "listingObserved" &&
+        /^[a-z0-9_]{1,24}$/.test(r.accountKey) &&
+        r.subjectId === "0" &&
+        Array.isArray(r.rows) &&
+        r.rows.length <= 500 &&
+        r.rows.every(validPersonalListing)) ||
       ([
         "listingCache",
         "listingSavedPrice",
@@ -143,6 +167,10 @@ export function isRequest(x: unknown): x is Request {
           (Array.isArray(r.records) &&
             r.records.length <= 500 &&
             r.records.every(validRecordedListing) &&
+            (r.changes === undefined ||
+              (Array.isArray(r.changes) &&
+                r.changes.length <= 500 &&
+                r.changes.every(validSaleChange))) &&
             (r.receipts === undefined ||
               (Array.isArray(r.receipts) &&
                 r.receipts.length <= 500 &&

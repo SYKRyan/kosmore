@@ -1,7 +1,5 @@
 import { build } from "vite";
 import { resolve } from "node:path";
-import { generateIcons } from "./icons.mjs";
-await generateIcons();
 const watch = process.argv.includes("--watch");
 const common = {
   configFile: false,

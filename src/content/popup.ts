@@ -61,6 +61,7 @@ import {
   POPUP_TABS,
   type PopupBounds,
   type PopupLayoutChange,
+  type PopupPosition,
   type PopupTab,
 } from "../shared/popup-layout";
 import { lastSaleSummary } from "../shared/last-sale";
@@ -563,6 +564,13 @@ export class Popup {
       ? { ...this.placement, tab: this.selectedTab }
       : undefined;
   }
+  setPinnedPlacement(position: PopupPosition | undefined) {
+    const wasPinned = this.isPinned;
+    this.placement = position ? { ...position, tab: this.selectedTab } : undefined;
+    this.renderPin();
+    this.position();
+    if (this.isPinned !== wasPinned) this.onPinChange();
+  }
   private togglePin() {
     const bounds = this.host.getBoundingClientRect();
     this.placement = this.placement
@@ -574,7 +582,7 @@ export class Popup {
         };
     this.renderPin();
     this.position();
-    this.saveLayout();
+    this.saveLayout(this.isPinned);
     this.onPinChange();
   }
   private renderPin() {
@@ -614,10 +622,10 @@ export class Popup {
       top: viewport?.offsetTop ?? 0,
     };
   }
-  private saveLayout() {
+  private saveLayout(pinned?: boolean) {
     if (this.settings.fullScreenCenteredOnOpen) {
       this.layoutStatus.textContent = "";
-      this.onLayoutChange({ pinned: this.isPinned });
+      if (pinned !== undefined) this.onLayoutChange({ pinned });
       return;
     }
     const position = this.placement
@@ -632,7 +640,7 @@ export class Popup {
     };
     this.layoutStatus.textContent = "";
     this.onLayoutChange({
-      pinned: this.isPinned,
+      ...(pinned !== undefined ? { pinned } : {}),
       ...(position ? { position } : {}),
       width: this.settings.popupWidth,
       height: this.settings.popupHeight,

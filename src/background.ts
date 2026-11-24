@@ -3,6 +3,7 @@ import { messageOf } from "./shared/types";
 import {
   parsePopupPosition,
   parsePopupState,
+  POPUP_PIN_KEY,
   POPUP_SESSION_PREFIX,
   FRIEND_POPUP_SESSION_PREFIX,
 } from "./shared/popup-layout";
@@ -38,16 +39,29 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       message.op === "friendPopupState" || message.op === "friendPopupLayout";
     const key = `${friendPopup ? FRIEND_POPUP_SESSION_PREFIX : POPUP_SESSION_PREFIX}${sender.tab.id}`;
     const result = layoutWrites.then(async () => {
-      const state = parsePopupState(
+      const tabState = parsePopupState(
         (await chrome.storage.session.get(key))[key],
       );
+      const state = friendPopup
+        ? tabState
+        : {
+            ...parsePopupState((await chrome.storage.local.get(POPUP_PIN_KEY))[POPUP_PIN_KEY]),
+            tab: tabState.tab,
+          };
       if (message.op === "popupState" || message.op === "friendPopupState")
         return state;
       const change = message.change;
       if (change.tab !== undefined) state.tab = change.tab;
       if (change.pinned !== undefined) state.pinned = change.pinned;
       if (change.position) state.position = parsePopupPosition(change.position);
-      await chrome.storage.session.set({ [key]: state });
+      if (friendPopup || change.tab !== undefined)
+        await chrome.storage.session.set({
+          [key]: friendPopup ? state : { tab: state.tab },
+        });
+      if (!friendPopup && (change.pinned !== undefined || change.position))
+        await chrome.storage.local.set({
+          [POPUP_PIN_KEY]: { pinned: state.pinned, position: state.position },
+        });
       if (
         change.position ||
         change.width !== undefined ||

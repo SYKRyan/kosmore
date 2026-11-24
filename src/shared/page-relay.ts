@@ -29,7 +29,9 @@ export const LISTING_WRITES =
 export interface ListingChangedMessage {
   type: typeof RELAY_LISTED;
   path: string;
+  confirmedAt?: number;
   listings?: import("../kosmora/listing-capture").ListingConfirmation[];
+  canceled?: { auctionId: string; submittedAt: number; subjectId?: string };
 }
 /** Auction list/search and single-auction reads (Sale Rate). */
 export const RELAY_AUCTIONS =
@@ -75,4 +77,5 @@ export interface CardFeedMessage {
   path: string;
   ids: string[];
   data?: unknown;
+  startedAt?: number;
 }

@@ -20,12 +20,18 @@ export function installListingBackground(history: ListingHistorySync) {
         message.op === "listingSavedPrice" ||
         message.op === "listingAccountVerified" ||
         message.op === "listingRecord" ||
+        message.op === "listingCopiesObserved" ||
         message.op === "listingObserved"
       )
     )
       return false;
     void (async () => {
       const { accountKey, subjectId } = message;
+      if (message.op === "listingCopiesObserved")
+        return service.updateSaleStatus(accountKey, [], [], {
+          subjectId,
+          ...message.copies,
+        });
       if (message.op === "listingAccountVerified")
         return history.importVerified(accountKey);
       if (message.op === "listingSavedPrice")
@@ -33,9 +39,13 @@ export function installListingBackground(history: ListingHistorySync) {
       if (message.op === "listingCache")
         return service.tracked(accountKey, subjectId);
       if (message.op === "listingRecord") {
+        if (message.changes?.length)
+          await service.updateSaleStatus(accountKey, message.changes);
+        if (!message.records.length && !message.receipts?.length) return null;
         await history.record(accountKey, message.records, message.receipts);
         await service.record(accountKey, message.records);
       } else if (message.op === "listingObserved") {
+        await service.updateSaleStatus(accountKey, [], message.rows);
         const resolved = await history.observe(accountKey, message.rows);
         if (resolved.length) await service.record(accountKey, resolved);
         await service.observe(accountKey, message.rows);

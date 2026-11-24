@@ -207,6 +207,7 @@ export interface Settings {
   pinnedAlbumHotkeys: import("./hotkeys").PinnedAlbumHotkeys;
 }
 export interface KosmoraClient {
+  saleStatus?(id: string): boolean | undefined;
   observeCardIds?(ids: string[]): void;
   readonly displayAccount?: Account;
   hasInteractiveReads?(): boolean;

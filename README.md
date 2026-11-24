@@ -74,7 +74,7 @@ Hover a supported card, or press its overlay button when enabled, to open KosMor
 
 Click a family badge to view that family in your collection. The footer's **Sell**, **Trade**, and **Gift** buttons open the corresponding Kosmora flow for an eligible owned copy. Complete the action in Kosmora.
 
-Pin the tooltip to keep it available across page navigation in the current tab. Drag its header to move it and resize it from an edge or corner. Position and dimensions save automatically. On a new page, a pinned tooltip shows **No Card Selected** until you hover a card or press its overlay button. Unpin it to return to opening beside cards. Use the header icons to refresh the selected tab, pin/unpin, or close the tooltip.
+Pin the card tooltip once to keep it in the same position across Kosmora tabs and browser restarts. Drag its header to move it in all tabs, or resize it from an edge or corner. On a new page, the pinned tooltip shows **No Card Selected** until you hover a card or press its overlay button. Close or Escape dismisses it for now. Choose **Unpin popup** to return to opening beside cards in every tab.
 
 Configurable options:
 
@@ -231,7 +231,7 @@ Backups include saved feature preferences, ordered pinned album shortcuts, marke
 - **Merge:** retain destination-only entries and use backup values for matching settings and notes.
 - **Replace:** remove existing supported entries absent from the backup. This requires confirmation; export the destination's data first if you want to keep a copy.
 
-Save or cancel unsaved settings edits before importing. Backups exclude the Services connection, confirmed listing history, cached market data, Sale Rate observations, and per-tab tooltip state. Reconnect the same player to recover previously synced starting prices. Backup files contain readable private notes, so store them somewhere you trust.
+Save or cancel unsaved settings edits before importing. Backups exclude the Services connection, confirmed listing history, cached market data, Sale Rate observations, the card tooltip pin, and per-tab tooltip state. Reconnect the same player to recover previously synced starting prices. Backup files contain readable private notes, so store them somewhere you trust.
 
 ### Connected account
 

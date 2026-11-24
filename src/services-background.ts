@@ -519,7 +519,9 @@ export function installServicesBackground() {
         (row): row is CachedListings =>
           !!row && (row.freshUntil ?? 0) > Date.now(),
       )
-      .sort((a, b) => b.fetchedAt - a.fetchedAt)[0];
+      .sort(
+        (a, b) => (b.startedAt ?? b.fetchedAt) - (a.startedAt ?? a.fetchedAt),
+      )[0];
     signal.throwIfAborted();
     const now = Date.now();
     const until = record
@@ -537,6 +539,8 @@ export function installServicesBackground() {
         stale: true,
         until: 0,
         listings,
+        listingsAsOf: mine?.startedAt ?? mine?.fetchedAt,
+        listingsUntil: mine?.freshUntil,
         accessBlocked: current?.blocked,
       };
     return {
@@ -547,6 +551,8 @@ export function installServicesBackground() {
       stale: until <= now,
       until,
       listings,
+      listingsAsOf: mine?.startedAt ?? mine?.fetchedAt,
+      listingsUntil: mine?.freshUntil,
     };
   }
 
@@ -620,6 +626,7 @@ export function installServicesBackground() {
       return;
     if (listingLoad) return listingLoad;
     const pending = (async () => {
+      const startedAt = Date.now();
       const response = await call(url, "/v1/me/listings", signal, linked.token);
       if (
         response.status === 403 &&
@@ -667,6 +674,7 @@ export function installServicesBackground() {
         [
           {
             key: cacheKey,
+            startedAt,
             fetchedAt: now,
             freshUntil: Number.isFinite(expiry) ? expiry : now + 60_000,
             listings,
@@ -693,6 +701,7 @@ export function installServicesBackground() {
     signal: AbortSignal,
     includeMyListings: boolean,
   ) {
+    const startedAt = Date.now();
     const response = await call(
       url,
       "/v1/cards/details",
@@ -736,6 +745,7 @@ export function installServicesBackground() {
           const until = Date.parse(String(data.myListingsFreshUntilUtc));
           privateRows.push({
             key: privateKey(url, linked.playerId, id),
+            startedAt,
             fetchedAt: now,
             freshUntil: Number.isFinite(until) ? until : now + 60_000,
             listings: parseServicesListings(row.myListings, id).map((item) => ({

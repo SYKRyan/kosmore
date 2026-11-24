@@ -156,17 +156,17 @@ function E(t) {
 	}
 }
 // src/shared/popup-layout.ts
-var D = [
+var ee = [
 	"market",
 	"history",
 	"trade",
 	"notes"
 ];
-function O(e) {
-	return D.some((t) => t === e);
+function D(e) {
+	return ee.some((t) => t === e);
 }
-var k = "kosmore.popup.", A = "kosmore.friendPopup.";
-function j(e) {
+var O = "kosmore.popup.", k = "kosmore.popupPin", te = "kosmore.friendPopup.";
+function A(e) {
 	if (!e || typeof e != "object") return null;
 	let t = e;
 	return [t.left, t.top].every((e) => typeof e == "number" && Number.isFinite(e) && e >= 0 && e <= 1e5) ? {
@@ -174,7 +174,7 @@ function j(e) {
 		top: Math.round(t.top)
 	} : null;
 }
-function ee(e) {
+function j(e) {
 	if (!e || typeof e != "object") return {
 		pinned: !1,
 		position: null
@@ -182,8 +182,8 @@ function ee(e) {
 	let t = e;
 	return {
 		pinned: t.pinned === !0,
-		position: j(t.position),
-		...O(t.tab) ? { tab: t.tab } : {}
+		position: A(t.position),
+		...D(t.tab) ? { tab: t.tab } : {}
 	};
 }
 function M(e, t = {
@@ -198,14 +198,132 @@ function M(e, t = {
 		"width",
 		"height",
 		"tab"
-	].includes(e)) && (n.tab === void 0 || O(n.tab)) && (n.pinned === void 0 || typeof n.pinned == "boolean") && (n.position === void 0 || j(n.position) !== null) && (n.width === void 0 || Number.isFinite(n.width) && n.width >= t.minWidth && n.width <= 1200) && (n.height === void 0 || Number.isFinite(n.height) && n.height >= t.minHeight && n.height <= 1600);
+	].includes(e)) && (n.tab === void 0 || D(n.tab)) && (n.pinned === void 0 || typeof n.pinned == "boolean") && (n.position === void 0 || A(n.position) !== null) && (n.width === void 0 || Number.isFinite(n.width) && n.width >= t.minWidth && n.width <= 1200) && (n.height === void 0 || Number.isFinite(n.height) && n.height >= t.minHeight && n.height <= 1600);
+}
+// src/shared/services.ts
+var ne = "kosmore.servicesConnectionChanged", N = (e) => typeof e == "string" && /^[1-9]\d{0,17}$/.test(e);
+function re(e) {
+	let t = new URL(e.trim());
+	if (t.protocol !== "https:" && !(t.protocol === "http:" && ["localhost", "127.0.0.1"].includes(t.hostname)) || t.username || t.password || t.search || t.hash || /[?#]/.test(e) || ["kosmora.io", "developers.kosmora.io"].includes(t.hostname)) throw Error("Use HTTPS, or use HTTP with localhost or 127.0.0.1 for local testing.");
+	return t.origin + t.pathname.replace(/\/+$/, "").replace(/\/v1$/, "");
+}
+function ie(e) {
+	let { protocol: t, hostname: n } = new URL(e);
+	return `${t}//${n}/*`;
+}
+function P(e) {
+	if (e === "shiny") return "veil";
+	if (e === "plain" || e === "fullart") return e;
+	throw Error("Invalid card finish.");
+}
+function ae(r, i) {
+	let s = e(r), c = e(s.card);
+	if (c.id !== i) throw Error("Card ID mismatch.");
+	let l = {};
+	for (let t of [
+		"plain",
+		"shiny",
+		"fullart"
+	]) {
+		let r = P(t), i = e(e(s.sales)[t]), c = e(i.last30Days), u = i.lastSale === null ? void 0 : e(i.lastSale), d = e(s.history)[t];
+		if (!Array.isArray(d)) throw Error("Daily history unavailable.");
+		l[r] = {
+			finish: r,
+			days: 30,
+			count: n(c.count),
+			complete: !1,
+			sales: [],
+			low: i.low === null ? null : a(i.low),
+			median: c.median === null ? null : a(c.median),
+			high: i.high === null ? null : a(i.high),
+			...u && { lastSale: {
+				price: a(u.price),
+				soldAt: o(u.at),
+				finish: r,
+				numberOne: u.numberOne === !0
+			} },
+			daily: d.map((t) => {
+				let r = e(t);
+				if (typeof r.day != "string" || !/^\d{4}-\d{2}-\d{2}$/.test(r.day)) throw Error("Invalid sales day.");
+				return {
+					day: r.day,
+					count: n(r.count),
+					low: a(r.low),
+					median: a(r.median),
+					high: a(r.high)
+				};
+			})
+		};
+	}
+	if (!Array.isArray(c.families) || !Array.isArray(c.quests) || !Array.isArray(s.auctions)) throw Error("Invalid card details.");
+	return {
+		id: i,
+		name: t(c.name),
+		rarity: t(c.rarity),
+		families: c.families.map((n) => {
+			let r = e(n);
+			return {
+				id: t(r.id),
+				name: t(r.name)
+			};
+		}),
+		quests: c.quests.map((n) => t(e(n).id)),
+		auctions: s.auctions.map((t) => {
+			let n = e(t);
+			return {
+				finish: P(n.finish),
+				price: a(n.price),
+				...typeof n.bids == "number" && Number.isSafeInteger(n.bids) && n.bids >= 0 && { bids: n.bids },
+				endsAt: o(n.endsAt)
+			};
+		}),
+		markets: l
+	};
+}
+function oe(t, n) {
+	if (!Array.isArray(t)) throw Error("Open listings unavailable.");
+	return t.map((t) => {
+		let r = e(t);
+		if (e(r.card).id !== n || typeof r.id != "string" || !/^[0-9a-f]{24}$/.test(r.id)) throw Error("Invalid listing.");
+		return {
+			id: r.id,
+			finish: P(r.finish),
+			startPrice: a(r.startPrice),
+			endsAt: o(r.endsAt)
+		};
+	});
+}
+// src/shared/sale-status.ts
+var F = (e) => "kosmore.saleStatus." + e, I = 864e5;
+function L(e) {
+	return !!e && typeof e.auctionId == "string" && m(e.auctionId) === e.auctionId && (e.subjectId === void 0 || N(e.subjectId)) && (e.kind === "listed" || e.kind === "canceled") && Number.isSafeInteger(e.at) && e.at > 0 && e.at <= Date.now();
+}
+function se(e, t, n, r = Date.now()) {
+	let i = { ...e };
+	for (let { auctionId: e, subjectId: n, kind: r, at: a } of t) {
+		let t = i[e];
+		i[e] = {
+			...t,
+			subjectId: t?.subjectId ?? n,
+			[r]: Math.min(t?.[r] ?? a, a)
+		};
+	}
+	for (let { id: e, subjectId: t } of n) {
+		let n = e.toLowerCase();
+		i[n] && !i[n].subjectId && (i[n] = {
+			...i[n],
+			subjectId: t
+		});
+	}
+	for (let [e, t] of Object.entries(i)) Math.max(t.listed ?? 0, t.canceled ?? 0) <= r - I && delete i[e];
+	return i;
 }
 // src/shared/messages.ts
-var N = (e) => typeof e == "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(e);
-function P(e) {
+var R = (e) => typeof e == "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(e);
+function ce(e) {
 	if (!e || typeof e != "object") return !1;
 	let t = e;
-	return N(t.requestId) && (t.op === "listingObserved" && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && t.subjectId === "0" && Array.isArray(t.rows) && t.rows.length <= 500 && t.rows.every(b) || [
+	return R(t.requestId) && (t.op === "listingCopiesObserved" && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && /^[1-9]\d{0,17}$/.test(t.subjectId) && t.copies && Number.isSafeInteger(t.copies.at) && t.copies.at > 0 && t.copies.at <= Date.now() && Array.isArray(t.copies.auctionIds) && t.copies.auctionIds.every((e) => typeof e == "string" && m(e) === e) || t.op === "listingObserved" && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && t.subjectId === "0" && Array.isArray(t.rows) && t.rows.length <= 500 && t.rows.every(b) || [
 		"listingCache",
 		"listingSavedPrice",
 		"listingAccountVerified",
@@ -213,7 +331,7 @@ function P(e) {
 		"listingHistory",
 		"listingRecord",
 		"listingMetadata"
-	].includes(t.op) && "accountKey" in t && "subjectId" in t && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && typeof t.subjectId == "string" && /^\d+$/.test(t.subjectId) && (t.op !== "listingRecord" || Array.isArray(t.records) && t.records.length <= 500 && t.records.every(E) && (t.receipts === void 0 || Array.isArray(t.receipts) && t.receipts.length <= 500 && t.receipts.every(T))) && (t.op !== "listingMetadata" || Array.isArray(t.metadata) && t.metadata.length <= 100 && t.metadata.every((e) => Array.isArray(e) && e.length === 2 && typeof e[0] == "string" && m(e[0]) === e[0] && v(e[1]))) && (t.op !== "listingHistory" || ["more", "refresh"].includes(t.mode) && (t.limits === void 0 || S(t.limits))) || t.op === "listingCancel" && N(t.target) || t.op === "openOptions" && (t.section === void 0 || t.section === "stat-boxes") || [
+	].includes(t.op) && "accountKey" in t && "subjectId" in t && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && typeof t.subjectId == "string" && /^\d+$/.test(t.subjectId) && (t.op !== "listingRecord" || Array.isArray(t.records) && t.records.length <= 500 && t.records.every(E) && (t.changes === void 0 || Array.isArray(t.changes) && t.changes.length <= 500 && t.changes.every(L)) && (t.receipts === void 0 || Array.isArray(t.receipts) && t.receipts.length <= 500 && t.receipts.every(T))) && (t.op !== "listingMetadata" || Array.isArray(t.metadata) && t.metadata.length <= 100 && t.metadata.every((e) => Array.isArray(e) && e.length === 2 && typeof e[0] == "string" && m(e[0]) === e[0] && v(e[1]))) && (t.op !== "listingHistory" || ["more", "refresh"].includes(t.mode) && (t.limits === void 0 || S(t.limits))) || t.op === "listingCancel" && R(t.target) || t.op === "openOptions" && (t.section === void 0 || t.section === "stat-boxes") || [
 		"sessions",
 		"popupState",
 		"friendPopupState"
@@ -223,7 +341,7 @@ function P(e) {
 	}) || (t.op === "albums" || t.op === "families") && Number.isInteger(t.tabId) && t.tabId >= 0 && /^[a-z0-9_]{1,24}$/.test(t.accountKey));
 }
 // src/shared/stat-catalog.ts
-var F = [
+var z = [
 	{
 		id: "minPrice",
 		label: "Min Price",
@@ -285,10 +403,10 @@ var F = [
 		description: "Estimated share sold for the selected finishes. Uses 30 days of locally cached sales and auction history, including stale data. The estimate divides sales by sales plus known unsold and still-open listings. Enabling it makes no additional requests.",
 		source: "observed",
 		preview: { value: "67% · 3" },
-		read: (e) => I(e)
+		read: (e) => le(e)
 	}
 ];
-function I(e) {
+function le(e) {
 	if (!e.saleRates) return {
 		value: "—",
 		title: "Loading card details…"
@@ -305,13 +423,13 @@ function I(e) {
 		title: n
 	};
 }
-var L = () => F.map(({ id: e }) => ({
+var B = () => z.map(({ id: e }) => ({
 	id: e,
 	enabled: !0
 }));
-function te(e) {
-	if (!Array.isArray(e)) return L();
-	let t = new Map(F.map((e) => [e.id, e])), n = /* @__PURE__ */ new Set(), r = [];
+function V(e) {
+	if (!Array.isArray(e)) return B();
+	let t = new Map(z.map((e) => [e.id, e])), n = /* @__PURE__ */ new Set(), r = [];
 	for (let i of e) {
 		if (!i || typeof i != "object") continue;
 		let { id: e, enabled: a } = i;
@@ -320,10 +438,10 @@ function te(e) {
 			enabled: typeof a != "boolean" || a
 		}));
 	}
-	return [...r, ...L().filter((e) => !n.has(e.id))];
+	return [...r, ...B().filter((e) => !n.has(e.id))];
 }
 // src/shared/hotkeys.ts
-var R = [
+var H = [
 	{
 		id: "home",
 		label: "Home",
@@ -424,7 +542,7 @@ var R = [
 		label: "My Profile",
 		path: null
 	}
-], ne = [
+], ue = [
 	{
 		id: "focusFirstCard",
 		label: "Focus First Card"
@@ -469,7 +587,7 @@ var R = [
 		id: "home",
 		label: "Home"
 	}
-], re = [
+], de = [
 	{
 		id: "close",
 		label: "Close Tooltip",
@@ -532,38 +650,38 @@ var R = [
 		label: "Next Tab"
 	}
 ];
-function ie(e, t = !1) {
+function fe(e, t = !1) {
 	return typeof e == "string" && (/^(Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-2]))$/.test(e) || t && /^(Arrow(?:Up|Down|Left|Right)|Home|End)$/.test(e));
 }
-function z(e) {
+function U(e) {
 	return `${e.ctrl}-${e.alt}-${e.shift}-${e.meta}-${e.code}`;
 }
-function ae(e, t, n, r, i = {}) {
+function pe(e, t, n, r, i = {}) {
 	if (!e || typeof e != "object") return {};
 	let a = e, o = [
 		...Object.values(n),
 		...Object.values(r),
 		...Object.values(i)
-	].map(z);
+	].map(U);
 	return Object.fromEntries(Object.entries(t).flatMap(([e, t]) => {
 		if (!Object.hasOwn(a, e)) return [];
-		let n = V(a[e], t.map((e) => ({
+		let n = W(a[e], t.map((e) => ({
 			id: e,
 			label: e
 		})), new Set(o));
 		return Object.keys(n).length ? [[e, n]] : [];
 	}));
 }
-function B(e) {
-	return V(e, R);
+function me(e) {
+	return W(e, H);
 }
-function oe(e, t) {
-	return V(e, ne, new Set(Object.values(t).map(z)), !0);
+function he(e, t) {
+	return W(e, ue, new Set(Object.values(t).map(U)), !0);
 }
-function se(e, t, n) {
-	return V(e, re, new Set([...Object.values(t), ...Object.values(n)].map(z)), !0);
+function ge(e, t, n) {
+	return W(e, de, new Set([...Object.values(t), ...Object.values(n)].map(U)), !0);
 }
-function V(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
+function W(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
 	let i = {};
 	if (!e || typeof e != "object") return i;
 	let a = e;
@@ -571,7 +689,7 @@ function V(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
 		let t = a[e.id];
 		if (!t || typeof t != "object") continue;
 		let o = t;
-		if (!ie(o.code, r) || ![
+		if (!fe(o.code, r) || ![
 			o.ctrl,
 			o.alt,
 			o.shift,
@@ -583,48 +701,48 @@ function V(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
 			alt: o.alt,
 			shift: o.shift,
 			meta: o.meta
-		}, c = z(s);
+		}, c = U(s);
 		n.has(c) || (n.add(c), i[e.id] = s);
 	}
 	return i;
 }
 // src/shared/sales-prices.ts
-var H = {
+var G = {
 	Common: 1,
 	Uncommon: 1,
 	Rare: 1,
 	Epic: 20,
 	Legendary: 100,
 	Mythic: 500
-}, ce = 1000000n;
-function le(e) {
+}, _e = 1000000n;
+function ve(e) {
 	let t = e.match(/^(-?)(\d*)(?:\.(\d{0,6}))?$/);
 	if (!t || !(t[2] || t[3])) return;
-	let n = BigInt(t[2]) * ce + BigInt((t[3] ?? "").padEnd(6, "0"));
+	let n = BigInt(t[2]) * _e + BigInt((t[3] ?? "").padEnd(6, "0"));
 	return t[1] ? -n : n;
 }
-function ue(e) {
+function ye(e) {
 	let t = e.toLocaleString("en-US", {
 		useGrouping: !1,
 		maximumFractionDigits: 6
 	});
-	if (Number(t) === e) return le(t);
+	if (Number(t) === e) return ve(t);
 }
-function de(e, t = 0) {
-	return typeof e == "number" && Number.isFinite(e) && e > 0 && e >= t && ue(e) !== void 0;
+function K(e, t = 0) {
+	return typeof e == "number" && Number.isFinite(e) && e > 0 && e >= t && ye(e) !== void 0;
 }
-function fe(e) {
+function be(e) {
 	return typeof e == "number" && Number.isSafeInteger(e) && e >= 1;
 }
-function pe(e) {
+function xe(e) {
 	if (typeof e != "number" || !Number.isFinite(e)) return;
-	let t = le(String(e)), n = BigInt(2 ** 53 - 1);
+	let t = ve(String(e)), n = BigInt(2 ** 53 - 1);
 	if (t !== void 0 && t >= -n && t <= n) return t;
 }
-function me(e) {
-	return pe(e) !== void 0;
+function Se(e) {
+	return xe(e) !== void 0;
 }
-function he(e, t = "per friend") {
+function Ce(e, t = "per friend") {
 	let n = [];
 	for (let r of e) {
 		let e = r.trim().replace(/\s+/g, " ");
@@ -636,7 +754,7 @@ function he(e, t = "per friend") {
 	return n;
 }
 // src/shared/settings.ts
-var ge = "kosmore.settings", _e = () => ({
+var q = "kosmore.settings", we = () => ({
 	schemaVersion: 1,
 	enabled: !0,
 	disableHoverTooltipInPulsar: !1,
@@ -692,7 +810,7 @@ var ge = "kosmore.settings", _e = () => ({
 	salesDiscountMode: "flat",
 	salesDiscountThreshold: 5,
 	salesCustomMinimumsEnabled: !1,
-	salesCustomMinimums: { ...H },
+	salesCustomMinimums: { ...G },
 	salesQuickPricesEnabled: !1,
 	salesQuickPrices: [],
 	statBoxesEnabled: !0,
@@ -719,20 +837,20 @@ var ge = "kosmore.settings", _e = () => ({
 	showFusionFamilyOverlay: !0,
 	showTradeFamilyOverlay: !0,
 	showVortexFamilyOverlay: !0,
-	stats: L(),
+	stats: B(),
 	hotkeys: {},
 	packOpeningHotkeys: {},
 	hoverTooltipHotkeys: {},
 	pinnedAlbums: {},
 	pinnedAlbumHotkeys: {}
 });
-function ve(e) {
-	let t = _e();
+function Te(e) {
+	let t = we();
 	if (!e || typeof e != "object") return t;
 	let n = e;
 	if (n.schemaVersion !== 1) return t;
-	if (t.stats = te(n.stats), t.hotkeys = B(n.hotkeys), t.packOpeningHotkeys = oe(n.packOpeningHotkeys, t.hotkeys), t.hoverTooltipHotkeys = se(n.hoverTooltipHotkeys, t.hotkeys, t.packOpeningHotkeys), t.popupPosition = j(n.popupPosition), t.friendTooltipPosition = j(n.friendTooltipPosition), Array.isArray(n.familyBlacklist) && n.familyBlacklist.every((e) => typeof e == "string")) try {
-		t.familyBlacklist = he(n.familyBlacklist, "in the family blacklist");
+	if (t.stats = V(n.stats), t.hotkeys = me(n.hotkeys), t.packOpeningHotkeys = he(n.packOpeningHotkeys, t.hotkeys), t.hoverTooltipHotkeys = ge(n.hoverTooltipHotkeys, t.hotkeys, t.packOpeningHotkeys), t.popupPosition = A(n.popupPosition), t.friendTooltipPosition = A(n.friendTooltipPosition), Array.isArray(n.familyBlacklist) && n.familyBlacklist.every((e) => typeof e == "string")) try {
+		t.familyBlacklist = Ce(n.familyBlacklist, "in the family blacklist");
 	} catch {}
 	typeof n.enabled == "boolean" && (t.enabled = n.enabled);
 	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.tooltipTakesFocus.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.hotkeysEnabled.navigationHotkeysEnabled.hoverTooltipHotkeysEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.cardOverlaysEnabled.showAuctionBidCounts.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.salesDiscountEnabled.salesCustomMinimumsEnabled.salesQuickPricesEnabled.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
@@ -740,11 +858,11 @@ function ve(e) {
 		"salesLastSaleAdjustment",
 		"salesLowestListingAdjustment",
 		"salesMyLastListingAdjustment"
-	]) me(n[e]) && (t[e] = n[e]);
-	de(n.salesDiscountAmount, 1) && (t.salesDiscountAmount = n.salesDiscountAmount), n.salesDiscountMode === "percent" && (t.salesDiscountMode = "percent"), fe(n.salesDiscountThreshold) && (t.salesDiscountThreshold = n.salesDiscountThreshold), Array.isArray(n.salesQuickPrices) && (t.salesQuickPrices = n.salesQuickPrices.filter((e) => de(e)));
-	for (let e of Object.keys(H)) {
+	]) Se(n[e]) && (t[e] = n[e]);
+	K(n.salesDiscountAmount, 1) && (t.salesDiscountAmount = n.salesDiscountAmount), n.salesDiscountMode === "percent" && (t.salesDiscountMode = "percent"), be(n.salesDiscountThreshold) && (t.salesDiscountThreshold = n.salesDiscountThreshold), Array.isArray(n.salesQuickPrices) && (t.salesQuickPrices = n.salesQuickPrices.filter((e) => K(e)));
+	for (let e of Object.keys(G)) {
 		let r = n.salesCustomMinimums?.[e];
-		de(r, H[e]) && (t.salesCustomMinimums[e] = r);
+		K(r, G[e]) && (t.salesCustomMinimums[e] = r);
 	}
 	typeof n.closeTooltipWhenAddedToAlbum == "boolean" && (t.closeTooltipWhenAddedToAlbum = n.closeTooltipWhenAddedToAlbum), typeof n.applyCloseBehaviorToPinnedTooltips == "boolean" && (t.applyCloseBehaviorToPinnedTooltips = n.applyCloseBehaviorToPinnedTooltips), typeof n.showSaleHistoryOverlay == "boolean" && (t.showSaleHistoryOverlay = n.showSaleHistoryOverlay), typeof n.showLastSalePriceOverlay == "boolean" && (t.showLastSalePriceOverlay = n.showLastSalePriceOverlay), typeof n.showActiveAuctionsOverlay == "boolean" && (t.showActiveAuctionsOverlay = n.showActiveAuctionsOverlay), typeof n.showLowestListingPriceOverlay == "boolean" && (t.showLowestListingPriceOverlay = n.showLowestListingPriceOverlay), typeof n.showOnSaleOverlay == "boolean" && (t.showOnSaleOverlay = n.showOnSaleOverlay), typeof n.showFriendInterestOverlay == "boolean" && (t.showFriendInterestOverlay = n.showFriendInterestOverlay), typeof n.showQuestOverlay == "boolean" && (t.showQuestOverlay = n.showQuestOverlay), typeof n.showFusionFamilyOverlay == "boolean" && (t.showFusionFamilyOverlay = n.showFusionFamilyOverlay), typeof n.hoverDelayMs == "number" && Number.isFinite(n.hoverDelayMs) && (t.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(n.hoverDelayMs))));
 	for (let [e, r, i] of [
@@ -813,17 +931,17 @@ function ve(e) {
 		writable: !0,
 		value: [...new Set(r.filter((e) => typeof e == "string" && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(e)))].slice(0, 200)
 	});
-	return t.pinnedAlbumHotkeys = ae(n.pinnedAlbumHotkeys, t.pinnedAlbums, t.hotkeys, t.packOpeningHotkeys, t.hoverTooltipHotkeys), t;
+	return t.pinnedAlbumHotkeys = pe(n.pinnedAlbumHotkeys, t.pinnedAlbums, t.hotkeys, t.packOpeningHotkeys, t.hoverTooltipHotkeys), t;
 }
-async function ye() {
-	return ve((await chrome.storage.local.get(ge))[ge]);
+async function Ee() {
+	return Te((await chrome.storage.local.get(q))[q]);
 }
-async function be(e) {
-	await chrome.storage.local.set({ [ge]: ve(e) });
+async function De(e) {
+	await chrome.storage.local.set({ [q]: Te(e) });
 }
 // src/shared/listing-cache.ts
-var xe = "kosmore.myListingPrices", U = "kosmore.listingHistory.", W = (e) => e > 0 && Date.now() - e < 3e5, Se = (e, t) => f.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), Ce = () => new DOMException("Listing lookup canceled.", "AbortError");
-function we(e, t) {
+var Oe = "kosmore.myListingPrices", J = "kosmore.listingHistory.", ke = (e) => e > 0 && Date.now() - e < 3e5, Ae = (e, t) => f.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), je = () => new DOMException("Listing lookup canceled.", "AbortError");
+function Me(e, t) {
 	let n = new Map(t.map((e) => [e.id, e])), r = new Map(e.map((e) => [e.id, e])), i = /* @__PURE__ */ new Map(), a = [];
 	for (let t of e) n.has(t.id) ? (i.set(t.id, a), a = []) : a.push(t);
 	if (!i.size) return [...e, ...t];
@@ -845,7 +963,7 @@ function we(e, t) {
 	}
 	return o.concat(a);
 }
-var Te = class {
+var Ne = class {
 	local;
 	session;
 	writes = Promise.resolve();
@@ -861,6 +979,23 @@ var Te = class {
 	}
 	key(e, t) {
 		return `kosmore.listingRecord.${e}.${t}`;
+	}
+	updateSaleStatus(e, t, n = [], r) {
+		return this.write(async () => {
+			let i = F(e), a = (await this.local.get(i))[i];
+			if (!a && !t.length) return;
+			let o = se(a?.changes ?? {}, t, n), s = new Set(Object.values(o).map((e) => e.subjectId)), c = { ...a?.copies };
+			for (let e of Object.keys(c)) s.has(e) || delete c[e];
+			r && s.has(r.subjectId) && r.at >= (c[r.subjectId]?.at ?? 0) && (c[r.subjectId] = {
+				at: r.at,
+				auctionIds: r.auctionIds
+			});
+			let l = {
+				changes: o,
+				copies: c
+			};
+			JSON.stringify(a) !== JSON.stringify(l) && await this.local.set({ [i]: l });
+		});
 	}
 	decode(e, t, n) {
 		let r = e;
@@ -891,7 +1026,7 @@ var Te = class {
 		return i;
 	}
 	async readTracked(e, t) {
-		let n = t.map((t) => this.key(e, t)), r = await this.local.get(n), i = n.some((e) => r[e] === void 0) ? await (this.legacyIndex ??= this.local.get(xe).then((e) => e[xe]).catch(() => {
+		let n = t.map((t) => this.key(e, t)), r = await this.local.get(n), i = n.some((e) => r[e] === void 0) ? await (this.legacyIndex ??= this.local.get(Oe).then((e) => e[Oe]).catch(() => {
 			this.legacyIndex = void 0;
 		})) : void 0;
 		return t.map((t, a) => this.decode(r[n[a]], i?.entries?.[`${e}:${t}`], t));
@@ -985,7 +1120,7 @@ var Te = class {
 			i.throwIfAborted();
 			let a = [...t.keys()], o = await this.readTracked(e, a), s = {};
 			for (let [i, c] of a.entries()) {
-				let a = o[i], l = t.get(c).map((e) => this.serverRow(e)), u = we(a.listings, l), d = a.listings[0], f = !d || l.some((e) => e.id === d.id) && n >= (d.submittedAt ?? a.checkedAt), p = f ? l[0]?.id ?? d?.id : d.id, m = u.findIndex((e) => e.id === p);
+				let a = o[i], l = t.get(c).map((e) => this.serverRow(e)), u = Me(a.listings, l), d = a.listings[0], f = !d || l.some((e) => e.id === d.id) && n >= (d.submittedAt ?? a.checkedAt), p = f ? l[0]?.id ?? d?.id : d.id, m = u.findIndex((e) => e.id === p);
 				m > 0 && u.unshift(...u.splice(m, 1)), s[this.key(e, c)] = this.saveState(a, u, r, f ? Math.max(n, a.checkedAt) : a.checkedAt);
 			}
 			i.throwIfAborted(), await this.local.set(s);
@@ -994,7 +1129,7 @@ var Te = class {
 	async history(e, t, n, r, i, a) {
 		let o = Date.now(), s = await this.batch(e);
 		i.throwIfAborted();
-		let c = n === "refresh", l = s && W(s.fetchedAt) ? s : void 0, u = c ? {
+		let c = n === "refresh", l = s && ke(s.fetchedAt) ? s : void 0, u = c ? {
 			selling: 180,
 			sold: 180,
 			unsold: 180
@@ -1015,7 +1150,7 @@ var Te = class {
 	}
 	async invalidate(e) {
 		this.epochs.set(e, (this.epochs.get(e) ?? 0) + 1), await this.write(async () => {
-			let t = U + e, n = await this.session.get(t);
+			let t = J + e, n = await this.session.get(t);
 			x(n[t]) && await this.session.set({ [t]: {
 				...n[t],
 				fetchedAt: 0
@@ -1025,7 +1160,7 @@ var Te = class {
 	async saveBatch(e, t, n) {
 		await this.write(async () => {
 			if (this.epochs.get(e) !== n) return;
-			let r = await this.session.get(null), i = U + e, a = Object.keys(r).filter((e) => e.startsWith(U)), o = JSON.stringify(t).length * 2;
+			let r = await this.session.get(null), i = J + e, a = Object.keys(r).filter((e) => e.startsWith(J)), o = JSON.stringify(t).length * 2;
 			if (o > 6e6) return;
 			let s = a.filter((e) => e !== i).sort((e, t) => Number(r[e]?.fetchedAt ?? 0) - Number(r[t]?.fetchedAt ?? 0));
 			o += s.reduce((e, t) => e + JSON.stringify(r[t]).length * 2, 0);
@@ -1039,7 +1174,7 @@ var Te = class {
 	}
 	async batch(e) {
 		await this.writes;
-		let t = U + e, n = (await this.session.get(t))[t];
+		let t = J + e, n = (await this.session.get(t))[t];
 		return x(n) ? n : void 0;
 	}
 	async ensure(e, t, n, r, i = !1) {
@@ -1047,7 +1182,7 @@ var Te = class {
 			let a = this.epochs.get(e);
 			if (!i) {
 				let n = await this.batch(e);
-				if (r.throwIfAborted(), n && W(n.fetchedAt) && Se(n, t)) return n;
+				if (r.throwIfAborted(), n && ke(n.fetchedAt) && Ae(n, t)) return n;
 			}
 			let o = this.pending.get(e);
 			if (!o || o.controller.signal.aborted) {
@@ -1083,7 +1218,7 @@ var Te = class {
 					if (o && i.fetchedAt <= o.fetchedAt && (i = {
 						...i,
 						fetchedAt: o.fetchedAt + 1
-					}), o && W(o.fetchedAt)) {
+					}), o && ke(o.fetchedAt)) {
 						for (let e of f) if (n.limits[e] > o.limits[e] && i.counts[e] <= o.counts[e] && i.counts[e] < i.totals[e]) throw Error("Your listing history stopped before all auctions were returned.");
 					}
 					return await this.saveBatch(e, i, a), i;
@@ -1094,7 +1229,7 @@ var Te = class {
 				n.promise.then(r, r);
 			} else if (!o.started) for (let e of f) o.limits[e] = Math.max(o.limits[e], t[e]);
 			let s = await this.consume(o, n, r);
-			if (r.throwIfAborted(), Se(s, t)) return s;
+			if (r.throwIfAborted(), Ae(s, t)) return s;
 			i = !1;
 		}
 	}
@@ -1106,7 +1241,7 @@ var Te = class {
 				let r = e.readers.get(t) - 1;
 				return r ? e.readers.set(t, r) : e.readers.delete(t), e.users || e.controller.abort(), !0;
 			}, s = () => {
-				o() && i(Ce());
+				o() && i(je());
 			};
 			n.addEventListener("abort", s, { once: !0 }), n.aborted ? s() : e.promise.then((e) => {
 				o() && r(e);
@@ -1117,15 +1252,22 @@ var Te = class {
 	}
 };
 // src/listing-background.ts
-function Ee(e) {
-	let t = new Te(chrome.storage.local, chrome.storage.session);
-	chrome.runtime.onMessage.addListener((n, r, i) => r.id !== chrome.runtime.id || r.tab?.id === void 0 || r.frameId !== 0 || !r.url?.startsWith("https://kosmora.io/") || !P(n) || n.op !== "listingCache" && n.op !== "listingSavedPrice" && n.op !== "listingAccountVerified" && n.op !== "listingRecord" && n.op !== "listingObserved" ? !1 : ((async () => {
+function Pe(e) {
+	let t = new Ne(chrome.storage.local, chrome.storage.session);
+	chrome.runtime.onMessage.addListener((n, r, i) => r.id !== chrome.runtime.id || r.tab?.id === void 0 || r.frameId !== 0 || !r.url?.startsWith("https://kosmora.io/") || !ce(n) || n.op !== "listingCache" && n.op !== "listingSavedPrice" && n.op !== "listingAccountVerified" && n.op !== "listingRecord" && n.op !== "listingCopiesObserved" && n.op !== "listingObserved" ? !1 : ((async () => {
 		let { accountKey: r, subjectId: i } = n;
+		if (n.op === "listingCopiesObserved") return t.updateSaleStatus(r, [], [], {
+			subjectId: i,
+			...n.copies
+		});
 		if (n.op === "listingAccountVerified") return e.importVerified(r);
 		if (n.op === "listingSavedPrice") return e.latest(r, i);
 		if (n.op === "listingCache") return t.tracked(r, i);
-		if (n.op === "listingRecord") await e.record(r, n.records, n.receipts), await t.record(r, n.records);
-		else if (n.op === "listingObserved") {
+		if (n.op === "listingRecord") {
+			if (n.changes?.length && await t.updateSaleStatus(r, n.changes), !n.records.length && !n.receipts?.length) return null;
+			await e.record(r, n.records, n.receipts), await t.record(r, n.records);
+		} else if (n.op === "listingObserved") {
+			await t.updateSaleStatus(r, [], n.rows);
 			let i = await e.observe(r, n.rows);
 			i.length && await t.record(r, i), await t.observe(r, n.rows);
 		}
@@ -1146,17 +1288,17 @@ function Ee(e) {
 	})), !0));
 }
 // src/listing-history-store.ts
-var De = () => ({
+var Fe = () => ({
 	cursor: 0,
 	uploaded: 0,
 	erasedAt: 0
-}), G = 2 ** 53 - 1, K = (e) => "local:" + e;
-function q(e) {
+}), Ie = 2 ** 53 - 1, Y = (e) => "local:" + e;
+function X(e) {
 	return new Promise((t, n) => {
 		e.onsuccess = () => t(e.result), e.onerror = () => n(e.error);
 	});
 }
-var Oe = class {
+var Le = class {
 	database;
 	imports = /* @__PURE__ */ new Map();
 	open() {
@@ -1195,7 +1337,7 @@ var Oe = class {
 	async insert(e, t, n, r = !1, i) {
 		for (let a of n) {
 			let n = a.id.toLowerCase();
-			await q(e.index("auction").getKey([t, n])) || await q(e.add({
+			await X(e.index("auction").getKey([t, n])) || await X(e.add({
 				id: n,
 				subjectId: a.subjectId,
 				startPrice: a.startPrice,
@@ -1209,16 +1351,16 @@ var Oe = class {
 	}
 	capture(e, t, n, r) {
 		return this.transaction("readwrite", async (i, a) => {
-			let o = r ? await q(a.get(r)) : void 0, s = o?.generation === void 0 ? void 0 : JSON.stringify([r, o.generation]);
-			if (await this.insert(i, K(e), t, !1, s), !n.length) return;
-			let c = "receipts:" + e, l = await q(a.get(c)) ?? /* @__PURE__ */ new Map();
+			let o = r ? await X(a.get(r)) : void 0, s = o?.generation === void 0 ? void 0 : JSON.stringify([r, o.generation]);
+			if (await this.insert(i, Y(e), t, !1, s), !n.length) return;
+			let c = "receipts:" + e, l = await X(a.get(c)) ?? /* @__PURE__ */ new Map();
 			for (let e of n) l.has(e.auctionId) || l.set(e.auctionId, e.submittedAt);
-			await q(a.put(l, c));
+			await X(a.put(l, c));
 		});
 	}
 	resolveReceipts(e, t) {
 		return this.transaction("readwrite", async (n, r) => {
-			let i = "receipts:" + e, a = await q(r.get(i)), o = [];
+			let i = "receipts:" + e, a = await X(r.get(i)), o = [];
 			if (!a?.size) return o;
 			for (let e of t) {
 				let t = e.id.toLowerCase(), n = a.get(t);
@@ -1230,7 +1372,7 @@ var Oe = class {
 					copyId: e.copyId
 				}));
 			}
-			return o.length && (await this.insert(n, K(e), o), await q(r.put(a, i))), o;
+			return o.length && (await this.insert(n, Y(e), o), await X(r.put(a, i))), o;
 		});
 	}
 	importVerified(e) {
@@ -1243,7 +1385,7 @@ var Oe = class {
 	}
 	async importLegacy(e) {
 		let t = "import:" + e;
-		if (await this.transaction("readonly", (e, n) => q(n.get(t)))) return;
+		if (await this.transaction("readonly", (e, n) => X(n.get(t)))) return;
 		let n = await chrome.storage.local.get(null), r = "kosmore.listingRecord." + e + ".", i = [];
 		function a(e, t) {
 			if (!t || typeof t != "object") return;
@@ -1258,16 +1400,16 @@ var Oe = class {
 			let n = e.slice(r.length);
 			if ("latest" in t && a(n, t.latest), "listings" in t && Array.isArray(t.listings)) for (let e of t.listings) a(n, e);
 		}
-		let o = n[xe];
+		let o = n[Oe];
 		for (let [t, n] of Object.entries(o?.entries ?? {})) t.startsWith(e + ":") && a(t.slice(e.length + 1), n?.listing);
 		await this.transaction("readwrite", async (n, r) => {
-			await q(r.get(t)) || (await this.insert(n, K(e), i, !0), await q(r.put(!0, t)));
+			await X(r.get(t)) || (await this.insert(n, Y(e), i, !0), await X(r.put(!0, t)));
 		});
 	}
 	async latest(e, t, n) {
 		return await this.importVerified(e), this.transaction("readonly", async (r, i) => {
-			let a = await q(i.get("cutoff:" + e)) ?? 0;
-			return (await Promise.all([K(e), ...t ? [t] : []].map(async (e) => {
+			let a = await X(i.get("cutoff:" + e)) ?? 0;
+			return (await Promise.all([Y(e), ...t ? [t] : []].map(async (e) => {
 				let t = IDBKeyRange.bound([
 					e,
 					n,
@@ -1275,23 +1417,23 @@ var Oe = class {
 				], [
 					e,
 					n,
-					G,
+					Ie,
 					[]
 				]);
-				return (await q(r.index("latest").openCursor(t, "prev")))?.value;
+				return (await X(r.index("latest").openCursor(t, "prev")))?.value;
 			}))).filter((e) => !!e).sort((e, t) => t.submittedAt - e.submittedAt || (e.id < t.id ? 1 : e.id > t.id ? -1 : 0))[0];
 		});
 	}
 	state(e) {
-		return this.transaction("readonly", async (t, n) => await q(n.get(e)) ?? De());
+		return this.transaction("readonly", async (t, n) => await X(n.get(e)) ?? Fe());
 	}
 	pending(e, t) {
-		return this.transaction("readonly", (n) => q(n.index("outbox").getAll(IDBKeyRange.bound([K(e), t + 1], [K(e), G]), 40)));
+		return this.transaction("readonly", (n) => X(n.index("outbox").getAll(IDBKeyRange.bound([Y(e), t + 1], [Y(e), Ie]), 40)));
 	}
 	acknowledge(e, t, n) {
 		return this.transaction("readwrite", async (r, i) => {
-			let a = await q(i.get(e));
-			a?.generation === t && await q(i.put({
+			let a = await X(i.get(e));
+			a?.generation === t && await X(i.put({
 				...a,
 				uploaded: Math.max(a.uploaded, n)
 			}, e));
@@ -1299,14 +1441,14 @@ var Oe = class {
 	}
 	apply(e, t, n) {
 		return this.transaction("readwrite", async (r, i) => {
-			let a = await q(i.get(e)) ?? De();
+			let a = await X(i.get(e)) ?? Fe();
 			if (a.generation !== void 0 && n.generation < a.generation) return !1;
 			let o = a.generation !== n.generation;
 			if (!o && a.cursor > n.cursor) return !1;
 			if (o && n.erasedAt) {
 				let o = r.index("outbox");
-				for (let r of [e, K(t)]) {
-					let t = IDBKeyRange.bound([r, 0], [r, G]), i = o.openCursor(t);
+				for (let r of [e, Y(t)]) {
+					let t = IDBKeyRange.bound([r, 0], [r, Ie]), i = o.openCursor(t);
 					await new Promise((t, o) => {
 						i.onerror = () => o(i.error), i.onsuccess = () => {
 							let o = i.result;
@@ -1314,26 +1456,26 @@ var Oe = class {
 						};
 					});
 				}
-				await q(i.put(!0, "import:" + t));
-				let s = "receipts:" + t, c = await q(i.get(s));
+				await X(i.put(!0, "import:" + t));
+				let s = "receipts:" + t, c = await X(i.get(s));
 				if (c) {
 					for (let [e, t] of c) t <= n.erasedAt && c.delete(e);
-					await q(i.put(c, s));
+					await X(i.put(c, s));
 				}
-				let l = await q(i.get("cutoff:" + t)) ?? 0;
-				await q(i.put(Math.max(l, n.erasedAt), "cutoff:" + t));
+				let l = await X(i.get("cutoff:" + t)) ?? 0;
+				await X(i.put(Math.max(l, n.erasedAt), "cutoff:" + t));
 			}
 			await this.insert(r, e, n.records);
 			for (let e of n.records) {
-				let n = await q(r.index("auction").get([K(t), e.id]));
-				n && (n.submittedAt !== e.submittedAt || n.startPrice !== e.startPrice || n.subjectId !== e.subjectId) && await q(r.put({
+				let n = await X(r.index("auction").get([Y(t), e.id]));
+				n && (n.submittedAt !== e.submittedAt || n.startPrice !== e.startPrice || n.subjectId !== e.subjectId) && await X(r.put({
 					...n,
 					subjectId: e.subjectId,
 					startPrice: e.startPrice,
 					submittedAt: e.submittedAt
 				}));
 			}
-			return await q(i.put({
+			return await X(i.put({
 				...a,
 				generation: n.generation,
 				cursor: n.cursor,
@@ -1341,14 +1483,14 @@ var Oe = class {
 			}, e)), !!n.records.length || o && !!n.erasedAt;
 		});
 	}
-}, J = "/v1/me/listing-history", Y = "kosmore.listing-history", X = (e) => typeof e == "number" && Number.isSafeInteger(e) && e >= 0;
-function ke(e) {
-	if (!e || !X(e.generation) || !X(e.cursor) || !X(e.erasedAt) || typeof e.hasMore != "boolean" || !Array.isArray(e.records) || !e.records.every(E)) throw Error("Services returned invalid listing history.");
+}, Re = "/v1/me/listing-history", ze = "kosmore.listing-history", Z = (e) => typeof e == "number" && Number.isSafeInteger(e) && e >= 0;
+function Be(e) {
+	if (!e || !Z(e.generation) || !Z(e.cursor) || !Z(e.erasedAt) || typeof e.hasMore != "boolean" || !Array.isArray(e.records) || !e.records.every(E)) throw Error("Services returned invalid listing history.");
 	return e;
 }
-var Ae = class {
+var Ve = class {
 	link;
-	store = new Oe();
+	store = new Le();
 	work = Promise.resolve();
 	queued = /* @__PURE__ */ new Map();
 	retry = /* @__PURE__ */ new Map();
@@ -1357,12 +1499,12 @@ var Ae = class {
 	}
 	install() {
 		let e = async () => {
-			chrome.alarms && !await chrome.alarms.get(Y) && await chrome.alarms.create(Y, { periodInMinutes: 5 });
+			chrome.alarms && !await chrome.alarms.get(ze) && await chrome.alarms.create(ze, { periodInMinutes: 5 });
 		};
 		e().catch(() => {}), chrome.runtime.onStartup?.addListener(() => {
 			e().catch(() => {}), this.schedule();
 		}), chrome.alarms?.onAlarm.addListener((e) => {
-			e.name === Y && chrome.tabs.query({ url: "https://kosmora.io/*" }).then((e) => {
+			e.name === ze && chrome.tabs.query({ url: "https://kosmora.io/*" }).then((e) => {
 				e.length && this.schedule();
 			});
 		});
@@ -1425,7 +1567,7 @@ var Ae = class {
 		do {
 			let r = new URLSearchParams({ after: String(t.cursor) });
 			t.generation !== void 0 && r.set("generation", String(t.generation));
-			let i = ke(await (await this.checked(e, J + "/changes?" + r)).json());
+			let i = Be(await (await this.checked(e, Re + "/changes?" + r)).json());
 			if (i.hasMore && (!i.records.length || i.generation === t.generation && i.cursor <= t.cursor)) throw Error("Listing history cursor did not advance.");
 			if (e.signal.throwIfAborted(), n = await this.store.apply(e.scope, e.handle, i) || n, t = await this.store.state(e.scope), !i.hasMore) break;
 		} while (!e.signal.aborted);
@@ -1443,7 +1585,7 @@ var Ae = class {
 				startPrice: r,
 				submittedAt: i
 			}));
-			r.length && await this.checked(e, J + "/batch", "POST", {
+			r.length && await this.checked(e, Re + "/batch", "POST", {
 				generation: n.generation,
 				records: r
 			});
@@ -1457,8 +1599,8 @@ var Ae = class {
 			if (!n || n.scope !== JSON.stringify([t, e])) throw Error("The linked Services account changed.");
 			let r = await this.store.state(n.scope);
 			r.generation === void 0 && (r = await this.pull(n));
-			let i = await (await this.checked(n, J + "?generation=" + r.generation, "DELETE")).json();
-			if (!X(i.generation) || i.generation <= r.generation || !X(i.erasedAt)) throw Error("Services could not confirm erasure.");
+			let i = await (await this.checked(n, Re + "?generation=" + r.generation, "DELETE")).json();
+			if (!Z(i.generation) || i.generation <= r.generation || !Z(i.erasedAt)) throw Error("Services could not confirm erasure.");
 			await this.store.apply(n.scope, n.handle, {
 				...i,
 				records: [],
@@ -1467,7 +1609,7 @@ var Ae = class {
 			}), await this.changed(n.handle);
 		});
 	}
-}, je = class {
+}, He = class {
 	db;
 	open() {
 		return this.db ??= new Promise((e, t) => {
@@ -1539,105 +1681,12 @@ var Ae = class {
 			}
 		});
 	}
-}, Me = "kosmore.servicesConnectionChanged", Z = (e) => typeof e == "string" && /^[1-9]\d{0,17}$/.test(e);
-function Ne(e) {
-	let t = new URL(e.trim());
-	if (t.protocol !== "https:" && !(t.protocol === "http:" && ["localhost", "127.0.0.1"].includes(t.hostname)) || t.username || t.password || t.search || t.hash || /[?#]/.test(e) || ["kosmora.io", "developers.kosmora.io"].includes(t.hostname)) throw Error("Use HTTPS, or use HTTP with localhost or 127.0.0.1 for local testing.");
-	return t.origin + t.pathname.replace(/\/+$/, "").replace(/\/v1$/, "");
-}
-function Pe(e) {
-	let { protocol: t, hostname: n } = new URL(e);
-	return `${t}//${n}/*`;
-}
-function Fe(e) {
-	if (e === "shiny") return "veil";
-	if (e === "plain" || e === "fullart") return e;
-	throw Error("Invalid card finish.");
-}
-function Ie(r, i) {
-	let s = e(r), c = e(s.card);
-	if (c.id !== i) throw Error("Card ID mismatch.");
-	let l = {};
-	for (let t of [
-		"plain",
-		"shiny",
-		"fullart"
-	]) {
-		let r = Fe(t), i = e(e(s.sales)[t]), c = e(i.last30Days), u = i.lastSale === null ? void 0 : e(i.lastSale), d = e(s.history)[t];
-		if (!Array.isArray(d)) throw Error("Daily history unavailable.");
-		l[r] = {
-			finish: r,
-			days: 30,
-			count: n(c.count),
-			complete: !1,
-			sales: [],
-			low: i.low === null ? null : a(i.low),
-			median: c.median === null ? null : a(c.median),
-			high: i.high === null ? null : a(i.high),
-			...u && { lastSale: {
-				price: a(u.price),
-				soldAt: o(u.at),
-				finish: r,
-				numberOne: u.numberOne === !0
-			} },
-			daily: d.map((t) => {
-				let r = e(t);
-				if (typeof r.day != "string" || !/^\d{4}-\d{2}-\d{2}$/.test(r.day)) throw Error("Invalid sales day.");
-				return {
-					day: r.day,
-					count: n(r.count),
-					low: a(r.low),
-					median: a(r.median),
-					high: a(r.high)
-				};
-			})
-		};
-	}
-	if (!Array.isArray(c.families) || !Array.isArray(c.quests) || !Array.isArray(s.auctions)) throw Error("Invalid card details.");
-	return {
-		id: i,
-		name: t(c.name),
-		rarity: t(c.rarity),
-		families: c.families.map((n) => {
-			let r = e(n);
-			return {
-				id: t(r.id),
-				name: t(r.name)
-			};
-		}),
-		quests: c.quests.map((n) => t(e(n).id)),
-		auctions: s.auctions.map((t) => {
-			let n = e(t);
-			return {
-				finish: Fe(n.finish),
-				price: a(n.price),
-				...typeof n.bids == "number" && Number.isSafeInteger(n.bids) && n.bids >= 0 && { bids: n.bids },
-				endsAt: o(n.endsAt)
-			};
-		}),
-		markets: l
-	};
-}
-function Le(t, n) {
-	if (!Array.isArray(t)) throw Error("Open listings unavailable.");
-	return t.map((t) => {
-		let r = e(t);
-		if (e(r.card).id !== n || typeof r.id != "string" || !/^[0-9a-f]{24}$/.test(r.id)) throw Error("Invalid listing.");
-		return {
-			id: r.id,
-			finish: Fe(r.finish),
-			startPrice: a(r.startPrice),
-			endsAt: o(r.endsAt)
-		};
-	});
-}
-// src/services-background.ts
-var Re = 864e5, ze = 100, Q = "kosmore.deferredCard", $ = "kosmore.pendingAccountLink", Be = 1;
-function Ve() {
-	let t = new je(), n = "", r, i = new AbortController(), a = 0, o = /* @__PURE__ */ new Map(), s = !1, c, u, d, f = 0, p = /* @__PURE__ */ new Map(), m, h = 0, g = /* @__PURE__ */ new Set(), _, v = t.connection().then(async (e) => {
+}, Ue = 864e5, We = 100, Q = "kosmore.deferredCard", $ = "kosmore.pendingAccountLink", Ge = 1;
+function Ke() {
+	let t = new He(), n = "", r, i = new AbortController(), a = 0, o = /* @__PURE__ */ new Map(), s = !1, c, u, d, f = 0, p = /* @__PURE__ */ new Map(), m, h = 0, g = /* @__PURE__ */ new Set(), _, v = t.connection().then(async (e) => {
 		n = e?.base ?? "", r = e?.session, u = (await chrome.storage.session?.get($))?.[$];
 		let t = (await chrome.storage?.session?.get(Q))?.[Q];
-		t?.base === n && t?.player === r?.playerId && Z(t?.id) && (_ = t.id);
+		t?.base === n && t?.player === r?.playerId && N(t?.id) && (_ = t.id);
 	}), y = Promise.resolve(), b = (e) => {
 		let t = y.then(e);
 		return y = t.catch(() => {}), t;
@@ -1645,12 +1694,12 @@ function Ve() {
 		let n = e(await t.json()), r = n.retentionDays, i = n.freshnessSeconds;
 		if (typeof r != "number" || !Number.isInteger(r) || r < 1 || typeof i != "number" || !Number.isInteger(i) || i < 1 || i > r * 86400) throw Error("Invalid card cache configuration.");
 		return {
-			retention: r * Re,
+			retention: r * Ue,
 			freshness: i * 1e3
 		};
 	});
 	x.catch(() => {}), v.catch(() => {});
-	let S = new Ae(async () => {
+	let S = new Ve(async () => {
 		await v;
 		let e = r, t = n, a = i.signal;
 		if (!(!e?.handle || e.blocked || e.expiresAt <= Date.now() || e.scopes && !e.scopes.includes("listings"))) return {
@@ -1686,12 +1735,12 @@ function Ve() {
 		} }).catch(() => {}) : await chrome.storage?.session?.remove(Q).catch(() => {});
 	}
 	async function T(e, a) {
-		await k(), i.abort(), i = new AbortController();
+		await O(), i.abort(), i = new AbortController();
 		for (let e of o.values()) e.resolve();
 		o.clear(), g.clear(), m = void 0, h = 0, f = 0, p.clear(), n = e, r = a, await w(), await t.saveConnection({
 			base: n,
 			session: r
-		}), await chrome.storage.local.set({ [Me]: crypto.randomUUID() });
+		}), await chrome.storage.local.set({ [ne]: crypto.randomUUID() });
 	}
 	async function E(e, t, n, r, i, a = i === void 0 ? "GET" : "POST") {
 		return fetch(e + t, {
@@ -1707,17 +1756,17 @@ function Ve() {
 			signal: AbortSignal.any([n, AbortSignal.timeout(15e3)])
 		});
 	}
-	let D = (e) => btoa(String.fromCharCode(...e)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""), O = () => D(crypto.getRandomValues(/* @__PURE__ */ new Uint8Array(32)));
-	async function k() {
-		u && (await chrome.storage.session.remove($), u = void 0, await chrome.declarativeNetRequest?.updateSessionRules({ removeRuleIds: [Be] }));
+	let ee = (e) => btoa(String.fromCharCode(...e)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""), D = () => ee(crypto.getRandomValues(/* @__PURE__ */ new Uint8Array(32)));
+	async function O() {
+		u && (await chrome.storage.session.remove($), u = void 0, await chrome.declarativeNetRequest?.updateSessionRules({ removeRuleIds: [Ge] }));
 	}
-	async function A(e) {
+	async function k(e) {
 		await chrome.storage.session.set({ [$]: e }), u = e;
 	}
-	async function j(t, n, r) {
-		let i = O(), a = O(), o = async (e) => D(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(e)))), s = n ? await o(n) : void 0, c = u;
+	async function te(t, n, r) {
+		let i = D(), a = D(), o = async (e) => ee(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(e)))), s = n ? await o(n) : void 0, c = u;
 		if (c && c.target === t && c.expiresAt > Date.now() && (!n || c.inviteHash === s)) return c;
-		await k();
+		await O();
 		let l = Date.now() + 6e5, d = await E(t, "/v1/connect/start", r, void 0, {
 			redirectUri: chrome.identity.getRedirectURL("kosmore-services"),
 			handoffChallenge: await o(i),
@@ -1736,22 +1785,22 @@ function Ve() {
 			inviteHash: s
 		};
 	}
-	async function ee(e, t, r = !1) {
-		let a = Ne(e);
+	async function A(e, t, r = !1) {
+		let a = re(e);
 		if (r && !chrome.declarativeNetRequest?.updateSessionRules) throw Error("This browser cannot receive a sign-in link in another tab.");
-		if (!await chrome.permissions.contains({ origins: [Pe(a)] })) throw Error("Allow access to the Services host before connecting.");
+		if (!await chrome.permissions.contains({ origins: [ie(a)] })) throw Error("Allow access to the Services host before connecting.");
 		c?.abort();
 		let o = new AbortController();
 		c = o;
 		let s = await b(async () => {
 			o.signal.throwIfAborted(), n !== a && await T(a);
-			let e = AbortSignal.any([o.signal, i.signal]), s = await j(a, t?.trim(), e);
+			let e = AbortSignal.any([o.signal, i.signal]), s = await te(a, t?.trim(), e);
 			if (e.throwIfAborted(), r) {
 				let e = chrome.runtime.id + "\\.chromiumapp\\.org";
-				await A(s), await chrome.declarativeNetRequest.updateSessionRules({
-					removeRuleIds: [Be],
+				await k(s), await chrome.declarativeNetRequest.updateSessionRules({
+					removeRuleIds: [Ge],
 					addRules: [{
-						id: Be,
+						id: Ge,
 						action: {
 							type: chrome.declarativeNetRequest.RuleActionType.REDIRECT,
 							redirect: { regexSubstitution: chrome.runtime.getURL("link-complete.html") + "#\\1" }
@@ -1763,7 +1812,7 @@ function Ve() {
 						}
 					}]
 				});
-			} else await k();
+			} else await O();
 			return s;
 		});
 		if (r) return { url: s.authorizationUrl };
@@ -1777,28 +1826,28 @@ function Ve() {
 			});
 		} catch (e) {
 			throw /couldn.t create a browser window/i.test(l(e)) ? (await b(async () => {
-				u.throwIfAborted(), await A(s);
+				u.throwIfAborted(), await k(s);
 			}), Error("The browser could not open the sign-in window. Choose Copy Link to continue in another tab.")) : e;
 		}
 		if (!d) throw Error("Kosmora did not complete account linking.");
-		return N(s, d, u);
+		return M(s, d, u);
 	}
-	async function M(e) {
+	async function j(e) {
 		let { link: t, signal: r } = await b(async () => {
 			let t = u;
 			if (!t || t.target !== n || t.expiresAt <= Date.now()) throw Error("This link has expired or has already been used. Return to KosMore Settings.");
 			let r = new URLSearchParams(e).getAll("state");
 			if (r.length !== 1 || r[0] !== t.state) throw Error("This callback does not match the link from KosMore Settings.");
-			await k();
+			await O();
 			let a = c ??= new AbortController();
 			return {
 				link: t,
 				signal: AbortSignal.any([a.signal, i.signal])
 			};
 		});
-		return N(t, chrome.identity.getRedirectURL("kosmore-services") + "?" + e, r);
+		return M(t, chrome.identity.getRedirectURL("kosmore-services") + "?" + e, r);
 	}
-	async function N(t, n, r) {
+	async function M(t, n, r) {
 		let { target: i, verifier: a, state: o } = t, s = chrome.identity.getRedirectURL("kosmore-services"), c = new URL(n), l = c.searchParams.get("code");
 		if (c.origin + c.pathname !== s || c.hash || c.searchParams.getAll("state").length !== 1 || c.searchParams.get("state") !== o) throw Error("Kosmora returned an invalid account-linking callback.");
 		let u = c.searchParams.get("error");
@@ -1832,13 +1881,15 @@ function Ve() {
 		n
 	]);
 	async function I(e, a) {
-		let o = r, s = n, c = i.signal, { retention: l, freshness: u } = await x, d = await t.get("cards", P(s, e)), f = (a && o && !o.blocked && o.handle?.toLowerCase() === a && o.expiresAt > Date.now() ? await Promise.all(["all", e].map((e) => t.get("listings", F(s, o.playerId, e)))) : []).filter((e) => !!e && (e.freshUntil ?? 0) > Date.now()).sort((e, t) => t.fetchedAt - e.fetchedAt)[0];
+		let o = r, s = n, c = i.signal, { retention: l, freshness: u } = await x, d = await t.get("cards", P(s, e)), f = (a && o && !o.blocked && o.handle?.toLowerCase() === a && o.expiresAt > Date.now() ? await Promise.all(["all", e].map((e) => t.get("listings", F(s, o.playerId, e)))) : []).filter((e) => !!e && (e.freshUntil ?? 0) > Date.now()).sort((e, t) => (t.startedAt ?? t.fetchedAt) - (e.startedAt ?? e.fetchedAt))[0];
 		c.throwIfAborted();
 		let p = Date.now(), m = d ? Math.min(d.fetchedAt + u, d.freshUntil) : 0, h = f?.listings.filter((t) => t.subjectId === e && Date.parse(t.endsAt) > p);
 		return !d || d.fetchedAt <= p - l || d.missing && m <= p ? {
 			stale: !0,
 			until: 0,
 			listings: h,
+			listingsAsOf: f?.startedAt ?? f?.fetchedAt,
+			listingsUntil: f?.freshUntil,
 			accessBlocked: o?.blocked
 		} : {
 			accessBlocked: o?.blocked,
@@ -1847,14 +1898,16 @@ function Ve() {
 			missing: d.missing,
 			stale: m <= p,
 			until: m,
-			listings: h
+			listings: h,
+			listingsAsOf: f?.startedAt ?? f?.fetchedAt,
+			listingsUntil: f?.freshUntil
 		};
 	}
 	function L(e, t) {
 		let n = e && /^\d+$/.test(e) ? Number(e) * 1e3 : e ? Date.parse(e) - Date.now() : typeof t == "number" && Number.isFinite(t) ? t * 1e3 : 15e3;
 		return Math.max(1e3, Number.isFinite(n) ? n : 15e3);
 	}
-	async function te(e, t) {
+	async function se(e, t) {
 		let n = await chrome.tabs.query({ url: "https://kosmora.io/*" });
 		await Promise.allSettled(n.flatMap((n) => n.id === void 0 ? [] : [chrome.tabs.sendMessage(n.id, {
 			op: "servicesCardsChanged",
@@ -1870,15 +1923,15 @@ function Ve() {
 			} : void 0);
 		}), !0);
 	}
-	async function ne(a) {
+	async function ce(a) {
 		let o = r, s = n, c = i.signal;
 		if (!o || !a || o.handle?.toLowerCase() !== a || o.blocked || o.expiresAt <= Date.now() || o.scopes && !o.scopes.includes("listings")) return;
 		let l = F(s, o.playerId, "all"), u = await t.get("listings", l);
 		if (c.throwIfAborted(), (u?.freshUntil ?? 0) > Date.now() || Math.max(h, f) > Date.now()) return;
 		if (m) return m;
 		let d = (async () => {
-			let n = await E(s, "/v1/me/listings", c, o.token);
-			if (n.status === 403 && (await n.clone().json().catch(() => ({})))?.error === "scope_missing") {
+			let n = Date.now(), i = await E(s, "/v1/me/listings", c, o.token);
+			if (i.status === 403 && (await i.clone().json().catch(() => ({})))?.error === "scope_missing") {
 				await b(async () => {
 					!c.aborted && r === o && await T(s, {
 						...o,
@@ -1887,26 +1940,27 @@ function Ve() {
 				});
 				return;
 			}
-			if (await R(n, s, o, c)) return;
-			if (!n.ok) {
-				h = Date.now() + L(n.headers.get("Retry-After")), n.status === 429 && (f = h);
+			if (await R(i, s, o, c)) return;
+			if (!i.ok) {
+				h = Date.now() + L(i.headers.get("Retry-After")), i.status === 429 && (f = h);
 				return;
 			}
-			let i = e(await n.json()).auctions;
-			if (!Array.isArray(i)) throw Error("Invalid listing snapshot.");
-			let a = i.flatMap((t) => {
+			let a = e(await i.json()).auctions;
+			if (!Array.isArray(a)) throw Error("Invalid listing snapshot.");
+			let u = a.flatMap((t) => {
 				let n = e(e(t).card).id;
-				if (!Z(n)) throw Error("Invalid listing card.");
-				return Le([t], n).map((e) => ({
+				if (!N(n)) throw Error("Invalid listing card.");
+				return oe([t], n).map((e) => ({
 					...e,
 					subjectId: n
 				}));
-			}), u = Date.now(), d = Date.parse(n.headers.get("X-KosMore-Fresh-Until") ?? "");
+			}), d = Date.now(), p = Date.parse(i.headers.get("X-KosMore-Fresh-Until") ?? "");
 			await t.save([], [{
 				key: l,
-				fetchedAt: u,
-				freshUntil: Number.isFinite(d) ? d : u + 6e4,
-				listings: a
+				startedAt: n,
+				fetchedAt: d,
+				freshUntil: Number.isFinite(p) ? p : d + 6e4,
+				listings: u
 			}], c);
 		})().catch((e) => {
 			throw c.aborted || (h = Date.now() + 15e3), e;
@@ -1915,78 +1969,79 @@ function Ve() {
 		});
 		return m = d, d;
 	}
-	async function re(n, r, i, a, o) {
-		let s = await E(r, "/v1/cards/details", a, i.token, {
+	async function z(n, r, i, a, o) {
+		let s = Date.now(), c = await E(r, "/v1/cards/details", a, i.token, {
 			ids: n,
 			includeMyListings: o,
 			...o && { preferScopedBatch: !0 }
 		});
-		if (await R(s, r, i, a)) return;
-		if (!s.ok) {
-			f = Date.now() + L(s.headers.get("Retry-After"));
+		if (await R(c, r, i, a)) return;
+		if (!c.ok) {
+			f = Date.now() + L(c.headers.get("Retry-After"));
 			return;
 		}
-		let c = e(await s.json());
-		if (o && c.myListingsStatus === "scope-missing" && (h = i.expiresAt), !Array.isArray(c.cards)) throw Error("Invalid Services batch.");
+		let l = e(await c.json());
+		if (o && l.myListingsStatus === "scope-missing" && (h = i.expiresAt), !Array.isArray(l.cards)) throw Error("Invalid Services batch.");
 		a.throwIfAborted();
-		let l = new Set(n), u = [], d = {}, m = [], g = [], _ = Date.now(), v = _ + L(s.headers.get("Retry-After"), c.retryAfterSeconds);
-		for (let n of c.cards) try {
-			let a = e(n), s = a.id;
-			if (!Z(s) || !l.delete(s)) continue;
-			if (o && c.myListingsStatus === "fresh" && Array.isArray(a.myListings)) {
-				let e = Date.parse(String(c.myListingsFreshUntilUtc));
-				g.push({
-					key: F(r, i.playerId, s),
-					fetchedAt: _,
-					freshUntil: Number.isFinite(e) ? e : _ + 6e4,
-					listings: Le(a.myListings, s).map((e) => ({
+		let u = new Set(n), d = [], m = {}, g = [], _ = [], v = Date.now(), y = v + L(c.headers.get("Retry-After"), l.retryAfterSeconds);
+		for (let n of l.cards) try {
+			let a = e(n), c = a.id;
+			if (!N(c) || !u.delete(c)) continue;
+			if (o && l.myListingsStatus === "fresh" && Array.isArray(a.myListings)) {
+				let e = Date.parse(String(l.myListingsFreshUntilUtc));
+				_.push({
+					key: F(r, i.playerId, c),
+					startedAt: s,
+					fetchedAt: v,
+					freshUntil: Number.isFinite(e) ? e : v + 6e4,
+					listings: oe(a.myListings, c).map((e) => ({
 						...e,
-						subjectId: s
+						subjectId: c
 					}))
 				});
 			}
-			if (o && c.myListingsStatus === "unavailable" && (h = Math.max(h, v)), a.status !== "fresh" && a.status !== "stale" && a.status !== "notFound") {
-				p.set(s, v);
+			if (o && l.myListingsStatus === "unavailable" && (h = Math.max(h, y)), a.status !== "fresh" && a.status !== "stale" && a.status !== "notFound") {
+				p.set(c, y);
 				continue;
 			}
-			let f = Date.parse(String(a.fetchedAtUtc)), y = Date.parse(String(a.freshUntilUtc));
-			if (!Number.isFinite(f) || !Number.isFinite(y) || y < f) throw Error("Invalid Services cache timestamps.");
-			a.status === "stale" && p.set(s, v);
-			let b = P(r, s), x = await t.get("cards", b);
-			if (x && (x.fetchedAt > f || x.fetchedAt === f && x.freshUntil >= y)) continue;
-			let S = a.status === "notFound" ? {
-				key: b,
+			let f = Date.parse(String(a.fetchedAtUtc)), b = Date.parse(String(a.freshUntilUtc));
+			if (!Number.isFinite(f) || !Number.isFinite(b) || b < f) throw Error("Invalid Services cache timestamps.");
+			a.status === "stale" && p.set(c, y);
+			let x = P(r, c), S = await t.get("cards", x);
+			if (S && (S.fetchedAt > f || S.fetchedAt === f && S.freshUntil >= b)) continue;
+			let C = a.status === "notFound" ? {
+				key: x,
 				fetchedAt: f,
-				freshUntil: y,
+				freshUntil: b,
 				missing: !0
 			} : {
-				key: b,
+				key: x,
 				fetchedAt: f,
-				freshUntil: a.status === "stale" ? Math.min(y, _) : y,
-				card: Ie(a.details, s)
+				freshUntil: a.status === "stale" ? Math.min(b, v) : b,
+				card: ae(a.details, c)
 			};
-			m.push(S), u.push(s), x || (d[s] = f);
+			g.push(C), d.push(c), S || (m[c] = f);
 		} catch {
-			Z(n?.id) && p.set(n.id, v);
+			N(n?.id) && p.set(n.id, y);
 		}
-		for (let e of l) p.set(e, v);
-		a.throwIfAborted(), await t.save(m, g, a), a.throwIfAborted(), u.length && te(u, d).catch(() => {});
+		for (let e of u) p.set(e, y);
+		a.throwIfAborted(), await t.save(g, _, a), a.throwIfAborted(), d.length && se(d, m).catch(() => {});
 	}
-	async function ie() {
+	async function le() {
 		s = !0;
 		try {
 			for (; o.size;) {
-				let e = [...o.values()][0].privateDemand, t = [...o].filter(([, t]) => t.privateDemand === e).slice(0, ze);
+				let e = [...o.values()][0].privateDemand, t = [...o].filter(([, t]) => t.privateDemand === e).slice(0, We);
 				_ && g.add(_);
 				for (let n of g) {
-					if (t.length === ze) break;
-					g.delete(n), o.has(n) || (p.get(n) ?? 0) > Date.now() || (ae(n, e), t.push([n, o.get(n)]));
+					if (t.length === We) break;
+					g.delete(n), o.has(n) || (p.get(n) ?? 0) > Date.now() || (V(n, e), t.push([n, o.get(n)]));
 				}
 				let a = r, s = i.signal, c = n;
 				try {
 					if (_ && t.some(([e]) => e === _) && await w(), s.throwIfAborted(), a && !a.blocked && a.expiresAt > Date.now() && f <= Date.now()) {
-						let n = await B(t.map(([e]) => e), c);
-						s.throwIfAborted(), n.length && await re(n, c, a, s, e);
+						let n = await H(t.map(([e]) => e), c);
+						s.throwIfAborted(), n.length && await z(n, c, a, s, e);
 					}
 				} catch {
 					s.aborted || (f = Date.now() + 15e3);
@@ -1998,10 +2053,10 @@ function Ve() {
 			s = !1;
 		}
 	}
-	function z(e, t) {
-		if (!(!r || r.blocked || r.expiresAt <= Date.now() || f > Date.now() || (p.get(e) ?? 0) > Date.now())) return g.delete(e), ae(e, t);
+	function B(e, t) {
+		if (!(!r || r.blocked || r.expiresAt <= Date.now() || f > Date.now() || (p.get(e) ?? 0) > Date.now())) return g.delete(e), V(e, t);
 	}
-	function ae(e, t) {
+	function V(e, t) {
 		let n = o.get(e);
 		if (n) return n.privateDemand ||= t, n.promise;
 		let r, i = new Promise((e) => {
@@ -2012,24 +2067,24 @@ function Ve() {
 			resolve: r,
 			privateDemand: t
 		}), !s && d === void 0 && (d = setTimeout(() => {
-			d = void 0, ie().catch(() => {});
+			d = void 0, le().catch(() => {});
 		}, 35)), i;
 	}
-	async function B(e, n) {
+	async function H(e, n) {
 		let { freshness: r } = await x, i = await t.getCards(e.map((e) => P(n, e))), a = Date.now();
 		return e.filter((e, t) => {
 			let n = i[t];
 			return !n || Math.min(n.freshUntil, n.fetchedAt + r) <= a;
 		});
 	}
-	async function oe(e, s, c, l = !1, u = !1) {
+	async function ue(e, s, c, l = !1, u = !1) {
 		if (r && r.expiresAt <= Date.now() && await b(async () => {
 			r && r.expiresAt <= Date.now() && await T(n);
 		}), !n) return {};
 		let d = i.signal;
 		if (c) {
 			if (!r || r.blocked) return {};
-			let t = await B([...new Set(e)], n);
+			let t = await H([...new Set(e)], n);
 			d.throwIfAborted();
 			for (let e of t) o.has(e) || (g.add(e), g.size > 500 && g.delete(g.values().next().value));
 			return !_ && g.size && await w(g.values().next().value), {};
@@ -2046,10 +2101,10 @@ function Ve() {
 			d.throwIfAborted();
 			let n = u && s !== void 0 && r?.handle?.toLowerCase() === s && !r.blocked && (!r.scopes || r.scopes.includes("listings")) && t.listings === void 0;
 			if (t.stale && !l) {
-				let r = z(e, n && h <= Date.now());
+				let r = B(e, n && h <= Date.now());
 				(n || !t.card) && (await r, d.throwIfAborted(), t = await I(e, s));
 			}
-			n && !t.missing && t.listings === void 0 && (await ne(s), d.throwIfAborted(), t = await I(e, s)), v[e] = t;
+			n && !t.missing && t.listings === void 0 && (await ce(s), d.throwIfAborted(), t = await I(e, s)), v[e] = t;
 		})), d.throwIfAborted(), v;
 	}
 	return chrome.runtime.onMessage.addListener((e, t, a) => {
@@ -2086,16 +2141,16 @@ function Ve() {
 				});
 				case "servicesSave": {
 					if (typeof e.base != "string") throw Error("Invalid Services URL.");
-					let t = e.base ? Ne(e.base) : "";
+					let t = e.base ? re(e.base) : "";
 					return t !== n && c?.abort(), b(async () => (t !== n && await T(t), C()));
 				}
 				case "servicesFinishLink":
 					if (typeof e.query != "string" || e.query.length > 1024) throw Error("Invalid account-linking callback.");
-					return M(e.query);
+					return j(e.query);
 				case "servicesConnect":
 				case "servicesCopyLink":
 					if (typeof e.base != "string") throw Error("Invalid Services URL.");
-					return ee(e.base, typeof e.inviteCode == "string" ? e.inviteCode : void 0, e.op === "servicesCopyLink");
+					return A(e.base, typeof e.inviteCode == "string" ? e.inviteCode : void 0, e.op === "servicesCopyLink");
 				case "servicesEraseHistory":
 					if (typeof e.playerId != "string" || typeof e.base != "string") throw Error("Confirm the linked account.");
 					return await S.erase(e.playerId, e.base), C();
@@ -2108,8 +2163,8 @@ function Ve() {
 					return C();
 				});
 				default:
-					if (!Array.isArray(e.ids) || e.ids.length > 500 || !e.ids.every(Z)) throw Error("Invalid card request.");
-					return oe(e.ids, typeof e.account == "string" && /^[a-z0-9_]{1,24}$/.test(e.account) ? e.account : void 0, e.op === "servicesObserve", e.op === "servicesPeek", e.op === "servicesRead" && e.includeMyListings === !0);
+					if (!Array.isArray(e.ids) || e.ids.length > 500 || !e.ids.every(N)) throw Error("Invalid card request.");
+					return ue(e.ids, typeof e.account == "string" && /^[a-z0-9_]{1,24}$/.test(e.account) ? e.account : void 0, e.op === "servicesObserve", e.op === "servicesPeek", e.op === "servicesRead" && e.includeMyListings === !0);
 			}
 		}).then((t) => a({
 			requestId: e.requestId,
@@ -2123,27 +2178,33 @@ function Ve() {
 	}), S;
 }
 // src/background.ts
-Ee(Ve());
-var He = Promise.resolve();
+Pe(Ke());
+var qe = Promise.resolve();
 chrome.tabs.onRemoved.addListener((e) => {
-	chrome.storage.session.remove([`${k}${e}`, `${A}${e}`]);
+	chrome.storage.session.remove([`${O}${e}`, `${te}${e}`]);
 }), chrome.action.onClicked.addListener(() => {
 	chrome.runtime.openOptionsPage();
 }), chrome.runtime.onMessage.addListener((e, t, n) => {
-	if (t.id !== chrome.runtime.id || !P(e)) return !1;
+	if (t.id !== chrome.runtime.id || !ce(e)) return !1;
 	let r = t.url?.split(/[?#]/, 1)[0] === chrome.runtime.getURL("options.html"), i = !!t.tab && t.url?.startsWith("https://kosmora.io/");
 	if ((e.op === "popupState" || e.op === "popupLayout" || e.op === "friendPopupState" || e.op === "friendPopupLayout") && i && t.tab?.id !== void 0 && t.frameId === 0) {
-		let r = e.op === "friendPopupState" || e.op === "friendPopupLayout", i = `${r ? A : k}${t.tab.id}`, a = He.then(async () => {
-			let t = ee((await chrome.storage.session.get(i))[i]);
-			if (e.op === "popupState" || e.op === "friendPopupState") return t;
-			let n = e.change;
-			if (n.tab !== void 0 && (t.tab = n.tab), n.pinned !== void 0 && (t.pinned = n.pinned), n.position && (t.position = j(n.position)), await chrome.storage.session.set({ [i]: t }), n.position || n.width !== void 0 || n.height !== void 0) {
-				let e = await ye();
-				n.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = j(n.position)), n.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(n.width)), n.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(n.height)), await be(e);
+		let r = e.op === "friendPopupState" || e.op === "friendPopupLayout", i = `${r ? te : O}${t.tab.id}`, a = qe.then(async () => {
+			let t = j((await chrome.storage.session.get(i))[i]), n = r ? t : {
+				...j((await chrome.storage.local.get(k))[k]),
+				tab: t.tab
+			};
+			if (e.op === "popupState" || e.op === "friendPopupState") return n;
+			let a = e.change;
+			if (a.tab !== void 0 && (n.tab = a.tab), a.pinned !== void 0 && (n.pinned = a.pinned), a.position && (n.position = A(a.position)), (r || a.tab !== void 0) && await chrome.storage.session.set({ [i]: r ? n : { tab: n.tab } }), !r && (a.pinned !== void 0 || a.position) && await chrome.storage.local.set({ [k]: {
+				pinned: n.pinned,
+				position: n.position
+			} }), a.position || a.width !== void 0 || a.height !== void 0) {
+				let e = await Ee();
+				a.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = A(a.position)), a.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(a.width)), a.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(a.height)), await De(e);
 			}
-			return t;
+			return n;
 		});
-		return He = a.then(() => {}, () => {}), a.then((t) => n({
+		return qe = a.then(() => {}, () => {}), a.then((t) => n({
 			requestId: e.requestId,
 			ok: !0,
 			data: t

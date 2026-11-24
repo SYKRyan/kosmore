@@ -73,7 +73,12 @@ let saved: Settings = defaults(),
   settingsReady = false;
 const header = el("header", "header"),
   head = el("div");
-head.append(el("p", "brand", "✦ KosMore"), el("h1", "", "More Kosmora"));
+const title = el("h1", "settings-title", "More Kosmora");
+const logo = el("img", "settings-logo");
+logo.src = "icons/128.png";
+logo.alt = "";
+title.prepend(logo);
+head.append(el("p", "brand", "KosMore"), title);
 header.append(head, el("span", "badge", "LOCAL BROWSER SETTINGS"));
 app.append(header);
 const general = el("section", "panel");

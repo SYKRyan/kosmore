@@ -57,6 +57,8 @@ export interface CardView {
   fetchedAt?: number;
   missing?: boolean;
   listings?: ServicesListing[];
+  listingsAsOf?: number;
+  listingsUntil?: number;
   accessBlocked?: boolean;
   stale: boolean;
   until: number;

@@ -106,9 +106,10 @@ it("invalidates personal prices only after successful single or batch listings, 
     {
       type: RELAY_LISTED,
       path: "/api/auctions",
+      confirmedAt: expect.any(Number),
       listings: [expect.objectContaining({ auctionId: auction(1).id })],
     },
-    { type: RELAY_LISTED, path: "/api/market/listings/batch", listings: [] },
+    { type: RELAY_LISTED, path: "/api/market/listings/batch", confirmedAt: expect.any(Number), listings: [] },
   ]);
   expect(original).toHaveBeenCalledTimes(5);
   const failed = fakeWindow(

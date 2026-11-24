@@ -240,6 +240,17 @@ h2 {
     0 18px 45px #03011440;
   margin-bottom: 32px;
 }
+.settings-title {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+}
+.settings-logo {
+  width: 1.1em;
+  height: 1.1em;
+  flex: none;
+  border-radius: 0.16em;
+}
 .header > div {
   flex: 1 1 400px;
   min-width: 0;

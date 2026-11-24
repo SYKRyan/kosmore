@@ -13,6 +13,7 @@ export interface CachedListings {
   fetchedAt: number;
   listings: (ServicesListing & { subjectId?: string })[];
   freshUntil?: number;
+  startedAt?: number;
 }
 
 type Stores = { cards: CachedCard; listings: CachedListings };

@@ -62,6 +62,7 @@ export function installPageRelay(win: Window = window) {
   )[] = [];
   let revision = 0;
   const subjects = new Map<string, string>();
+  const auctionSubjects = new Map<string, string>();
   const rememberSubjects = (value: unknown) => {
     for (const [id, subject] of saleSubjects(value)) subjects.set(id, subject);
     while (subjects.size > 1000) subjects.delete(subjects.keys().next().value!);
@@ -173,21 +174,58 @@ export function installPageRelay(win: Window = window) {
               (ready && !preferences?.servicesCards && !trackCopies)
             )
               return;
-            const data = trackCopies
-              ? await decodeSource(res)
-              : await res.clone().json();
+            const ownListings =
+              AUCTION_DETAILS_PATH.test(url.pathname) ||
+              url.pathname === "/api/me/auctions";
+            const data =
+              trackCopies || ownListings
+                ? await decodeSource(res)
+                : await res.clone().json();
+            if (ownListings) {
+              const rows = Array.isArray(data?.items)
+                ? data.items
+                : [data?.auction];
+              for (const row of rows)
+                if (
+                  row?.yours === true &&
+                  typeof row.id === "string" &&
+                  validCardId(row.card?.subjectId)
+                )
+                  auctionSubjects.set(row.id.toLowerCase(), row.card.subjectId);
+              if (Array.isArray(data?.relistAll?.items))
+                rememberSubjects({
+                  items: data.relistAll.items.map(
+                    (item: { auctionId?: string; instanceId?: string }) => ({
+                      instanceId: item?.instanceId,
+                      subjectId:
+                        typeof item?.auctionId === "string"
+                          ? auctionSubjects.get(item.auctionId.toLowerCase())
+                          : undefined,
+                    }),
+                  ),
+                });
+            }
             if (
               trackCopies &&
               preferences?.listingPrices !== false &&
               String(data?.subjectId) === copySubject &&
               Array.isArray(data.copies)
-            )
+            ) {
+              for (const copy of data.copies)
+                if (typeof copy?.auction_id === "string")
+                  auctionSubjects.set(
+                    copy.auction_id.toLowerCase(),
+                    copySubject,
+                  );
               rememberSubjects({
                 items: data.copies.map((copy: { id?: unknown }) => ({
                   instanceId: copy?.id,
                   subjectId: copySubject,
                 })),
               });
+            }
+            while (auctionSubjects.size > 1000)
+              auctionSubjects.delete(auctionSubjects.keys().next().value!);
             if (ready && !preferences?.servicesCards) return;
             const ids = observedCardIds(url.pathname, data);
             const needsNativeData =
@@ -209,6 +247,7 @@ export function installPageRelay(win: Window = window) {
                   type: RELAY_CARDS,
                   path: url.pathname + url.search,
                   ids,
+                  startedAt: submittedAt,
                   ...(needsNativeData && { data }),
                 });
             };
@@ -363,6 +402,31 @@ export function installPageRelay(win: Window = window) {
           })
           .catch(() => {});
       }
+      const canceled =
+        method === "DELETE" && AUCTION_DETAILS_PATH.exec(url.pathname);
+      if (
+        canceled &&
+        url.origin === win.location.origin &&
+        preferences?.listingChanges !== false
+      ) {
+        const auctionId = canceled[1].toLowerCase();
+        void response
+          .then(async (res) => {
+            if (!res.ok) return;
+            const confirmedAt = Date.now();
+            await Promise.allSettled(decodingSubjects);
+            relay({
+              type: RELAY_LISTED,
+              path: url.pathname,
+              canceled: {
+                auctionId,
+                submittedAt: confirmedAt,
+                subjectId: auctionSubjects.get(auctionId),
+              },
+            });
+          })
+          .catch(() => {});
+      }
       if (
         method === "POST" &&
         url.origin === win.location.origin &&
@@ -381,6 +445,7 @@ export function installPageRelay(win: Window = window) {
         void response
           .then(async (res) => {
             if (!res.ok) return;
+            const confirmedAt = Date.now();
             const result = await res.clone().json();
             // A native sale may follow a collection read before its cloned body finishes decoding.
             if (trackPrices) await Promise.allSettled(decodingSubjects);
@@ -391,11 +456,22 @@ export function installPageRelay(win: Window = window) {
               submittedAt,
               subjects,
             );
+            if (url.pathname.endsWith("/relist")) {
+              const subject = auctionSubjects.get(
+                url.pathname.split("/")[3].toLowerCase(),
+              );
+              for (const row of listings) row.subjectId ??= subject;
+            }
             if (
               listings.length ||
               (url.pathname.endsWith("/batch") && result?.listed > 0)
             )
-              relay({ type: RELAY_LISTED, path: url.pathname, listings });
+              relay({
+                type: RELAY_LISTED,
+                path: url.pathname,
+                listings,
+                confirmedAt,
+              });
           })
           .catch(() => {});
       }

@@ -247,6 +247,44 @@ it("keeps card-heavy consumers off signed-in game card routes when Services is u
   expect(game).toHaveBeenCalledTimes(1);
 });
 
+it("keeps a confirmed listing over an older private read and accepts a later Services correction", async () => {
+  const id = "42",
+    now = Date.now();
+  let listingsAsOf = now - 1;
+  const fixture = parseServicesCard(serviceRow(id).details, id);
+  vi.stubGlobal("chrome", {
+    runtime: {
+      sendMessage: async ({ requestId }: { requestId: string }) => ({
+        requestId,
+        ok: true,
+        data: {
+          [id]: {
+            card: fixture,
+            listings: [],
+            listingsAsOf,
+            until: now + 60_000,
+            stale: false,
+          },
+        },
+      }),
+    },
+  });
+  const client = new GameClient(async () => Response.json(me));
+  await client.account();
+  client.setSaleCache({
+    changes: {
+      "10000000-0000-4000-8000-000000000001": { subjectId: id, listed: now },
+    },
+    copies: {},
+  });
+  expect((await client.insights(id, undefined, false, true)).onSale).toBe(true);
+  listingsAsOf = now + 1;
+  expect((await client.insights(id, undefined, false, true)).onSale).toBe(
+    false,
+  );
+  expect(client.saleStatus(id)).toBe(false);
+});
+
 it("reuses a fresh card across sequential overlay reads until expiry or a newer notification", async () => {
   let now = Date.now();
   vi.spyOn(Date, "now").mockImplementation(() => now);

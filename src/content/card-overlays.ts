@@ -211,6 +211,23 @@ export class CardOverlays {
     }
     this.pump();
   }
+  refreshSaleStatus(ids: ReadonlySet<string>) {
+    if (!this.enabled() || !this.settings?.showOnSaleOverlay) return;
+    for (const entry of this.entries.values())
+      if (ids.has(entry.context.subjectId)) this.renderSaleStatus(entry);
+  }
+  private renderSaleStatus(entry: Entry) {
+    const onSale = this.client.saleStatus?.(entry.context.subjectId);
+    if (onSale === undefined || (!entry.signals && !onSale)) return;
+    this.render(entry, {
+      activeAuctions: false,
+      saleHistory: false,
+      interestedFriends: 0,
+      quest: false,
+      ...entry.signals,
+      onSale,
+    });
+  }
   signals(
     context: CardContext,
     settings: Settings,
@@ -306,6 +323,7 @@ export class CardOverlays {
         done: false,
       };
       this.entries.set(root, entry);
+      if (this.settings?.showOnSaleOverlay) this.renderSaleStatus(entry);
       this.intersection.observe(root);
       if (this.isSummaryEntry(entry)) this.queue.add(entry);
     }
@@ -538,6 +556,11 @@ export class CardOverlays {
     this.pump();
   }
   private render(entry: Entry, signals: CardSignals, force = false) {
+    if (this.settings?.showOnSaleOverlay) {
+      const onSale = this.client.saleStatus?.(entry.context.subjectId);
+      if (onSale !== undefined && signals.onSale !== onSale)
+        signals = { ...signals, onSale };
+    }
     const sameSignals =
       entry.signals && sameOverlaySignals(entry.signals, signals);
     entry.signals = signals;

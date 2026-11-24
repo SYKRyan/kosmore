@@ -3,7 +3,15 @@ import {
   FRIENDS_TTL,
   type NativeReadCache,
 } from "../shared/native-read-cache";
-import { type CardView } from "../shared/services";
+import { validCardId, type CardView } from "../shared/services";
+import {
+  localSaleStatus,
+  nativeSaleBaseline,
+  type SaleBaseline,
+  type SaleChange,
+  type SaleChanges,
+  type SaleStatusCache,
+} from "../shared/sale-status";
 import { request } from "../shared/messages";
 import { validRecordedListing, type RecordedListing } from "./listing-capture";
 import { ReadCache } from "../shared/cache";
@@ -75,6 +83,44 @@ export class GameClient implements KosmoraClient {
   private observedAuctions = new Map<string, PersonalListing>();
   private observedOwners = new Map<string, string>();
   private observedCards = new Map<string, CardInsights>();
+  private saleChanges = new Map<string, SaleChanges>();
+  private saleBaselines = new Map<string, SaleBaseline>();
+
+  setSaleCache(cache?: SaleStatusCache) {
+    this.saleChanges.clear();
+    for (const [id, change] of Object.entries(cache?.changes ?? {})) {
+      if (!change.subjectId) continue;
+      const rows = this.saleChanges.get(change.subjectId) ?? {};
+      rows[id] = change;
+      this.saleChanges.set(change.subjectId, rows);
+    }
+    for (const [id, copies] of Object.entries(cache?.copies ?? {}))
+      this.observeSaleBaseline(id, nativeSaleBaseline(copies));
+    for (const id of this.saleChanges.keys())
+      this.shareListedCopies(id, cache?.copies[id]?.at);
+  }
+  private shareListedCopies(id: string, savedAt = 0) {
+    const baseline = this.saleBaselines.get(id);
+    if (!this.lastAccount || !baseline?.auctionIds || baseline.at <= savedAt) return;
+    void this.listingRequest("listingCopiesObserved", this.lastAccount.key, id, undefined, {
+      copies: { at: baseline.at, auctionIds: [...baseline.auctionIds] },
+    }).catch(() => {});
+  }
+  saleStatus(id: string) {
+    if (!this.lastAccount) return;
+    const baseline = this.saleBaselines.get(id);
+    const changes = this.saleChanges.get(id);
+    return (
+      (changes && localSaleStatus(changes, id, baseline)) ??
+      (baseline && (baseline.until ?? Infinity) > Date.now()
+        ? baseline.count > 0
+        : undefined)
+    );
+  }
+  private observeSaleBaseline(id: string, baseline: SaleBaseline) {
+    if (baseline.at >= (this.saleBaselines.get(id)?.at ?? 0))
+      this.remember(this.saleBaselines, id, baseline);
+  }
   private observedHistory = new Map<string, MarketHistory>();
   private observedInterest = new Map<string, InterestEntry[]>();
   private albumReads = new ReadCache(100, 10_000);
@@ -182,6 +228,7 @@ export class GameClient implements KosmoraClient {
     this.nativeOpenings.clear();
     this.clearServiceViews();
     this.observedCards.clear();
+    this.saleChanges.clear();
     this.observedOwners.clear();
     this.observedAuctions.clear();
     this.observedInterest.clear();
@@ -346,6 +393,7 @@ export class GameClient implements KosmoraClient {
   clearServiceViews() {
     this.cardViews.clear();
     this.pendingViews.clear();
+    this.saleBaselines.clear();
   }
   serviceCardChanged(id: string, fetchedAt?: number) {
     const view = this.cardViews.get(id);
@@ -369,10 +417,20 @@ export class GameClient implements KosmoraClient {
         () => {},
       );
   }
-  async observeCardDetails(raw: unknown) {
+  async observeCardDetails(raw: unknown, startedAt = Date.now()) {
     try {
       const card = parseInsights(raw);
       const owner = this.lastAccount?.key ?? this.identityHint;
+      if (owner) {
+        const copies = {
+          at: startedAt,
+          auctionIds: card.copies.flatMap((copy) =>
+            copy.auctionId ? [copy.auctionId.toLowerCase()] : [],
+          ),
+        };
+        this.observeSaleBaseline(card.subjectId, nativeSaleBaseline(copies));
+        if (this.saleChanges.has(card.subjectId)) this.shareListedCopies(card.subjectId);
+      }
       this.remember(this.observedCards, card.subjectId, card);
       if (owner) this.remember(this.observedOwners, card.subjectId, owner);
       else this.observedOwners.delete(card.subjectId);
@@ -488,6 +546,15 @@ export class GameClient implements KosmoraClient {
     includeMyListings = false,
   ): Promise<CardInsights> {
     const view = await this.serviceView(id, signal, includeMyListings);
+    if (includeMyListings && view.listings && this.lastAccount)
+      this.observeSaleBaseline(id, {
+        at: view.listingsAsOf ?? 0,
+        count: view.listings.length,
+        until: Math.min(
+          view.listingsUntil ?? Infinity,
+          ...view.listings.map((row) => Date.parse(row.endsAt)),
+        ),
+      });
     const native = this.observedCards.get(id);
     const copiesKnown =
       !!native &&
@@ -519,8 +586,9 @@ export class GameClient implements KosmoraClient {
       readershipSource: native?.readershipSource,
       copies: copiesKnown ? native.copies : [],
       copiesKnown,
-      onSale:
-        view.listings === undefined ? undefined : view.listings.length > 0,
+      onSale: includeMyListings
+        ? (this.saleStatus(id) ?? (view.listings && view.listings.length > 0))
+        : undefined,
     };
   }
   async activeAuctions(
@@ -640,12 +708,24 @@ export class GameClient implements KosmoraClient {
         { rows: batch.listings.slice(0, 500) },
       );
   }
-  async captureListings(confirmations: unknown) {
+  async captureListings(
+    confirmations: unknown,
+    {
+      canceled = false,
+      savePrices = true,
+      confirmedAt,
+    }: {
+      canceled?: boolean;
+      savePrices?: boolean;
+      confirmedAt?: number;
+    } = {},
+  ) {
     const previous = this.lastAccount;
     const account = await this.account();
     if (previous && previous.key !== account.key) return;
     const seen = new Set<string>();
     const records: RecordedListing[] = [];
+    const changes: SaleChange[] = [];
     const receipts: { auctionId: string; submittedAt: number }[] = [];
     for (const raw of Array.isArray(confirmations)
       ? confirmations.slice(0, 500)
@@ -656,12 +736,27 @@ export class GameClient implements KosmoraClient {
         if (
           seen.has(id) ||
           typeof row.submittedAt !== "number" ||
+          !Number.isSafeInteger(row.submittedAt) ||
           row.submittedAt > Date.now() ||
           row.submittedAt < Date.now() - 300_000
         )
           continue;
         seen.add(id);
         const observed = this.observedAuctions.get(id);
+        const subject = observed?.subjectId ?? row.subjectId;
+        changes.push({
+          auctionId: id,
+          subjectId: validCardId(subject) ? subject : undefined,
+          at:
+            typeof confirmedAt === "number" &&
+            Number.isSafeInteger(confirmedAt) &&
+            confirmedAt >= row.submittedAt &&
+            confirmedAt <= Date.now()
+              ? confirmedAt
+              : row.submittedAt,
+          kind: canceled ? "canceled" : "listed",
+        });
+        if (canceled || !savePrices) continue;
         const record = {
           id,
           subjectId: observed?.subjectId ?? row.subjectId,
@@ -673,9 +768,10 @@ export class GameClient implements KosmoraClient {
         else receipts.push({ auctionId: id, submittedAt: row.submittedAt });
       } catch {}
     }
-    if (records.length || receipts.length)
+    if (changes.length)
       await this.listingRequest("listingRecord", account.key, "0", undefined, {
         records,
+        changes,
         ...(receipts.length && { receipts }),
       });
   }

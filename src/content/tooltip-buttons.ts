@@ -20,6 +20,7 @@ interface Entry {
   host: HTMLElement;
   mount: HTMLElement;
   button: HTMLButtonElement;
+  summaryResize?: ResizeObserver;
 }
 interface Mount {
   count: number;
@@ -128,7 +129,7 @@ export class TooltipButtons {
       return;
     }
     for (const [root, entry] of this.entries) {
-      if (changes && !affected(root, changes)) continue;
+      if (changes && !affected(entry.summaryResize ? entry.mount : root, changes)) continue;
       const context = root.isConnected ? this.contextOf(root) : null;
       if (
         !context ||
@@ -140,6 +141,7 @@ export class TooltipButtons {
       } else {
         entry.context = context;
         if (!entry.host.isConnected) entry.mount.append(entry.host);
+        if (entry.summaryResize) this.positionSummaryButton(entry);
       }
     }
     for (const scope of !changes || changes.full ? [document] : changes.roots)
@@ -208,6 +210,12 @@ export class TooltipButtons {
         });
         this.entries.set(root, entry);
         mount.append(host);
+        if (context.surface === "summary" && mount !== root) {
+          this.positionSummaryButton(entry);
+          entry.summaryResize = new ResizeObserver(() => this.positionSummaryButton(entry));
+          entry.summaryResize.observe(root, { box: "border-box" });
+          entry.summaryResize.observe(mount, { box: "border-box" });
+        }
       }
     const dialog = topDialog();
     for (const entry of this.entries.values()) {
@@ -220,6 +228,21 @@ export class TooltipButtons {
     return (
       root.closest<HTMLElement>(".pick, .ko-summary .ko-grid > li") ?? root
     );
+  }
+  private positionSummaryButton({ root, mount, host }: Entry) {
+    // Keep the button above the native tile hit target, but measure from the
+    // card face. Captions and grid row stretching can extend the tile below it.
+    let left = root.offsetLeft;
+    let top = root.offsetTop;
+    for (let parent = root.offsetParent; parent !== mount; parent = parent.offsetParent) {
+      if (!(parent instanceof HTMLElement)) return;
+      left += parent.offsetLeft + parent.clientLeft;
+      top += parent.offsetTop + parent.clientTop;
+    }
+    const bottom = mount.clientHeight - top - root.offsetHeight;
+    const inset = host.hasAttribute("data-inset");
+    host.style.left = (inset ? Math.max(0, left - 14) : left - 14) + "px";
+    host.style.bottom = (inset ? Math.max(0, bottom - 14) : bottom - 14) + "px";
   }
   private retainMount(mount: HTMLElement) {
     let state = this.mounts.get(mount);
@@ -242,6 +265,7 @@ export class TooltipButtons {
     }
   }
   private remove(entry: Entry) {
+    entry.summaryResize?.disconnect();
     entry.host.remove();
     const state = this.mounts.get(entry.mount)!;
     if (--state.count) return;

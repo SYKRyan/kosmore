@@ -20,6 +20,7 @@ export interface PopupLayoutChange {
   height?: number;
 }
 export const POPUP_SESSION_PREFIX = "kosmore.popup.";
+export const POPUP_PIN_KEY = "kosmore.popupPin";
 export const FRIEND_POPUP_SESSION_PREFIX = "kosmore.friendPopup.";
 export function parsePopupPosition(value: unknown): PopupPosition | null {
   if (!value || typeof value !== "object") return null;

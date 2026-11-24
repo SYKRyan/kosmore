@@ -288,8 +288,7 @@ export class CardSignalProvider {
               const card = await this.client.insights(id, signal, false, true);
               publish({
                 onSale:
-                  card.onSale === true ||
-                  card.copies.some((copy) => !!copy.auctionId),
+                  card.onSale ?? card.copies.some((copy) => !!copy.auctionId),
               });
             });
           if (settings.showQuestOverlay)

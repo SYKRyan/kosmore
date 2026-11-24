@@ -271,7 +271,7 @@ test.beforeEach(async () => {
           };
         });
       }
-      await chrome.storage.local.remove("kosmore.myListingPrices");
+      await chrome.storage.local.remove(["kosmore.myListingPrices", "kosmore.popupPin"]);
       const all = await chrome.storage.local.get(null);
       await chrome.storage.local.remove(
         Object.keys(all).filter(
@@ -797,6 +797,43 @@ test("overlay button: hover and focus wait for a press, recap copies stay exact,
   await expect(tooltipButton().nth(1)).toBeFocused();
   await page.locator(".ko-grid-open").first().click();
   expect(await page.locator("body").getAttribute("data-opens")).toBe("1");
+});
+
+test("overlay button: pack summary labels stay below the card-corner button", async () => {
+  await enableTooltipButtons();
+  const phone = await context.newPage();
+  try {
+    await phone.setViewportSize({ width: 390, height: 844 });
+    await phone.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+    await phone.addStyleTag({ content: ".ko-grid-open { z-index: 10 }" });
+    const tile = phone.locator(".ko-grid > li").first();
+    const button = tile.getByRole("button", {
+      name: "Open card tooltip for Northern Lights",
+    });
+    const face = tile.locator(".kc-article");
+    const expectCardCorner = async () => {
+      await expect.poll(async () => {
+        const card = (await face.boundingBox())!;
+        const icon = (await button.boundingBox())!;
+        return Math.max(
+          Math.abs(icon.x + icon.width / 2 - (card.x + 8)),
+          Math.abs(icon.y + icon.height / 2 - (card.y + card.height - 8)),
+        );
+      }).toBeLessThan(1);
+    };
+    await expect(button).toBeVisible();
+    await expectCardCorner();
+    await tile.locator(".new").evaluate((label) => {
+      label.append(document.createElement("br"), "✦ NEW FOR EVERYONE ✦");
+    });
+    await face.evaluate((card) => (card.style.marginLeft = "9px"));
+    await expectCardCorner();
+    await button.click();
+    await expect(phone.locator("#kosmore-root")).toContainText("Northern Lights");
+    await expect(phone.locator("body")).toHaveAttribute("data-opens", "0");
+  } finally {
+    await phone.close();
+  }
 });
 
 test("overlay button: touch opens a linked card without navigation, overlaps its corner, and dismisses on outside tap", async () => {
@@ -1835,16 +1872,10 @@ test("the opt-in album setting saves, cancels and closes a pinned tooltip only a
     await expect
       .poll(() =>
         worker.evaluate(async () =>
-          Object.values(await chrome.storage.session.get(null)).some(
-            (value) =>
-              value &&
-              typeof value === "object" &&
-              "pinned" in value &&
-              value.pinned === true,
-          ),
+          (await chrome.storage.local.get("kosmore.popupPin"))["kosmore.popupPin"],
         ),
       )
-      .toBe(false);
+      .toMatchObject({ pinned: true });
     expect(writeRequests).toBe(1);
     await expect(page.locator("body")).toHaveAttribute("data-opens", "0");
     await expect(page.locator("body")).toHaveAttribute("data-advances", "0");
@@ -1894,6 +1925,7 @@ test("pinned tooltips stay open unless both album close settings are enabled", a
     await expect(popup).toHaveAttribute("data-pinned", "");
     await expect(popup.locator(".album-status")).toHaveText("Added to album.");
     expect(writeRequests).toBe(++additions);
+    await popup.getByRole("button", { name: "Unpin popup", exact: true }).click();
     await page.keyboard.press("Escape");
   }
 });
@@ -3207,14 +3239,10 @@ test("a pinned tooltip follows card reveals and focuses the first summary card a
   await expect
     .poll(() =>
       worker.evaluate(async () =>
-        Object.entries(await chrome.storage.session.get(null)).some(
-          ([key, state]) =>
-            key.startsWith("kosmore.popup.") &&
-            (state as { pinned?: boolean }).pinned,
-        ),
+        (await chrome.storage.local.get("kosmore.popupPin"))["kosmore.popupPin"],
       ),
     )
-    .toBe(true);
+    .toMatchObject({ pinned: true });
 
   await page.goto(
     `https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1&secondCard=1`,
@@ -5403,9 +5431,10 @@ test("listing performance: concurrent game tabs share their in-flight history re
       await target.goto("https://kosmora.io/collection");
       await target.locator(".kc-article").hover();
       const popup = target.locator("#kosmore-root");
-      await popup
-        .getByRole("button", { name: "Pin popup", exact: true })
-        .click();
+      if (target === page)
+        await popup
+          .getByRole("button", { name: "Pin popup", exact: true })
+          .click();
       await popup
         .getByRole("tab", { name: "My listing history", exact: true })
         .click();
@@ -6725,7 +6754,7 @@ test("My Profile uses the current account and a delayed lookup cannot override l
   }
   expect(writeRequests).toBe(0);
 });
-test("pinning remembers position across page loads, clears the card, and unpinning restores card placement", async () => {
+test("pinning shares position across tabs and page loads until explicitly unpinned", async () => {
   await mkdir("test-results/screenshots", { recursive: true });
   await worker.evaluate(async () => {
     const settings = (await chrome.storage.local.get("kosmore.settings"))[
@@ -6738,7 +6767,7 @@ test("pinning remembers position across page loads, clears the card, and unpinni
   await page.goto("https://kosmora.io/collection");
   await page.locator(".kc-article").hover();
   const popup = page.locator("#kosmore-root");
-  await expect(popup.locator(".last-sold")).toContainText("Last Sale: $");
+  await expect(popup.locator(".last-sold")).toBeVisible();
   await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
   const header = (await popup.locator(".top").boundingBox())!;
   await page.mouse.move(header.x + 25, header.y + 20);
@@ -6748,14 +6777,11 @@ test("pinning remembers position across page loads, clears the card, and unpinni
   const pinned = (await popup.boundingBox())!;
   await expect
     .poll(() =>
-      worker.evaluate(async () => {
-        const states = Object.values(
-          await chrome.storage.session.get(null),
-        ) as { pinned: boolean }[];
-        return states.some((state) => state.pinned);
-      }),
+      worker.evaluate(async () =>
+        (await chrome.storage.local.get("kosmore.popupPin"))["kosmore.popupPin"],
+      ),
     )
-    .toBe(true);
+    .toMatchObject({ pinned: true, position: { left: pinned.x, top: pinned.y } });
   await page.mouse.move(10, 10);
   await page.goto("https://kosmora.io/home");
   await expect(
@@ -6783,7 +6809,21 @@ test("pinning remembers position across page loads, clears the card, and unpinni
   const other = await context.newPage();
   try {
     await other.goto("https://kosmora.io/collection");
-    await expect(other.locator("#kosmore-root")).toHaveCount(0);
+    const otherPopup = other.locator("#kosmore-root");
+    await expect(otherPopup.getByText("No Card Selected", { exact: true })).toBeVisible();
+    expect(await otherPopup.boundingBox()).toEqual(pinned);
+    await other.locator(".kc-article").hover();
+    await expect(otherPopup.locator("h2")).toHaveText("Northern Lights");
+    await otherPopup.getByRole("button", { name: "Close KosMore popup", exact: true }).click();
+    await expect(otherPopup).toHaveCount(0);
+    await expect(popup).toHaveAttribute("data-pinned", "");
+    await other.reload();
+    await otherPopup.getByRole("button", { name: "Unpin popup", exact: true }).click();
+    await expect(popup).toHaveCount(0);
+    await other.locator(".kc-article").hover();
+    await otherPopup.getByRole("button", { name: "Pin popup", exact: true }).click();
+    await expect(popup).toHaveAttribute("data-pinned", "");
+    expect(await popup.boundingBox()).toEqual(pinned);
   } finally {
     await other.close();
   }

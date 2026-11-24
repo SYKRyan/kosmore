@@ -21,6 +21,13 @@ import {
   type TrackedListingHistory,
 } from "../kosmora/my-listings";
 
+import {
+  saleStatusKey,
+  updateSaleChanges,
+  type ListedCopies,
+  type SaleChange,
+  type SaleStatusCache,
+} from "./sale-status";
 export const LISTING_PRICE_KEY = "kosmore.myListingPrices";
 export const LISTING_SESSION_PREFIX = "kosmore.listingHistory.";
 export type HistoryMode = "more" | "refresh";
@@ -114,6 +121,42 @@ export class ListingCacheService {
   }
   private key(account: string, subject: string) {
     return `kosmore.listingRecord.${account}.${subject}`;
+  }
+  updateSaleStatus(
+    account: string,
+    changes: SaleChange[],
+    identities: PersonalListing[] = [],
+    observed?: ListedCopies & { subjectId: string },
+  ) {
+    return this.write(async () => {
+      const key = saleStatusKey(account);
+      const previous = (await this.local.get(key))[key] as
+        SaleStatusCache | undefined;
+      if (!previous && !changes.length) return;
+      const auctions = updateSaleChanges(
+        previous?.changes ?? {},
+        changes,
+        identities,
+      );
+      const subjects = new Set(
+        Object.values(auctions).map((row) => row.subjectId),
+      );
+      const copies = { ...previous?.copies };
+      for (const id of Object.keys(copies))
+        if (!subjects.has(id)) delete copies[id];
+      if (
+        observed &&
+        subjects.has(observed.subjectId) &&
+        observed.at >= (copies[observed.subjectId]?.at ?? 0)
+      )
+        copies[observed.subjectId] = {
+          at: observed.at,
+          auctionIds: observed.auctionIds,
+        };
+      const next = { changes: auctions, copies };
+      if (JSON.stringify(previous) !== JSON.stringify(next))
+        await this.local.set({ [key]: next });
+    });
   }
   private decode(raw: unknown, legacy: unknown, subject: string): Tracked {
     const previous = raw as

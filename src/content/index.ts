@@ -5,6 +5,7 @@ import { contextKey, HOST_ID, resolveCard, topDialog } from "../kosmora/dom";
 import { isTabRequest, request } from "../shared/messages";
 import {
   parsePopupState,
+  POPUP_PIN_KEY,
   type PopupState,
   type PopupLayoutChange,
 } from "../shared/popup-layout";
@@ -55,6 +56,7 @@ import {
   LISTING_WRITES,
 } from "../shared/page-relay";
 import { SERVICES_STATE_KEY, validCardId } from "../shared/services";
+import { saleStatusKey, type SaleStatusCache } from "../shared/sale-status";
 import { settingsForPage } from "../shared/page-settings";
 import {
   HOVER_TOOLTIP,
@@ -120,9 +122,18 @@ window.addEventListener("message", (event) => {
       client.observeCardIds(event.data.ids.filter(validCardId));
       const detail = CARD_DETAILS_PATH.exec(url.pathname);
       if (detail) {
-        void client.observeCardDetails(event.data.data).then(() => {
-          if (current?.subjectId === detail[1] && popup) void show(current);
-        });
+        const at = event.data.startedAt;
+        void client
+          .observeCardDetails(
+            event.data.data,
+            Number.isSafeInteger(at) && at > 0 && at <= Date.now()
+              ? at
+              : undefined,
+          )
+          .then(() => {
+            overlays.refreshSaleStatus(new Set([detail[1]]));
+            if (current?.subjectId === detail[1] && popup) void show(current);
+          });
       }
       const price = CARD_PRICES_PATH.exec(url.pathname);
       const finish = url.searchParams.get("finish");
@@ -157,17 +168,31 @@ window.addEventListener("message", (event) => {
         void client.receivePackData(event.data).catch(() => {});
       return;
     }
-    if (
-      event.data.type !== RELAY_LISTED ||
-      typeof event.data.path !== "string" ||
-      !LISTING_WRITES.test(event.data.path)
-    )
+    if (event.data.type !== RELAY_LISTED || typeof event.data.path !== "string")
       return;
-    if (tracksListingPrices())
-      void client.captureListings(event.data.listings).catch(() => {});
+    const trackPrices = tracksListingPrices();
+    if (!trackPrices && !tracksSaleStatus()) return;
+    if (LISTING_WRITES.test(event.data.path))
+      void client
+        .captureListings(event.data.listings, {
+          savePrices: trackPrices,
+          confirmedAt: event.data.confirmedAt,
+        })
+        .catch(() => {});
+    else if (
+      event.data.canceled &&
+      AUCTION_DETAILS_PATH.exec(event.data.path)?.[1]?.toLowerCase() ===
+        event.data.canceled.auctionId
+    )
+      void client
+        .captureListings([event.data.canceled], { canceled: true })
+        .catch(() => {});
   });
 });
 let settings = defaults();
+function tracksSaleStatus() {
+  return settings.cardOverlaysEnabled && settings.showOnSaleOverlay;
+}
 function tracksListingPrices() {
   return (
     settings.enabled ||
@@ -240,8 +265,8 @@ function syncRelayPreferences() {
             settings.showTradeFamilyOverlay ||
             settings.showSalesFamilyOverlay),
         saleFamily,
-        listingPrices,
-        listingChanges: listingPrices || saleFamily,
+        listingPrices: listingPrices || tracksSaleStatus(),
+        listingChanges: listingPrices || saleFamily || tracksSaleStatus(),
       },
     },
     location.origin,
@@ -332,11 +357,6 @@ function dismiss() {
   const source = buttonOpened ? current : null;
   hide();
   if (source) tooltipButtons.focus(source);
-  pinnedState.pinned = false;
-  void request<PopupState>({
-    op: "popupLayout",
-    change: { pinned: false },
-  }).catch(() => {});
 }
 function navigationAway() {
   hovered = false;
@@ -489,6 +509,12 @@ async function show(
     }
   }
 }
+function pinPosition() {
+  return pinnedState.position ?? settings.popupPosition ?? {
+    left: Math.max(12, innerWidth - settings.popupWidth - 12),
+    top: 12,
+  };
+}
 function createView(
   context: CardContext | null,
   placement = popup?.pinnedPlacement(),
@@ -496,11 +522,7 @@ function createView(
   dialog = topDialog();
   if (!placement && pinnedState.pinned)
     placement = {
-      ...(pinnedState.position ??
-        settings.popupPosition ?? {
-          left: Math.max(12, innerWidth - settings.popupWidth - 12),
-          top: 12,
-        }),
+      ...pinPosition(),
       tab: pinnedState.tab ?? "market",
     };
   const view = new Popup(
@@ -1062,7 +1084,31 @@ observePage(() => {
     if (wasHovered) enter(next.anchor);
   }
 });
+let saleRevision = 0;
+function applySaleChanges(next?: SaleStatusCache, before?: SaleStatusCache) {
+  saleRevision++;
+  client.setSaleCache(next);
+  const ids = new Set<string>();
+  for (const row of [
+    ...Object.values(before?.changes ?? {}),
+    ...Object.values(next?.changes ?? {}),
+  ])
+    if (row.subjectId) ids.add(row.subjectId);
+  overlays.refreshSaleStatus(ids);
+}
 client.onVerifiedAccount = (account) => {
+  const key = saleStatusKey(account.key);
+  const revision = ++saleRevision;
+  void chrome.storage.local
+    .get(key)
+    .then((data) => {
+      if (
+        revision === saleRevision &&
+        client.displayAccount?.key === account.key
+      )
+        applySaleChanges(data[key] as SaleStatusCache | undefined);
+    })
+    .catch(() => {});
   if (tracksListingPrices())
     void request({
       op: "listingAccountVerified",
@@ -1133,13 +1179,31 @@ function applySettings(next: Settings) {
     updateTooltipHistory?.(marketFinishes);
     if (current && activeRequest)
       loadHeaderSignals(popup, current, activeRequest.signal);
-  } else if (pinnedState.pinned) {
+  } else if (pinnedState.pinned && !settingsForPage(previous, location.pathname).enabled) {
     createView(null);
   }
   packOpeningHotkeys.dismissFoundPackAutomatically();
   remainingPacks.refresh();
 }
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[POPUP_PIN_KEY]) {
+    const { pinned, position } = parsePopupState(changes[POPUP_PIN_KEY].newValue);
+    void preferencesReady.then(() => {
+      const wasPinned = pinnedState.pinned;
+      pinnedState = { ...pinnedState, pinned, position };
+      if (!pageSettings().enabled) return;
+      if (popup) popup.setPinnedPlacement(pinned ? pinPosition() : undefined);
+      else if (pinned && !wasPinned && !current) createView(null);
+    });
+  }
+  if (area === "local" && client.displayAccount) {
+    const sale = changes[saleStatusKey(client.displayAccount.key)];
+    if (sale)
+      applySaleChanges(
+        sale.newValue as SaleStatusCache | undefined,
+        sale.oldValue as SaleStatusCache | undefined,
+      );
+  }
   const observed = changes["kosmore.gameAccountHint"]?.newValue;
   if (
     area === "local" &&
