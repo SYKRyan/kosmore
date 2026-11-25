@@ -82,6 +82,7 @@ export class ApiError extends Error {
   }
 }
 export class GameClient implements KosmoraClient {
+  private fusionResultGroups = new Map<string, string[]>();
   private reads = new ReadCache(40, 300_000);
   private familyCatalog = new ReadCache(1, FAMILIES_TTL);
   private pendingViews = new Map<string, Promise<Record<string, CardView>>>();
@@ -473,6 +474,7 @@ export class GameClient implements KosmoraClient {
     );
   }
   clearServiceViews() {
+    this.fusionResultGroups.clear();
     this.cardViews.clear();
     this.privateViews.clear();
     this.pendingViews.clear();
@@ -501,6 +503,10 @@ export class GameClient implements KosmoraClient {
       void request({ op: "servicesObserve", ids: ids.slice(i, i + 500) }).catch(
         () => {},
       );
+  }
+  observeFusionResults(ids: string[], first: boolean) {
+    if (first) this.fusionResultGroups.clear();
+    for (const id of ids) this.fusionResultGroups.set(id, ids);
   }
   async observeCardDetails(raw: unknown, startedAt = Date.now()) {
     try {
@@ -602,9 +608,13 @@ export class GameClient implements KosmoraClient {
     let pending = this.pendingViews.get(pendingKey);
     if (!pending) {
       const account = this.lastAccount?.key;
+      const batchCandidates = this.fusionResultGroups.get(id);
       const read = request<Record<string, CardView>>({
         op: mode === "peek" ? "servicesPeek" : "servicesRead",
         ids: [id],
+        ...(batchCandidates && mode !== "peek" &&
+          document.querySelector('[data-testid="fusion-haul"],.fu-result,.fu-all-grid') &&
+          { batchCandidates }),
         account: mode === "public" ? undefined : account,
         includeMyListings: mode === "mine",
       })

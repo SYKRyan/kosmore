@@ -25,6 +25,8 @@ import {
 import {
   RELAY_BUFFER,
   RELAY_CARDS,
+  RELAY_FUSION_RESULTS,
+  type FusionResultsMessage,
   CARD_FEED_PATH,
   CARD_DETAILS_PATH,
   AUCTION_DETAILS_PATH,
@@ -63,6 +65,7 @@ export function installPageRelay(win: Window = window) {
     | ListingChangedMessage
     | SaleBatchMessage
     | CardFeedMessage
+    | FusionResultsMessage
     | PackRelayMessage
     | (() => void)
   )[] = [];
@@ -92,6 +95,7 @@ export function installPageRelay(win: Window = window) {
       | ListingChangedMessage
       | SaleBatchMessage
       | CardFeedMessage
+      | FusionResultsMessage
       | PackRelayMessage,
   ) => win.postMessage(message, win.location.origin);
   const relay = (
@@ -100,6 +104,7 @@ export function installPageRelay(win: Window = window) {
       | ListingChangedMessage
       | SaleBatchMessage
       | CardFeedMessage
+      | FusionResultsMessage
       | PackRelayMessage,
   ) => {
     if (ready) send(message);
@@ -169,6 +174,33 @@ export function installPageRelay(win: Window = window) {
       ).toUpperCase();
       const copySubject = CARD_DETAILS_PATH.exec(url.pathname)?.[1];
       const trackCopies = copySubject && preferences?.listingPrices !== false;
+      if (
+        method === "POST" &&
+        url.origin === win.location.origin &&
+        (url.pathname === "/api/fusion/mass" || url.pathname === "/api/fusion") &&
+        (!ready || preferences?.servicesCards)
+      ) {
+        void response.then(async (res) => {
+          if (!res.ok || (ready && !preferences?.servicesCards)) return;
+          const data = await res.clone().json();
+          const cards = data?.cards ?? (data?.card ? [data.card] : undefined);
+          if (!Array.isArray(cards)) return;
+          const ids = new Set<string>();
+          for (const row of cards) {
+            const subject = row?.subjectId;
+            const id = Number.isSafeInteger(subject) ? String(subject) : subject;
+            if (validCardId(id)) ids.add(id);
+          }
+          const results = [...ids];
+          // The haul initially renders only its first twelve new cards.
+          for (let i = 0; i < results.length; i += 500)
+            relay({
+              type: RELAY_FUSION_RESULTS,
+              ids: results.slice(i, i + 500),
+              first: i === 0,
+            });
+        }).catch(() => {});
+      }
       if (
         method === "GET" &&
         url.origin === win.location.origin &&

@@ -48,6 +48,20 @@ it("ignores hidden backs and unrevealed faces", () => {
   document.querySelector(".kc-article")!.setAttribute("aria-hidden", "true");
   expect(resolveCard(name)).toBeNull();
 });
+it("excludes fusion animation faces from overlays and hover while keeping review and results eligible", () => {
+  history.replaceState(null, "", "/fusion");
+  document.body.innerHTML = `
+    <div class="mf is-running"><div class="mf-peek">${face("101")}</div></div>
+    <div class="mf-scene"><div class="mf-flight">${face("102")}</div></div>
+    <div class="fu-stage"><div class="fu-fly">${face("103")}</div></div>
+    <ul data-testid="mf-list"><li>${face("104")}</li></ul>
+    <div class="fh-grid">${face("105")}</div>`;
+  expect([...cardOverlayTargets().values()].map(card => card.subjectId)).toEqual(["104", "105"]);
+  for (const image of document.querySelectorAll(".mf-peek img,.mf-flight img,.fu-fly img"))
+    expect(resolveCard(image)).toBeNull();
+  document.querySelector(".mf")!.classList.remove("is-running");
+  expect(resolveCard(document.querySelector(".mf-peek img")!)?.subjectId).toBe("101");
+});
 it("resolves reveal slot changes even when the subject does not change", () => {
   document.body.innerHTML = `<div class="ko-card ko-beat-shown"><div class="ko-face-front">${face()}</div></div><ol class="ko-tray"><li class="on"></li><li></li></ol>`;
   const target = document.querySelector("h3")!;

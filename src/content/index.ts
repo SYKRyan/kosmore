@@ -6,6 +6,7 @@ import {
   fusionReviewVisible,
   HOST_ID,
   inFusionReview,
+  isFusionPage,
   resolveCard,
   topDialog,
 } from "../kosmora/dom";
@@ -55,6 +56,7 @@ import { TooltipButtons } from "./tooltip-buttons";
 import {
   RELAY_LISTED,
   RELAY_CARDS,
+  RELAY_FUSION_RESULTS,
   CARD_FEED_PATH,
   CARD_DETAILS_PATH,
   AUCTION_DETAILS_PATH,
@@ -111,6 +113,13 @@ window.addEventListener("message", (event) => {
   )
     return;
   void preferencesReady.then(() => {
+    if (event.data.type === RELAY_FUSION_RESULTS) {
+      const { ids, first } = event.data;
+      if (isFusionPage() && needsServicesCards() && typeof first === "boolean" &&
+          Array.isArray(ids) && ids.length <= 500 && ids.every(validCardId))
+        client.observeFusionResults(ids, first);
+      return;
+    }
     if (event.data.type === RELAY_CARDS) {
       if (
         !needsServicesCards() ||

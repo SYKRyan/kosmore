@@ -3,6 +3,8 @@ export const HOST_ID = "kosmore-root";
 export const FRIEND_TOOLTIP_ID = "kosmore-friend-tooltip";
 export const OVERLAY_ATTR = "data-kosmore-card-overlays";
 export const FUSION_REVIEW_GRID = 'ul[data-testid="mf-list"]';
+// During mass fusion the game clones the preview cards into a flight layer.
+const FUSION_ANIMATION = ".mf-scene,.mf-ghost,.mf.is-running .mf-peek,.fu-fly";
 export function isFusionPage(pathname = location.pathname) {
   return pathname === "/fusion" || pathname === "/fusion/";
 }
@@ -67,7 +69,7 @@ export function resolveCard(
   target: Element,
   doc: Document = document,
 ): CardContext | null {
-  if (target.closest(`#${HOST_ID},#${FRIEND_TOOLTIP_ID},.kc-back,[hidden]`))
+  if (target.closest(`#${HOST_ID},#${FRIEND_TOOLTIP_ID},.kc-back,[hidden],${FUSION_ANIMATION}`))
     return null;
   const picker = target.closest<HTMLElement>(".pick");
   // The shared Pickable overlays its card with a sibling selection button,

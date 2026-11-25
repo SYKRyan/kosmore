@@ -67,6 +67,12 @@ export function isRelayMessage(value: unknown): value is RelayMessage {
 }
 
 export const RELAY_CARDS = "kosmore.servicesCards";
+export const RELAY_FUSION_RESULTS = "kosmore.fusionResults";
+export interface FusionResultsMessage {
+  type: typeof RELAY_FUSION_RESULTS;
+  ids: string[];
+  first: boolean;
+}
 export const AUCTION_DETAILS_PATH = /^\/api\/auctions\/([a-f0-9-]{36})$/i;
 export const CARD_DETAILS_PATH = /^\/api\/collection\/([1-9]\d{0,17})$/;
 export const CARD_PRICES_PATH = /^\/api\/cards\/([1-9]\d{0,17})\/prices$/;

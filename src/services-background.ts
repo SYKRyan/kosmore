@@ -45,6 +45,7 @@ interface Job {
   promise: Promise<void>;
   resolve(): void;
   privateDemand: boolean;
+  batchCandidates?: string[];
 }
 
 export function installServicesBackground() {
@@ -812,18 +813,25 @@ export function installServicesBackground() {
         const selected = [...jobs]
           .filter(([, job]) => job.privateDemand === includeMyListings)
           .slice(0, BATCH_SIZE);
-        if (deferred) passive.add(deferred);
-        for (const id of passive) {
-          if (selected.length === BATCH_SIZE) break;
-          passive.delete(id);
-          if (jobs.has(id) || (retryCards.get(id) ?? 0) > Date.now()) continue;
-          addJob(id, includeMyListings);
-          selected.push([id, jobs.get(id)!]);
-        }
         const current = session,
           signal = generation.signal,
           url = base;
         try {
+          // Prefer cold cards from the same haul, including cards behind "See all".
+          const group = selected.find(([, job]) => job.batchCandidates)?.[1]
+            .batchCandidates;
+          const related = group && selected.length < BATCH_SIZE
+            ? await staleCards(group, url)
+            : [];
+          signal.throwIfAborted();
+          if (deferred) passive.add(deferred);
+          for (const id of related.length ? new Set([...related, ...passive]) : passive) {
+            if (selected.length === BATCH_SIZE) break;
+            passive.delete(id);
+            if (jobs.has(id) || (retryCards.get(id) ?? 0) > Date.now()) continue;
+            addJob(id, includeMyListings);
+            selected.push([id, jobs.get(id)!]);
+          }
           if (deferred && selected.some(([id]) => id === deferred))
             await persistDeferred();
           signal.throwIfAborted();
@@ -856,7 +864,7 @@ export function installServicesBackground() {
     }
   }
 
-  function enqueue(id: string, privateDemand: boolean) {
+  function enqueue(id: string, privateDemand: boolean, batchCandidates?: string[]) {
     if (
       !session ||
       session.blocked ||
@@ -866,20 +874,21 @@ export function installServicesBackground() {
     )
       return;
     passive.delete(id);
-    return addJob(id, privateDemand);
+    return addJob(id, privateDemand, batchCandidates);
   }
 
-  function addJob(id: string, privateDemand: boolean) {
+  function addJob(id: string, privateDemand: boolean, batchCandidates?: string[]) {
     const existing = jobs.get(id);
     if (existing) {
       existing.privateDemand ||= privateDemand;
+      existing.batchCandidates ??= batchCandidates;
       return existing.promise;
     }
     let resolve!: () => void;
     const promise = new Promise<void>((done) => {
       resolve = done;
     });
-    jobs.set(id, { promise, resolve, privateDemand });
+    jobs.set(id, { promise, resolve, privateDemand, batchCandidates });
     if (!flushing && timer === undefined)
       timer = setTimeout(() => {
         timer = undefined;
@@ -904,6 +913,7 @@ export function installServicesBackground() {
     observed: boolean,
     cacheOnly = false,
     privateDemand = false,
+    batchCandidates?: string[],
   ) {
     if (session && session.expiresAt <= Date.now())
       await serialize(async () => {
@@ -948,6 +958,7 @@ export function installServicesBackground() {
           const pending = enqueue(
             id,
             wantsMine && listingRetryAt <= Date.now(),
+            batchCandidates,
           );
           if (wantsMine || !view.card) {
             await pending;
@@ -1111,6 +1122,12 @@ export function installServicesBackground() {
               message.op === "servicesPeek",
               message.op === "servicesRead" &&
                 message.includeMyListings === true,
+              message.op === "servicesRead" &&
+                Array.isArray(message.batchCandidates) &&
+                message.batchCandidates.length <= 500 &&
+                message.batchCandidates.every(validCardId)
+                ? message.batchCandidates
+                : undefined,
             );
         }
       })

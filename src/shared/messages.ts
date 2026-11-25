@@ -48,6 +48,7 @@ export type Request =
       requestId: string;
       op: "servicesObserve" | "servicesRead" | "servicesPeek";
       ids: string[];
+      batchCandidates?: string[];
       account?: string;
     }
   | {

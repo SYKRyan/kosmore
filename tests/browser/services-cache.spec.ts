@@ -398,6 +398,43 @@ test("uses the unified Services response on a cold cache, then reuses it across 
         /\/api\/(?:collection|cards|auctions|me\/auctions)/.test(path),
       ),
     ).toEqual(["/api/collection?native=1"]);
+    await test.step("mass fusion ignores flying cards and fills batches from the completed haul", async () => {
+      const fusion = await context.newPage();
+      const ids = Array.from({ length: 205 }, (_, i) => String(101 + i));
+      await fusion.route("**/fusion?mode=many", route => route.fulfill({
+        contentType: "text/html",
+        body: `<main><div class="mf is-running"><ul class="mf-peek"><li>${face("401")}</li></ul></div>
+          <div class="mf-scene"><div class="mf-flight">${face("402")}</div></div></main>`,
+      }));
+      await fusion.route("**/api/fusion/mass", route => route.fulfill({
+        json: { cards: [...ids, ids[0], "42"].map(subjectId => ({ subjectId })), consumed: [{ subjectId: "403" }] },
+      }));
+      const requests = (): Promise<string[][]> => worker.evaluate(() =>
+        (globalThis as any).servicesFixture.batches.slice(1).map((batch: { ids: string[] }) => batch.ids));
+      try {
+        await fusion.goto("https://kosmora.io/fusion?mode=many");
+        await fusion.locator(".mf-flight .kc-article").hover();
+        await fusion.evaluate(() => fetch("/api/fusion/mass", { method: "POST" }).then(r => r.json()));
+        await fusion.waitForTimeout(500);
+        expect(await requests()).toEqual([]);
+        const preview = ids.slice(0, 12).map(id => face(id)).join("");
+        await fusion.locator("main").evaluate((el, html) => {
+          el.innerHTML = `<section data-testid="fusion-haul"><div class="fh-grid">${html}</div></section>`;
+        }, preview);
+        const haul = fusion.getByTestId("fusion-haul");
+        await expect(haul.locator(".signal-badge.auction").first()).toBeVisible();
+        expect((await requests()).map(batch => batch.length)).toEqual([100]);
+        for (const i of [100, 200]) {
+          await haul.locator(".fh-grid").evaluate((el, html) => { el.innerHTML = html; }, face(ids[i]));
+          await expect(haul.locator(".signal-badge.auction")).toBeVisible();
+        }
+        const sent = await requests();
+        expect(sent.map(batch => batch.length)).toEqual([100, 100, 5]);
+        expect(sent.flat().sort()).toEqual([...ids].sort());
+      } finally {
+        await fusion.close();
+      }
+    });
     await test.step("repeat quick and adjusted market prices on both sale screens", async () => {
       await worker.evaluate(async () => {
         const key = "kosmore.settings";
