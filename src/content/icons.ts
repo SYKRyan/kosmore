@@ -73,7 +73,7 @@ export function headerIcon(
 }
 
 export function cardIcon(
-  kind: "auction" | "sale" | "history" | "friend" | "quest" | "trade" | "gift",
+  kind: "auction" | "verified" | "sale" | "history" | "friend" | "quest" | "trade" | "gift",
   size = 14,
 ): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -95,6 +95,8 @@ export function cardIcon(
     {
       auction:
         "M20 13 13 20a2 2 0 0 1-3 0l-8-8V3h9l9 8a2 2 0 0 1 0 2Z M7 7h.01",
+      verified:
+        "M23 12l-2.5 2.8.3 3.7-3.6.8-1.9 3.2-3.3-1.4-3.3 1.4-1.9-3.2-3.6-.8.3-3.7L1 12l2.5-2.8-.3-3.7 3.6-.8 1.9-3.2L12 2.9l3.3-1.4 1.9 3.2 3.6.8-.3 3.7Z",
       sale: "m14 13-8.5 8.5a2.12 2.12 0 0 1-3-3L11 10 M16 16l6-6 M8 8l6-6 M9 7l8 8 M21 11l-8-8",
       history: "M3 11a9 9 0 1 1 2.7 7 M3 4v7h7 M12 7v5l3 2",
       quest: "m12 2 2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6Z",
@@ -105,6 +107,22 @@ export function cardIcon(
     }[kind],
   );
   svg.append(path);
+  return svg;
+}
+
+export function auctionIcon(bids?: number) {
+  if (!bids || bids < 1) return cardIcon("auction");
+  const svg = cardIcon("verified", 16);
+  svg.setAttribute("fill", "currentColor");
+  svg.setAttribute("stroke-width", "0.8");
+  const count = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  for (const [name, value] of Object.entries({
+    x: "12", y: "12", "text-anchor": "middle", "dominant-baseline": "central",
+    fill: "#64162a", stroke: "none", "font-family": "system-ui,sans-serif",
+    "font-size": bids > 9 ? "11" : "14", "font-weight": "700",
+  })) count.setAttribute(name, value);
+  count.textContent = bids > 9 ? "9+" : String(bids);
+  svg.append(count);
   return svg;
 }
 

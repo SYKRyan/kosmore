@@ -28,8 +28,8 @@ import {
   type CardSignals,
   type OverlaySettings,
 } from "./card-signals";
-import { cardIcon } from "./icons";
-import { MARKET_BADGE_CSS, numberOneIcon, auctionBidSuffix } from "./signal-badges";
+import { auctionIcon, cardIcon } from "./icons";
+import { MARKET_BADGE_CSS, numberOneIcon, auctionBidSuffix, highlightOwnPrice } from "./signal-badges";
 import { el } from "./ui";
 import { observePage, affected, type PageChanges } from "./page-changes";
 
@@ -268,6 +268,22 @@ export class SalesOverlays {
       }
     }
     this.schedule();
+  }
+  refreshCachedPrices(ids: ReadonlySet<string>) {
+    for (const entry of this.entries.values()) {
+      const { subjectId, variant } = entry.target.context;
+      if (!ids.has(subjectId) || !entry.signals?.lowestListing) continue;
+      const finish = variant.fullArt ? "fullart" : variant.veil ? "veil" : "plain";
+      const hit = this.client.peekAuction?.(subjectId, finish);
+      if (hit && entry.signals.lowestListing !== hit.value.lowestListing) {
+        entry.signals = { ...entry.signals, lowestListing: hit.value.lowestListing };
+        this.render(entry);
+      }
+    }
+  }
+  refreshAccountPrices() {
+    if (this.settings?.showSalesLowestListing)
+      this.refreshCards(new Set([...this.entries.values()].map(entry => entry.target.context.subjectId)));
   }
   refreshCards(ids: ReadonlySet<string>) {
     this.provider.invalidateCards(ids);
@@ -769,8 +785,8 @@ export class SalesOverlays {
           ? kind === "history" && entry.myAccount && !entry.mineError
             ? "No recorded listing"
             : "—"
-          : `$${formatKosmo(price)}${bids}`;
-      badge.append(cardIcon(kind), el("span", "amount", `${label} ${text}`));
+          : `$${formatKosmo(price)}`;
+      badge.append(kind === "auction" ? auctionIcon(bids ? entry.signals?.lowestListing?.bids : undefined) : cardIcon(kind), el("span", "amount", `${label} ${text}`));
       if (
         showKey === "showSalesLastSale" &&
         price !== undefined &&
@@ -787,13 +803,15 @@ export class SalesOverlays {
           new Date(entry.signals.auctionFetchedAt).toLocaleTimeString() +
           ". Provider prices are delayed five minutes.";
       if (stale) badge.title += " Last known price.";
+      const ownership = kind === "auction" ? highlightOwnPrice(badge, entry.signals?.lowestListing, stale) : "";
+      badge.title += ownership;
       if (canClick && !entry.editable)
         badge.title += " The starting price is read-only.";
       if (kind === "history" && entry.recordedAt)
         badge.title += ` Submitted ${new Date(entry.recordedAt).toLocaleString()}.`;
       badge.setAttribute(
         "aria-label",
-        `${label} ${text}${canClick ? `; set starting price with ${adjustment} Kosmo adjustment` : ""}${stale ? "; last known price" : ""}`,
+        `${label} ${text}${bids}${canClick ? `; set starting price with ${adjustment} Kosmo adjustment` : ""}${stale ? "; last known price" : ""}${ownership}`,
       );
       if (badge instanceof HTMLButtonElement) {
         badge.type = "button";

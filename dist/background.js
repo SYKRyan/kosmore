@@ -150,7 +150,11 @@ function T(t) {
 function E(t) {
 	try {
 		let n = e(t);
-		return i(n.id) === n.id && r(n.subjectId) === n.subjectId && a(n.startPrice) === n.startPrice && (n.copyId === void 0 || m(n.copyId) === n.copyId) && typeof n.submittedAt == "number" && Number.isSafeInteger(n.submittedAt) && n.submittedAt > 0;
+		return i(n.id) === n.id && (n.finish === void 0 || [
+			"plain",
+			"veil",
+			"fullart"
+		].includes(String(n.finish))) && r(n.subjectId) === n.subjectId && a(n.startPrice) === n.startPrice && (n.copyId === void 0 || m(n.copyId) === n.copyId) && typeof n.submittedAt == "number" && Number.isSafeInteger(n.submittedAt) && n.submittedAt > 0;
 	} catch {
 		return !1;
 	}
@@ -174,7 +178,7 @@ function A(e) {
 		top: Math.round(t.top)
 	} : null;
 }
-function j(e) {
+function ne(e) {
 	if (!e || typeof e != "object") return {
 		pinned: !1,
 		position: null
@@ -186,7 +190,7 @@ function j(e) {
 		...D(t.tab) ? { tab: t.tab } : {}
 	};
 }
-function M(e, t = {
+function j(e, t = {
 	minWidth: 320,
 	minHeight: 480
 }) {
@@ -201,22 +205,22 @@ function M(e, t = {
 	].includes(e)) && (n.tab === void 0 || D(n.tab)) && (n.pinned === void 0 || typeof n.pinned == "boolean") && (n.position === void 0 || A(n.position) !== null) && (n.width === void 0 || Number.isFinite(n.width) && n.width >= t.minWidth && n.width <= 1200) && (n.height === void 0 || Number.isFinite(n.height) && n.height >= t.minHeight && n.height <= 1600);
 }
 // src/shared/services.ts
-var ne = "kosmore.servicesConnectionChanged", N = (e) => typeof e == "string" && /^[1-9]\d{0,17}$/.test(e);
-function re(e) {
+var re = "kosmore.servicesConnectionChanged", M = (e) => typeof e == "string" && /^[1-9]\d{0,17}$/.test(e);
+function ie(e) {
 	let t = new URL(e.trim());
 	if (t.protocol !== "https:" && !(t.protocol === "http:" && ["localhost", "127.0.0.1"].includes(t.hostname)) || t.username || t.password || t.search || t.hash || /[?#]/.test(e) || ["kosmora.io", "developers.kosmora.io"].includes(t.hostname)) throw Error("Use HTTPS, or use HTTP with localhost or 127.0.0.1 for local testing.");
 	return t.origin + t.pathname.replace(/\/+$/, "").replace(/\/v1$/, "");
 }
-function ie(e) {
+function ae(e) {
 	let { protocol: t, hostname: n } = new URL(e);
 	return `${t}//${n}/*`;
 }
-function P(e) {
+function N(e) {
 	if (e === "shiny") return "veil";
 	if (e === "plain" || e === "fullart") return e;
 	throw Error("Invalid card finish.");
 }
-function ae(r, i) {
+function oe(r, i) {
 	let s = e(r), c = e(s.card);
 	if (c.id !== i) throw Error("Card ID mismatch.");
 	let l = {};
@@ -225,7 +229,7 @@ function ae(r, i) {
 		"shiny",
 		"fullart"
 	]) {
-		let r = P(t), i = e(e(s.sales)[t]), c = e(i.last30Days), u = i.lastSale === null ? void 0 : e(i.lastSale), d = e(s.history)[t];
+		let r = N(t), i = e(e(s.sales)[t]), c = e(i.last30Days), u = i.lastSale === null ? void 0 : e(i.lastSale), d = e(s.history)[t];
 		if (!Array.isArray(d)) throw Error("Daily history unavailable.");
 		l[r] = {
 			finish: r,
@@ -271,7 +275,7 @@ function ae(r, i) {
 		auctions: s.auctions.map((t) => {
 			let n = e(t);
 			return {
-				finish: P(n.finish),
+				finish: N(n.finish),
 				price: a(n.price),
 				...typeof n.bids == "number" && Number.isSafeInteger(n.bids) && n.bids >= 0 && { bids: n.bids },
 				endsAt: o(n.endsAt)
@@ -280,57 +284,70 @@ function ae(r, i) {
 		markets: l
 	};
 }
-function oe(t, n) {
+function se(t, n) {
 	if (!Array.isArray(t)) throw Error("Open listings unavailable.");
 	return t.map((t) => {
 		let r = e(t);
 		if (e(r.card).id !== n || typeof r.id != "string" || !/^[0-9a-f]{24}$/.test(r.id)) throw Error("Invalid listing.");
 		return {
 			id: r.id,
-			finish: P(r.finish),
+			finish: N(r.finish),
 			startPrice: a(r.startPrice),
+			...typeof r.price == "string" && /^\d+$/.test(r.price) && { price: r.price },
+			...typeof r.bids == "number" && Number.isSafeInteger(r.bids) && r.bids >= 0 && { bids: r.bids },
 			endsAt: o(r.endsAt)
 		};
 	});
 }
 // src/shared/sale-status.ts
-var F = (e) => "kosmore.saleStatus." + e, I = 864e5;
-function L(e) {
-	return !!e && typeof e.auctionId == "string" && m(e.auctionId) === e.auctionId && (e.subjectId === void 0 || N(e.subjectId)) && (e.copyId === void 0 || m(e.copyId) === e.copyId) && (e.relistOf === void 0 || m(e.relistOf) === e.relistOf) && (e.kind === "listed" || e.kind === "canceled") && Number.isSafeInteger(e.at) && e.at > 0 && e.at <= Date.now();
+var P = (e) => e === "plain" || e === "veil" || e === "fullart", F = (e) => "kosmore.saleStatus." + e, I = 864e5;
+function ce(e) {
+	return !!e && typeof e.auctionId == "string" && m(e.auctionId) === e.auctionId && (e.subjectId === void 0 || M(e.subjectId)) && (e.finish === void 0 || P(e.finish)) && (e.startPrice === void 0 || e.kind === "listed" && typeof e.startPrice == "string" && /^\d+$/.test(e.startPrice)) && (e.copyId === void 0 || m(e.copyId) === e.copyId) && (e.relistOf === void 0 || m(e.relistOf) === e.relistOf) && (e.kind === "listed" || e.kind === "canceled") && Number.isSafeInteger(e.at) && e.at > 0 && e.at <= Date.now();
 }
-function se(e, t, n, r = Date.now()) {
+function L(e, t, n, r = Date.now()) {
 	let i = { ...e };
-	for (let { auctionId: e, subjectId: n, copyId: r, relistOf: a, kind: o, at: s } of t) {
+	for (let { auctionId: e, subjectId: n, copyId: r, relistOf: a, kind: o, at: s, finish: c, startPrice: l } of t) {
 		let t = i[e];
 		i[e] = {
 			...t,
 			subjectId: t?.subjectId ?? n,
+			...c && { finish: c },
+			...l !== void 0 && o === "listed" && { startPrice: l },
 			...r && { copyId: r },
 			...a && { relistOf: a },
 			[o]: Math.min(t?.[o] ?? s, s)
 		};
 	}
 	let a = new Map(Object.entries(i));
-	for (let e of n) a.set(e.id.toLowerCase(), e);
-	let o = /* @__PURE__ */ new Map();
+	for (let e of n) {
+		let t = e.id.toLowerCase();
+		a.set(t, {
+			...a.get(t),
+			...e
+		});
+	}
+	let o = /* @__PURE__ */ new Map(), s = /* @__PURE__ */ new Map();
+	for (let e of a.values()) e.copyId && e.finish && s.set(e.copyId, e.finish);
 	for (let { copyId: e, subjectId: t } of a.values()) e && t && o.set(e, t);
 	for (let [e, t] of Object.entries(i)) {
-		let n = a.get(e), r = t.relistOf ? a.get(t.relistOf) : void 0, s = t.copyId ?? n?.copyId ?? r?.copyId, c = t.subjectId ?? n?.subjectId ?? r?.subjectId ?? (s && o.get(s));
-		(c !== t.subjectId || s !== t.copyId) && (i[e] = {
+		let n = a.get(e), r = t.relistOf ? a.get(t.relistOf) : void 0, c = t.copyId ?? n?.copyId ?? r?.copyId, l = t.subjectId ?? n?.subjectId ?? r?.subjectId ?? (c && o.get(c)), u = t.finish ?? n?.finish ?? r?.finish ?? (c ? s.get(c) : void 0), d = t.startPrice ?? n?.startPrice;
+		(l !== t.subjectId || c !== t.copyId || u !== t.finish || d !== t.startPrice) && (i[e] = {
 			...t,
-			subjectId: c,
-			copyId: s
-		}, a.set(e, i[e]), c && s && o.set(s, c));
+			subjectId: l,
+			copyId: c,
+			...u && { finish: u },
+			...d !== void 0 && { startPrice: d }
+		}, a.set(e, i[e]), l && c && o.set(c, l));
 	}
 	for (let [e, t] of Object.entries(i)) Math.max(t.listed ?? 0, t.canceled ?? 0) <= r - I && delete i[e];
 	return i;
 }
 // src/shared/messages.ts
 var R = (e) => typeof e == "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(e);
-function ce(e) {
+function le(e) {
 	if (!e || typeof e != "object") return !1;
 	let t = e;
-	return R(t.requestId) && (t.op === "listingCopiesObserved" && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && /^[1-9]\d{0,17}$/.test(t.subjectId) && t.copies && Number.isSafeInteger(t.copies.at) && t.copies.at > 0 && t.copies.at <= Date.now() && Array.isArray(t.copies.auctionIds) && t.copies.auctionIds.every((e) => typeof e == "string" && m(e) === e) || t.op === "listingObserved" && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && t.subjectId === "0" && Array.isArray(t.rows) && (t.saveHistory === void 0 || typeof t.saveHistory == "boolean") && t.rows.length <= 500 && t.rows.every(b) || [
+	return R(t.requestId) && (t.op === "listingCopiesObserved" && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && /^[1-9]\d{0,17}$/.test(t.subjectId) && t.copies && Number.isSafeInteger(t.copies.at) && t.copies.at > 0 && t.copies.at <= Date.now() && (t.copies.finishes === void 0 || t.copies.finishes !== null && typeof t.copies.finishes == "object" && Object.entries(t.copies.finishes).every(([e, t]) => m(e) === e && P(t))) && Array.isArray(t.copies.auctionIds) && t.copies.auctionIds.every((e) => typeof e == "string" && m(e) === e) || t.op === "listingObserved" && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && t.subjectId === "0" && Array.isArray(t.rows) && (t.saveHistory === void 0 || typeof t.saveHistory == "boolean") && t.rows.length <= 500 && t.rows.every(b) || [
 		"listingCache",
 		"listingSavedPrice",
 		"listingAccountVerified",
@@ -338,18 +355,18 @@ function ce(e) {
 		"listingHistory",
 		"listingRecord",
 		"listingMetadata"
-	].includes(t.op) && "accountKey" in t && "subjectId" in t && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && typeof t.subjectId == "string" && /^\d+$/.test(t.subjectId) && (t.op !== "listingRecord" || Array.isArray(t.records) && t.records.length <= 500 && t.records.every(E) && (t.changes === void 0 || Array.isArray(t.changes) && t.changes.length <= 500 && t.changes.every(L)) && (t.receipts === void 0 || Array.isArray(t.receipts) && t.receipts.length <= 500 && t.receipts.every(T))) && (t.op !== "listingMetadata" || Array.isArray(t.metadata) && t.metadata.length <= 100 && t.metadata.every((e) => Array.isArray(e) && e.length === 2 && typeof e[0] == "string" && m(e[0]) === e[0] && v(e[1]))) && (t.op !== "listingHistory" || ["more", "refresh"].includes(t.mode) && (t.limits === void 0 || S(t.limits))) || t.op === "listingCancel" && R(t.target) || t.op === "openOptions" && (t.section === void 0 || t.section === "stat-boxes") || [
+	].includes(t.op) && "accountKey" in t && "subjectId" in t && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && typeof t.subjectId == "string" && /^\d+$/.test(t.subjectId) && (t.op !== "listingRecord" || Array.isArray(t.records) && t.records.length <= 500 && t.records.every(E) && (t.changes === void 0 || Array.isArray(t.changes) && t.changes.length <= 500 && t.changes.every(ce)) && (t.receipts === void 0 || Array.isArray(t.receipts) && t.receipts.length <= 500 && t.receipts.every(T))) && (t.op !== "listingMetadata" || Array.isArray(t.metadata) && t.metadata.length <= 100 && t.metadata.every((e) => Array.isArray(e) && e.length === 2 && typeof e[0] == "string" && m(e[0]) === e[0] && v(e[1]))) && (t.op !== "listingHistory" || ["more", "refresh"].includes(t.mode) && (t.limits === void 0 || S(t.limits))) || t.op === "listingCancel" && R(t.target) || t.op === "openOptions" && (t.section === void 0 || t.section === "stat-boxes") || [
 		"sessions",
 		"popupState",
 		"friendPopupState",
 		"browserZoom"
-	].includes(t.op) || t.op === "popupLayout" && M(t.change) || t.op === "friendPopupLayout" && M(t.change, {
+	].includes(t.op) || t.op === "popupLayout" && j(t.change) || t.op === "friendPopupLayout" && j(t.change, {
 		minWidth: 240,
 		minHeight: 160
 	}) || (t.op === "albums" || t.op === "families") && Number.isInteger(t.tabId) && t.tabId >= 0 && /^[a-z0-9_]{1,24}$/.test(t.accountKey));
 }
 // src/shared/stat-catalog.ts
-var le = [
+var ue = [
 	{
 		id: "minPrice",
 		label: "Min Price",
@@ -411,10 +428,10 @@ var le = [
 		description: "Estimated share sold for the selected finishes. Uses 30 days of locally cached sales and auction history, including stale data. The estimate divides sales by sales plus known unsold and still-open listings. Enabling it makes no additional requests.",
 		source: "observed",
 		preview: { value: "67% · 3" },
-		read: (e) => ue(e)
+		read: (e) => de(e)
 	}
 ];
-function ue(e) {
+function de(e) {
 	if (!e.saleRates) return {
 		value: "—",
 		title: "Loading card details…"
@@ -431,13 +448,13 @@ function ue(e) {
 		title: n
 	};
 }
-var z = () => le.map(({ id: e }) => ({
+var z = () => ue.map(({ id: e }) => ({
 	id: e,
 	enabled: !0
 }));
-function B(e) {
+function fe(e) {
 	if (!Array.isArray(e)) return z();
-	let t = new Map(le.map((e) => [e.id, e])), n = /* @__PURE__ */ new Set(), r = [];
+	let t = new Map(ue.map((e) => [e.id, e])), n = /* @__PURE__ */ new Set(), r = [];
 	for (let i of e) {
 		if (!i || typeof i != "object") continue;
 		let { id: e, enabled: a } = i;
@@ -449,7 +466,7 @@ function B(e) {
 	return [...r, ...z().filter((e) => !n.has(e.id))];
 }
 // src/shared/hotkeys.ts
-var V = [
+var pe = [
 	{
 		id: "home",
 		label: "Home",
@@ -550,7 +567,7 @@ var V = [
 		label: "My Profile",
 		path: null
 	}
-], de = [
+], me = [
 	{
 		id: "focusFirstCard",
 		label: "Focus First Card"
@@ -595,7 +612,7 @@ var V = [
 		id: "home",
 		label: "Home"
 	}
-], fe = [
+], he = [
 	{
 		id: "close",
 		label: "Close Tooltip",
@@ -658,38 +675,38 @@ var V = [
 		label: "Next Tab"
 	}
 ];
-function pe(e, t = !1) {
+function ge(e, t = !1) {
 	return typeof e == "string" && (/^(Key[A-Z]|Digit[0-9]|F(?:[1-9]|1[0-2]))$/.test(e) || t && /^(Arrow(?:Up|Down|Left|Right)|Home|End)$/.test(e));
 }
-function H(e) {
+function B(e) {
 	return `${e.ctrl}-${e.alt}-${e.shift}-${e.meta}-${e.code}`;
 }
-function me(e, t, n, r, i = {}) {
+function _e(e, t, n, r, i = {}) {
 	if (!e || typeof e != "object") return {};
 	let a = e, o = [
 		...Object.values(n),
 		...Object.values(r),
 		...Object.values(i)
-	].map(H);
+	].map(B);
 	return Object.fromEntries(Object.entries(t).flatMap(([e, t]) => {
 		if (!Object.hasOwn(a, e)) return [];
-		let n = U(a[e], t.map((e) => ({
+		let n = V(a[e], t.map((e) => ({
 			id: e,
 			label: e
 		})), new Set(o));
 		return Object.keys(n).length ? [[e, n]] : [];
 	}));
 }
-function he(e) {
-	return U(e, V);
+function ve(e) {
+	return V(e, pe);
 }
-function ge(e, t) {
-	return U(e, de, new Set(Object.values(t).map(H)), !0);
+function ye(e, t) {
+	return V(e, me, new Set(Object.values(t).map(B)), !0);
 }
-function _e(e, t, n) {
-	return U(e, fe, new Set([...Object.values(t), ...Object.values(n)].map(H)), !0);
+function be(e, t, n) {
+	return V(e, he, new Set([...Object.values(t), ...Object.values(n)].map(B)), !0);
 }
-function U(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
+function V(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
 	let i = {};
 	if (!e || typeof e != "object") return i;
 	let a = e;
@@ -697,7 +714,7 @@ function U(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
 		let t = a[e.id];
 		if (!t || typeof t != "object") continue;
 		let o = t;
-		if (!pe(o.code, r) || ![
+		if (!ge(o.code, r) || ![
 			o.ctrl,
 			o.alt,
 			o.shift,
@@ -709,51 +726,51 @@ function U(e, t, n = /* @__PURE__ */ new Set(), r = !1) {
 			alt: o.alt,
 			shift: o.shift,
 			meta: o.meta
-		}, c = H(s);
+		}, c = B(s);
 		n.has(c) || (n.add(c), i[e.id] = s);
 	}
 	return i;
 }
 // src/shared/sales-prices.ts
-var W = {
+var xe = {
 	Common: 1,
 	Uncommon: 1,
 	Rare: 1,
 	Epic: 20,
 	Legendary: 100,
 	Mythic: 500
-}, ve = 1000000n;
-function ye(e) {
+}, Se = 1000000n;
+function Ce(e) {
 	let t = e.match(/^(-?)(\d*)(?:\.(\d{0,6}))?$/);
 	if (!t || !(t[2] || t[3])) return;
-	let n = BigInt(t[2]) * ve + BigInt((t[3] ?? "").padEnd(6, "0"));
+	let n = BigInt(t[2]) * Se + BigInt((t[3] ?? "").padEnd(6, "0"));
 	return t[1] ? -n : n;
 }
-function be(e) {
+function we(e) {
 	let t = e.toLocaleString("en-US", {
 		useGrouping: !1,
 		maximumFractionDigits: 6
 	});
-	if (Number(t) === e) return ye(t);
+	if (Number(t) === e) return Ce(t);
 }
-function G(e, t = 0) {
-	return typeof e == "number" && Number.isFinite(e) && e > 0 && e >= t && be(e) !== void 0;
+function H(e, t = 0) {
+	return typeof e == "number" && Number.isFinite(e) && e > 0 && e >= t && we(e) !== void 0;
 }
-function xe(e) {
-	return e === 0 || G(e);
+function Te(e) {
+	return e === 0 || H(e);
 }
-function Se(e) {
+function Ee(e) {
 	return typeof e == "number" && Number.isSafeInteger(e) && e >= 1;
 }
-function Ce(e) {
+function De(e) {
 	if (typeof e != "number" || !Number.isFinite(e)) return;
-	let t = ye(String(e)), n = BigInt(2 ** 53 - 1);
+	let t = Ce(String(e)), n = BigInt(2 ** 53 - 1);
 	if (t !== void 0 && t >= -n && t <= n) return t;
 }
-function we(e) {
-	return Ce(e) !== void 0;
+function Oe(e) {
+	return De(e) !== void 0;
 }
-function Te(e, t = "per friend") {
+function ke(e, t = "per friend") {
 	let n = [];
 	for (let r of e) {
 		let e = r.trim().replace(/\s+/g, " ");
@@ -765,7 +782,7 @@ function Te(e, t = "per friend") {
 	return n;
 }
 // src/shared/settings.ts
-var Ee = "kosmore.settings", De = () => ({
+var U = "kosmore.settings", Ae = () => ({
 	schemaVersion: 1,
 	enabled: !0,
 	disableHoverTooltipInPulsar: !1,
@@ -796,6 +813,7 @@ var Ee = "kosmore.settings", De = () => ({
 	friendHoverDelayMs: 300,
 	friendDismissDelayMs: 200,
 	friendTooltipWidth: 320,
+	lockFriendTooltipToBrowserZoom: !1,
 	friendTooltipHeight: 560,
 	friendTooltipPosition: null,
 	hotkeysEnabled: !0,
@@ -807,6 +825,8 @@ var Ee = "kosmore.settings", De = () => ({
 	autoSkipOpening: !1,
 	autoDismissFoundPack: !1,
 	showRemainingPackCount: !0,
+	packShowPriceWarning: !1,
+	packWarningThreshold: 200,
 	cardOverlaysEnabled: !0,
 	disableCardOverlaysInPulsar: !1,
 	disableCardOverlaysInVortex: !1,
@@ -828,7 +848,7 @@ var Ee = "kosmore.settings", De = () => ({
 	salesDiscountMode: "flat",
 	salesDiscountThreshold: 5,
 	salesCustomMinimumsEnabled: !1,
-	salesCustomMinimums: { ...W },
+	salesCustomMinimums: { ...xe },
 	salesQuickPricesEnabled: !1,
 	salesQuickPrices: [],
 	statBoxesEnabled: !0,
@@ -847,6 +867,8 @@ var Ee = "kosmore.settings", De = () => ({
 	showLowestListingPriceOverlay: !0,
 	showAuctionBidCounts: !0,
 	showOnSaleOverlay: !0,
+	highlightLowestListings: !1,
+	warnUndercutListings: !1,
 	showFriendInterestOverlay: !0,
 	showQuestOverlay: !0,
 	fusionSettingsEnabled: !0,
@@ -868,26 +890,27 @@ var Ee = "kosmore.settings", De = () => ({
 	pinnedAlbums: {},
 	pinnedAlbumHotkeys: {}
 });
-function Oe(e) {
-	let t = De();
+function je(e) {
+	let t = Ae();
 	if (!e || typeof e != "object") return t;
 	let n = e;
 	if (n.schemaVersion !== 1) return t;
-	if (t.stats = B(n.stats), t.hotkeys = he(n.hotkeys), t.packOpeningHotkeys = ge(n.packOpeningHotkeys, t.hotkeys), t.hoverTooltipHotkeys = _e(n.hoverTooltipHotkeys, t.hotkeys, t.packOpeningHotkeys), t.popupPosition = A(n.popupPosition), t.friendTooltipPosition = A(n.friendTooltipPosition), Array.isArray(n.familyBlacklist) && n.familyBlacklist.every((e) => typeof e == "string")) try {
-		t.familyBlacklist = Te(n.familyBlacklist, "in the family blacklist");
+	if (t.stats = fe(n.stats), t.hotkeys = ve(n.hotkeys), t.packOpeningHotkeys = ye(n.packOpeningHotkeys, t.hotkeys), t.hoverTooltipHotkeys = be(n.hoverTooltipHotkeys, t.hotkeys, t.packOpeningHotkeys), t.popupPosition = A(n.popupPosition), t.friendTooltipPosition = A(n.friendTooltipPosition), Array.isArray(n.familyBlacklist) && n.familyBlacklist.every((e) => typeof e == "string")) try {
+		t.familyBlacklist = ke(n.familyBlacklist, "in the family blacklist");
 	} catch {}
 	typeof n.enabled == "boolean" && (t.enabled = n.enabled);
-	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.tooltipTakesFocus.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.lockTooltipToBrowserZoom.socialEnabled.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.fusionSettingsEnabled.fusionShowPriceWarning.fusionReviewOverlayButton.fusionReviewOutsideClickOnly.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.hotkeysEnabled.navigationHotkeysEnabled.hoverTooltipHotkeysEnabled.packOpeningsEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.cardOverlaysEnabled.showAuctionBidCounts.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesMedian.salesMedianSetsPrice.useMedianOverlayPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.salesDiscountEnabled.salesCustomMinimumsEnabled.salesQuickPricesEnabled.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
+	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.tooltipTakesFocus.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.lockTooltipToBrowserZoom.lockFriendTooltipToBrowserZoom.socialEnabled.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.fusionSettingsEnabled.fusionShowPriceWarning.fusionReviewOverlayButton.fusionReviewOutsideClickOnly.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.hotkeysEnabled.navigationHotkeysEnabled.hoverTooltipHotkeysEnabled.packOpeningsEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.packShowPriceWarning.cardOverlaysEnabled.showAuctionBidCounts.highlightLowestListings.warnUndercutListings.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesMedian.salesMedianSetsPrice.useMedianOverlayPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.salesDiscountEnabled.salesCustomMinimumsEnabled.salesQuickPricesEnabled.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
 	for (let e of [
 		"salesLastSaleAdjustment",
 		"salesMedianAdjustment",
 		"salesLowestListingAdjustment",
 		"salesMyLastListingAdjustment"
-	]) we(n[e]) && (t[e] = n[e]);
-	xe(n.fusionWarningThreshold) && (t.fusionWarningThreshold = n.fusionWarningThreshold), G(n.salesDiscountAmount, 1) && (t.salesDiscountAmount = n.salesDiscountAmount), n.salesDiscountMode === "percent" && (t.salesDiscountMode = "percent"), Se(n.salesDiscountThreshold) && (t.salesDiscountThreshold = n.salesDiscountThreshold), Array.isArray(n.salesQuickPrices) && (t.salesQuickPrices = n.salesQuickPrices.filter((e) => G(e)));
-	for (let e of Object.keys(W)) {
+	]) Oe(n[e]) && (t[e] = n[e]);
+	for (let e of ["fusionWarningThreshold", "packWarningThreshold"]) Te(n[e]) && (t[e] = n[e]);
+	H(n.salesDiscountAmount, 1) && (t.salesDiscountAmount = n.salesDiscountAmount), n.salesDiscountMode === "percent" && (t.salesDiscountMode = "percent"), Ee(n.salesDiscountThreshold) && (t.salesDiscountThreshold = n.salesDiscountThreshold), Array.isArray(n.salesQuickPrices) && (t.salesQuickPrices = n.salesQuickPrices.filter((e) => H(e)));
+	for (let e of Object.keys(xe)) {
 		let r = n.salesCustomMinimums?.[e];
-		G(r, W[e]) && (t.salesCustomMinimums[e] = r);
+		H(r, xe[e]) && (t.salesCustomMinimums[e] = r);
 	}
 	typeof n.closeTooltipWhenAddedToAlbum == "boolean" && (t.closeTooltipWhenAddedToAlbum = n.closeTooltipWhenAddedToAlbum), typeof n.applyCloseBehaviorToPinnedTooltips == "boolean" && (t.applyCloseBehaviorToPinnedTooltips = n.applyCloseBehaviorToPinnedTooltips), typeof n.showSaleHistoryOverlay == "boolean" && (t.showSaleHistoryOverlay = n.showSaleHistoryOverlay), typeof n.showLastSalePriceOverlay == "boolean" && (t.showLastSalePriceOverlay = n.showLastSalePriceOverlay), typeof n.showActiveAuctionsOverlay == "boolean" && (t.showActiveAuctionsOverlay = n.showActiveAuctionsOverlay), typeof n.showLowestListingPriceOverlay == "boolean" && (t.showLowestListingPriceOverlay = n.showLowestListingPriceOverlay), typeof n.showOnSaleOverlay == "boolean" && (t.showOnSaleOverlay = n.showOnSaleOverlay), typeof n.showFriendInterestOverlay == "boolean" && (t.showFriendInterestOverlay = n.showFriendInterestOverlay), typeof n.showQuestOverlay == "boolean" && (t.showQuestOverlay = n.showQuestOverlay), typeof n.showFusionFamilyOverlay == "boolean" && (t.showFusionFamilyOverlay = n.showFusionFamilyOverlay), typeof n.hoverDelayMs == "number" && Number.isFinite(n.hoverDelayMs) && (t.hoverDelayMs = Math.min(2e3, Math.max(100, Math.round(n.hoverDelayMs))));
 	for (let [e, r, i] of [
@@ -961,17 +984,17 @@ function Oe(e) {
 		writable: !0,
 		value: [...new Set(r.filter((e) => typeof e == "string" && /^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(e)))].slice(0, 200)
 	});
-	return t.pinnedAlbumHotkeys = me(n.pinnedAlbumHotkeys, t.pinnedAlbums, t.hotkeys, t.packOpeningHotkeys, t.hoverTooltipHotkeys), t;
+	return t.pinnedAlbumHotkeys = _e(n.pinnedAlbumHotkeys, t.pinnedAlbums, t.hotkeys, t.packOpeningHotkeys, t.hoverTooltipHotkeys), t;
 }
-async function ke() {
-	return Oe((await chrome.storage.local.get(Ee))[Ee]);
+async function Me() {
+	return je((await chrome.storage.local.get(U))[U]);
 }
-async function Ae(e) {
-	await chrome.storage.local.set({ [Ee]: Oe(e) });
+async function Ne(e) {
+	await chrome.storage.local.set({ [U]: je(e) });
 }
 // src/shared/listing-cache.ts
-var je = "kosmore.myListingPrices", K = "kosmore.listingHistory.", Me = (e) => e > 0 && Date.now() - e < 3e5, Ne = (e, t) => f.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), Pe = () => new DOMException("Listing lookup canceled.", "AbortError");
-function Fe(e, t) {
+var W = "kosmore.myListingPrices", G = "kosmore.listingHistory.", K = (e) => e > 0 && Date.now() - e < 3e5, Pe = (e, t) => f.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), Fe = () => new DOMException("Listing lookup canceled.", "AbortError");
+function Ie(e, t) {
 	let n = new Map(t.map((e) => [e.id, e])), r = new Map(e.map((e) => [e.id, e])), i = /* @__PURE__ */ new Map(), a = [];
 	for (let t of e) n.has(t.id) ? (i.set(t.id, a), a = []) : a.push(t);
 	if (!i.size) return [...e, ...t];
@@ -993,7 +1016,7 @@ function Fe(e, t) {
 	}
 	return o.concat(a);
 }
-var Ie = class {
+var Le = class {
 	local;
 	session;
 	writes = Promise.resolve();
@@ -1013,18 +1036,25 @@ var Ie = class {
 	updateSaleStatus(e, t, n = [], r) {
 		return this.write(async () => {
 			let i = F(e), a = (await this.local.get(i))[i];
-			if (!a && !t.length) return;
-			let o = se(a?.changes ?? {}, t, n), s = new Set(Object.values(o).map((e) => e.subjectId)), c = { ...a?.copies };
-			for (let e of Object.keys(c)) s.has(e) || delete c[e];
-			r && s.has(r.subjectId) && r.at >= (c[r.subjectId]?.at ?? 0) && (c[r.subjectId] = {
-				at: r.at,
-				auctionIds: r.auctionIds
+			if (!a && !t.length && !r?.auctionIds.length) return;
+			let o = new Set(t.filter((e) => !e.subjectId || !e.finish).map((e) => e.auctionId)), s = [...n];
+			if (o.size) for (let [e, t] of Object.entries(a?.copies ?? {})) for (let n of t.auctionIds) o.has(n) && s.push({
+				id: n,
+				subjectId: e,
+				finish: t.finishes?.[n]
 			});
-			let l = {
-				changes: o,
-				copies: c
+			let c = L(a?.changes ?? {}, t, s), l = new Set(Object.values(c).map((e) => e.subjectId)), u = { ...a?.copies };
+			for (let [e, t] of Object.entries(u)) !l.has(e) && (!t.auctionIds.length || t.at < Date.now() - 864e5) && delete u[e];
+			r && (l.has(r.subjectId) || r.auctionIds.length || a?.copies[r.subjectId]) && r.at >= (u[r.subjectId]?.at ?? 0) && (u[r.subjectId] = {
+				at: r.at,
+				auctionIds: r.auctionIds,
+				finishes: r.finishes
+			});
+			let d = {
+				changes: c,
+				copies: u
 			};
-			return JSON.stringify(a) !== JSON.stringify(l) && await this.local.set({ [i]: l }), o;
+			return JSON.stringify(a) !== JSON.stringify(d) && await this.local.set({ [i]: d }), c;
 		});
 	}
 	decode(e, t, n) {
@@ -1056,7 +1086,7 @@ var Ie = class {
 		return i;
 	}
 	async readTracked(e, t) {
-		let n = t.map((t) => this.key(e, t)), r = await this.local.get(n), i = n.some((e) => r[e] === void 0) ? await (this.legacyIndex ??= this.local.get(je).then((e) => e[je]).catch(() => {
+		let n = t.map((t) => this.key(e, t)), r = await this.local.get(n), i = n.some((e) => r[e] === void 0) ? await (this.legacyIndex ??= this.local.get(W).then((e) => e[W]).catch(() => {
 			this.legacyIndex = void 0;
 		})) : void 0;
 		return t.map((t, a) => this.decode(r[n[a]], i?.entries?.[`${e}:${t}`], t));
@@ -1150,7 +1180,7 @@ var Ie = class {
 			i.throwIfAborted();
 			let a = [...t.keys()], o = await this.readTracked(e, a), s = {};
 			for (let [i, c] of a.entries()) {
-				let a = o[i], l = t.get(c).map((e) => this.serverRow(e)), u = Fe(a.listings, l), d = a.listings[0], f = !d || l.some((e) => e.id === d.id) && n >= (d.submittedAt ?? a.checkedAt), p = f ? l[0]?.id ?? d?.id : d.id, m = u.findIndex((e) => e.id === p);
+				let a = o[i], l = t.get(c).map((e) => this.serverRow(e)), u = Ie(a.listings, l), d = a.listings[0], f = !d || l.some((e) => e.id === d.id) && n >= (d.submittedAt ?? a.checkedAt), p = f ? l[0]?.id ?? d?.id : d.id, m = u.findIndex((e) => e.id === p);
 				m > 0 && u.unshift(...u.splice(m, 1)), s[this.key(e, c)] = this.saveState(a, u, r, f ? Math.max(n, a.checkedAt) : a.checkedAt);
 			}
 			i.throwIfAborted(), await this.local.set(s);
@@ -1159,7 +1189,7 @@ var Ie = class {
 	async history(e, t, n, r, i, a) {
 		let o = Date.now(), s = await this.batch(e);
 		i.throwIfAborted();
-		let c = n === "refresh", l = s && Me(s.fetchedAt) ? s : void 0, u = c ? {
+		let c = n === "refresh", l = s && K(s.fetchedAt) ? s : void 0, u = c ? {
 			selling: 180,
 			sold: 180,
 			unsold: 180
@@ -1180,7 +1210,7 @@ var Ie = class {
 	}
 	async invalidate(e) {
 		this.epochs.set(e, (this.epochs.get(e) ?? 0) + 1), await this.write(async () => {
-			let t = K + e, n = await this.session.get(t);
+			let t = G + e, n = await this.session.get(t);
 			x(n[t]) && await this.session.set({ [t]: {
 				...n[t],
 				fetchedAt: 0
@@ -1190,7 +1220,7 @@ var Ie = class {
 	async saveBatch(e, t, n) {
 		await this.write(async () => {
 			if (this.epochs.get(e) !== n) return;
-			let r = await this.session.get(null), i = K + e, a = Object.keys(r).filter((e) => e.startsWith(K)), o = JSON.stringify(t).length * 2;
+			let r = await this.session.get(null), i = G + e, a = Object.keys(r).filter((e) => e.startsWith(G)), o = JSON.stringify(t).length * 2;
 			if (o > 6e6) return;
 			let s = a.filter((e) => e !== i).sort((e, t) => Number(r[e]?.fetchedAt ?? 0) - Number(r[t]?.fetchedAt ?? 0));
 			o += s.reduce((e, t) => e + JSON.stringify(r[t]).length * 2, 0);
@@ -1204,7 +1234,7 @@ var Ie = class {
 	}
 	async batch(e) {
 		await this.writes;
-		let t = K + e, n = (await this.session.get(t))[t];
+		let t = G + e, n = (await this.session.get(t))[t];
 		return x(n) ? n : void 0;
 	}
 	async ensure(e, t, n, r, i = !1) {
@@ -1212,7 +1242,7 @@ var Ie = class {
 			let a = this.epochs.get(e);
 			if (!i) {
 				let n = await this.batch(e);
-				if (r.throwIfAborted(), n && Me(n.fetchedAt) && Ne(n, t)) return n;
+				if (r.throwIfAborted(), n && K(n.fetchedAt) && Pe(n, t)) return n;
 			}
 			let o = this.pending.get(e);
 			if (!o || o.controller.signal.aborted) {
@@ -1248,7 +1278,7 @@ var Ie = class {
 					if (o && i.fetchedAt <= o.fetchedAt && (i = {
 						...i,
 						fetchedAt: o.fetchedAt + 1
-					}), o && Me(o.fetchedAt)) {
+					}), o && K(o.fetchedAt)) {
 						for (let e of f) if (n.limits[e] > o.limits[e] && i.counts[e] <= o.counts[e] && i.counts[e] < i.totals[e]) throw Error("Your listing history stopped before all auctions were returned.");
 					}
 					return await this.saveBatch(e, i, a), i;
@@ -1259,7 +1289,7 @@ var Ie = class {
 				n.promise.then(r, r);
 			} else if (!o.started) for (let e of f) o.limits[e] = Math.max(o.limits[e], t[e]);
 			let s = await this.consume(o, n, r);
-			if (r.throwIfAborted(), Ne(s, t)) return s;
+			if (r.throwIfAborted(), Pe(s, t)) return s;
 			i = !1;
 		}
 	}
@@ -1271,7 +1301,7 @@ var Ie = class {
 				let r = e.readers.get(t) - 1;
 				return r ? e.readers.set(t, r) : e.readers.delete(t), e.users || e.controller.abort(), !0;
 			}, s = () => {
-				o() && i(Pe());
+				o() && i(Fe());
 			};
 			n.addEventListener("abort", s, { once: !0 }), n.aborted ? s() : e.promise.then((e) => {
 				o() && r(e);
@@ -1282,9 +1312,9 @@ var Ie = class {
 	}
 };
 // src/listing-background.ts
-function Le(e) {
-	let t = new Ie(chrome.storage.local, chrome.storage.session);
-	chrome.runtime.onMessage.addListener((n, r, i) => r.id !== chrome.runtime.id || r.tab?.id === void 0 || r.frameId !== 0 || !r.url?.startsWith("https://kosmora.io/") || !ce(n) || n.op !== "listingCache" && n.op !== "listingSavedPrice" && n.op !== "listingAccountVerified" && n.op !== "listingRecord" && n.op !== "listingCopiesObserved" && n.op !== "listingObserved" ? !1 : ((async () => {
+function Re(e) {
+	let t = new Le(chrome.storage.local, chrome.storage.session);
+	chrome.runtime.onMessage.addListener((n, r, i) => r.id !== chrome.runtime.id || r.tab?.id === void 0 || r.frameId !== 0 || !r.url?.startsWith("https://kosmora.io/") || !le(n) || n.op !== "listingCache" && n.op !== "listingSavedPrice" && n.op !== "listingAccountVerified" && n.op !== "listingRecord" && n.op !== "listingCopiesObserved" && n.op !== "listingObserved" ? !1 : ((async () => {
 		let { accountKey: r, subjectId: i } = n;
 		if (n.op === "listingCopiesObserved") return await t.updateSaleStatus(r, [], [], {
 			subjectId: i,
@@ -1332,7 +1362,7 @@ function Le(e) {
 	})), !0));
 }
 // src/listing-history-store.ts
-var Re = () => ({
+var ze = () => ({
 	cursor: 0,
 	uploaded: 0,
 	erasedAt: 0
@@ -1342,7 +1372,7 @@ function Y(e) {
 		e.onsuccess = () => t(e.result), e.onerror = () => n(e.error);
 	});
 }
-var ze = class {
+var Be = class {
 	database;
 	imports = /* @__PURE__ */ new Map();
 	open() {
@@ -1392,6 +1422,7 @@ var ze = class {
 				id: n,
 				subjectId: a.subjectId,
 				startPrice: a.startPrice,
+				...a.finish && { finish: a.finish },
 				submittedAt: a.submittedAt,
 				copyId: a.copyId,
 				owner: t,
@@ -1420,6 +1451,7 @@ var ze = class {
 					submittedAt: n,
 					subjectId: e.subjectId,
 					startPrice: e.startPrice,
+					finish: e.finish,
 					copyId: e.copyId
 				}));
 			}
@@ -1451,7 +1483,7 @@ var ze = class {
 			let n = e.slice(r.length);
 			if ("latest" in t && a(n, t.latest), "listings" in t && Array.isArray(t.listings)) for (let e of t.listings) a(n, e);
 		}
-		let o = n[je];
+		let o = n[W];
 		for (let [t, n] of Object.entries(o?.entries ?? {})) t.startsWith(e + ":") && a(t.slice(e.length + 1), n?.listing);
 		await this.transaction("readwrite", async (n, r) => {
 			await Y(r.get(t)) || (await this.insert(n, J(e), i, !0), await Y(r.put(!0, t)));
@@ -1462,7 +1494,7 @@ var ze = class {
 			let a = await Y(i.get("cutoff:" + e)) ?? 0, o = [J(e), ...t ? [t] : []], s = [];
 			for (let { auctionId: e, relistOf: t, copyId: i } of n) for (let n of o) {
 				let o;
-				if (t && (o = await Y(r.index("auction").get([n, t]))), (!o || o.submittedAt <= a) && i) {
+				if (o = await Y(r.index("auction").get([n, t ?? e])), (!o || o.submittedAt <= a) && i) {
 					let e = IDBKeyRange.bound([
 						n,
 						i,
@@ -1478,6 +1510,7 @@ var ze = class {
 					s.push({
 						id: e,
 						subjectId: o.subjectId,
+						...o.finish && { finish: o.finish },
 						copyId: i ?? o.copyId
 					});
 					break;
@@ -1505,7 +1538,7 @@ var ze = class {
 		});
 	}
 	state(e) {
-		return this.transaction("readonly", async (t, n) => await Y(n.get(e)) ?? Re());
+		return this.transaction("readonly", async (t, n) => await Y(n.get(e)) ?? ze());
 	}
 	pending(e, t) {
 		return this.transaction("readonly", (n) => Y(n.index("outbox").getAll(IDBKeyRange.bound([J(e), t + 1], [J(e), q]), 40)));
@@ -1521,7 +1554,7 @@ var ze = class {
 	}
 	apply(e, t, n) {
 		return this.transaction("readwrite", async (r, i) => {
-			let a = await Y(i.get(e)) ?? Re();
+			let a = await Y(i.get(e)) ?? ze();
 			if (a.generation !== void 0 && n.generation < a.generation) return !1;
 			let o = a.generation !== n.generation;
 			if (!o && a.cursor > n.cursor) return !1;
@@ -1563,14 +1596,14 @@ var ze = class {
 			}, e)), !!n.records.length || o && !!n.erasedAt;
 		});
 	}
-}, Be = "/v1/me/listing-history", X = "kosmore.listing-history", Z = (e) => typeof e == "number" && Number.isSafeInteger(e) && e >= 0;
-function Ve(e) {
+}, X = "/v1/me/listing-history", Ve = "kosmore.listing-history", Z = (e) => typeof e == "number" && Number.isSafeInteger(e) && e >= 0;
+function He(e) {
 	if (!e || !Z(e.generation) || !Z(e.cursor) || !Z(e.erasedAt) || typeof e.hasMore != "boolean" || !Array.isArray(e.records) || !e.records.every(E)) throw Error("Services returned invalid listing history.");
 	return e;
 }
-var He = class {
+var Ue = class {
 	link;
-	store = new ze();
+	store = new Be();
 	work = Promise.resolve();
 	queued = /* @__PURE__ */ new Map();
 	retry = /* @__PURE__ */ new Map();
@@ -1579,12 +1612,12 @@ var He = class {
 	}
 	install() {
 		let e = async () => {
-			chrome.alarms && !await chrome.alarms.get(X) && await chrome.alarms.create(X, { periodInMinutes: 5 });
+			chrome.alarms && !await chrome.alarms.get(Ve) && await chrome.alarms.create(Ve, { periodInMinutes: 5 });
 		};
 		e().catch(() => {}), chrome.runtime.onStartup?.addListener(() => {
 			e().catch(() => {}), this.schedule();
 		}), chrome.alarms?.onAlarm.addListener((e) => {
-			e.name === X && chrome.tabs.query({ url: "https://kosmora.io/*" }).then((e) => {
+			e.name === Ve && chrome.tabs.query({ url: "https://kosmora.io/*" }).then((e) => {
 				e.length && this.schedule();
 			});
 		});
@@ -1653,7 +1686,7 @@ var He = class {
 		do {
 			let r = new URLSearchParams({ after: String(t.cursor) });
 			t.generation !== void 0 && r.set("generation", String(t.generation));
-			let i = Ve(await (await this.checked(e, Be + "/changes?" + r)).json());
+			let i = He(await (await this.checked(e, X + "/changes?" + r)).json());
 			if (i.hasMore && (!i.records.length || i.generation === t.generation && i.cursor <= t.cursor)) throw Error("Listing history cursor did not advance.");
 			if (e.signal.throwIfAborted(), n = await this.store.apply(e.scope, e.handle, i) || n, t = await this.store.state(e.scope), !i.hasMore) break;
 		} while (!e.signal.aborted);
@@ -1671,7 +1704,7 @@ var He = class {
 				startPrice: r,
 				submittedAt: i
 			}));
-			r.length && await this.checked(e, Be + "/batch", "POST", {
+			r.length && await this.checked(e, X + "/batch", "POST", {
 				generation: n.generation,
 				records: r
 			});
@@ -1685,7 +1718,7 @@ var He = class {
 			if (!n || n.scope !== JSON.stringify([t, e])) throw Error("The linked Services account changed.");
 			let r = await this.store.state(n.scope);
 			r.generation === void 0 && (r = await this.pull(n));
-			let i = await (await this.checked(n, Be + "?generation=" + r.generation, "DELETE")).json();
+			let i = await (await this.checked(n, X + "?generation=" + r.generation, "DELETE")).json();
 			if (!Z(i.generation) || i.generation <= r.generation || !Z(i.erasedAt)) throw Error("Services could not confirm erasure.");
 			await this.store.apply(n.scope, n.handle, {
 				...i,
@@ -1695,7 +1728,7 @@ var He = class {
 			}), await this.changed(n.handle);
 		});
 	}
-}, Ue = class {
+}, We = class {
 	db;
 	open() {
 		return this.db ??= new Promise((e, t) => {
@@ -1767,12 +1800,12 @@ var He = class {
 			}
 		});
 	}
-}, We = 864e5, Ge = 100, Q = "kosmore.deferredCard", $ = "kosmore.pendingAccountLink", Ke = 1;
-function qe() {
-	let t = new Ue(), n = "", r, i = new AbortController(), a = 0, o = /* @__PURE__ */ new Map(), s = !1, c, u, d, f = 0, p = /* @__PURE__ */ new Map(), m, h = 0, g = /* @__PURE__ */ new Set(), _, v = t.connection().then(async (e) => {
+}, Ge = 864e5, Ke = 100, Q = "kosmore.deferredCard", $ = "kosmore.pendingAccountLink", qe = 1;
+function Je() {
+	let t = new We(), n = "", r, i = new AbortController(), a = 0, o = /* @__PURE__ */ new Map(), s = !1, c, u, d, f = 0, p = /* @__PURE__ */ new Map(), m, h = 0, g = /* @__PURE__ */ new Set(), _, v = t.connection().then(async (e) => {
 		n = e?.base ?? "", r = e?.session, u = (await chrome.storage.session?.get($))?.[$];
 		let t = (await chrome.storage?.session?.get(Q))?.[Q];
-		t?.base === n && t?.player === r?.playerId && N(t?.id) && (_ = t.id);
+		t?.base === n && t?.player === r?.playerId && M(t?.id) && (_ = t.id);
 	}), y = Promise.resolve(), b = (e) => {
 		let t = y.then(e);
 		return y = t.catch(() => {}), t;
@@ -1780,12 +1813,12 @@ function qe() {
 		let n = e(await t.json()), r = n.retentionDays, i = n.freshnessSeconds;
 		if (typeof r != "number" || !Number.isInteger(r) || r < 1 || typeof i != "number" || !Number.isInteger(i) || i < 1 || i > r * 86400) throw Error("Invalid card cache configuration.");
 		return {
-			retention: r * We,
+			retention: r * Ge,
 			freshness: i * 1e3
 		};
 	});
 	x.catch(() => {}), v.catch(() => {});
-	let S = new He(async () => {
+	let S = new Ue(async () => {
 		await v;
 		let e = r, t = n, a = i.signal;
 		if (!(!e?.handle || e.blocked || e.expiresAt <= Date.now() || e.scopes && !e.scopes.includes("listings"))) return {
@@ -1799,7 +1832,7 @@ function qe() {
 						...e,
 						scopes: (e.scopes ?? ["identity"]).filter((e) => e !== "listings")
 					});
-				}) : await R(s, t, e, a), s;
+				}) : await L(s, t, e, a), s;
 			}
 		};
 	});
@@ -1826,7 +1859,7 @@ function qe() {
 		o.clear(), g.clear(), m = void 0, h = 0, f = 0, p.clear(), n = e, r = a, await w(), await t.saveConnection({
 			base: n,
 			session: r
-		}), await chrome.storage.local.set({ [ne]: crypto.randomUUID() });
+		}), await chrome.storage.local.set({ [re]: crypto.randomUUID() });
 	}
 	async function E(e, t, n, r, i, a = i === void 0 ? "GET" : "POST") {
 		return fetch(e + t, {
@@ -1844,7 +1877,7 @@ function qe() {
 	}
 	let ee = (e) => btoa(String.fromCharCode(...e)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""), D = () => ee(crypto.getRandomValues(/* @__PURE__ */ new Uint8Array(32)));
 	async function O() {
-		u && (await chrome.storage.session.remove($), u = void 0, await chrome.declarativeNetRequest?.updateSessionRules({ removeRuleIds: [Ke] }));
+		u && (await chrome.storage.session.remove($), u = void 0, await chrome.declarativeNetRequest?.updateSessionRules({ removeRuleIds: [qe] }));
 	}
 	async function k(e) {
 		await chrome.storage.session.set({ [$]: e }), u = e;
@@ -1872,9 +1905,9 @@ function qe() {
 		};
 	}
 	async function A(e, t, r = !1) {
-		let a = re(e);
+		let a = ie(e);
 		if (r && !chrome.declarativeNetRequest?.updateSessionRules) throw Error("This browser cannot receive a sign-in link in another tab.");
-		if (!await chrome.permissions.contains({ origins: [ie(a)] })) throw Error("Allow access to the Services host before connecting.");
+		if (!await chrome.permissions.contains({ origins: [ae(a)] })) throw Error("Allow access to the Services host before connecting.");
 		c?.abort();
 		let o = new AbortController();
 		c = o;
@@ -1884,9 +1917,9 @@ function qe() {
 			if (e.throwIfAborted(), r) {
 				let e = chrome.runtime.id + "\\.chromiumapp\\.org";
 				await k(s), await chrome.declarativeNetRequest.updateSessionRules({
-					removeRuleIds: [Ke],
+					removeRuleIds: [qe],
 					addRules: [{
-						id: Ke,
+						id: qe,
 						action: {
 							type: chrome.declarativeNetRequest.RuleActionType.REDIRECT,
 							redirect: { regexSubstitution: chrome.runtime.getURL("link-complete.html") + "#\\1" }
@@ -1916,9 +1949,9 @@ function qe() {
 			}), Error("The browser could not open the sign-in window. Choose Copy Link to continue in another tab.")) : e;
 		}
 		if (!d) throw Error("Kosmora did not complete account linking.");
-		return M(s, d, u);
+		return j(s, d, u);
 	}
-	async function j(e) {
+	async function ne(e) {
 		let { link: t, signal: r } = await b(async () => {
 			let t = u;
 			if (!t || t.target !== n || t.expiresAt <= Date.now()) throw Error("This link has expired or has already been used. Return to KosMore Settings.");
@@ -1931,9 +1964,9 @@ function qe() {
 				signal: AbortSignal.any([a.signal, i.signal])
 			};
 		});
-		return M(t, chrome.identity.getRedirectURL("kosmore-services") + "?" + e, r);
+		return j(t, chrome.identity.getRedirectURL("kosmore-services") + "?" + e, r);
 	}
-	async function M(t, n, r) {
+	async function j(t, n, r) {
 		let { target: i, verifier: a, state: o } = t, s = chrome.identity.getRedirectURL("kosmore-services"), c = new URL(n), l = c.searchParams.get("code");
 		if (c.origin + c.pathname !== s || c.hash || c.searchParams.getAll("state").length !== 1 || c.searchParams.get("state") !== o) throw Error("Kosmora returned an invalid account-linking callback.");
 		let u = c.searchParams.get("error");
@@ -1961,13 +1994,13 @@ function qe() {
 			handle: typeof g.handle == "string" ? g.handle : void 0
 		}), S.schedule(), C()));
 	}
-	let P = (e, t) => JSON.stringify([e, t]), F = (e, t, n) => JSON.stringify([
+	let N = (e, t) => JSON.stringify([e, t]), P = (e, t, n) => JSON.stringify([
 		e,
 		t,
 		n
 	]);
-	async function I(e, a) {
-		let o = r, s = n, c = i.signal, { retention: l, freshness: u } = await x, d = await t.get("cards", P(s, e)), f = (a && o && !o.blocked && o.handle?.toLowerCase() === a && o.expiresAt > Date.now() ? await Promise.all(["all", e].map((e) => t.get("listings", F(s, o.playerId, e)))) : []).filter((e) => !!e && (e.freshUntil ?? 0) > Date.now()).sort((e, t) => (t.startedAt ?? t.fetchedAt) - (e.startedAt ?? e.fetchedAt))[0];
+	async function F(e, a) {
+		let o = r, s = n, c = i.signal, { retention: l, freshness: u } = await x, d = await t.get("cards", N(s, e)), f = (a && o && !o.blocked && o.handle?.toLowerCase() === a && o.expiresAt > Date.now() ? await Promise.all(["all", e].map((e) => t.get("listings", P(s, o.playerId, e)))) : []).filter((e) => !!e && (e.freshUntil ?? 0) > Date.now()).sort((e, t) => (t.startedAt ?? t.fetchedAt) - (e.startedAt ?? e.fetchedAt))[0];
 		c.throwIfAborted();
 		let p = Date.now(), m = d ? Math.min(d.fetchedAt + u, d.freshUntil) : 0, h = f?.listings.filter((t) => t.subjectId === e && Date.parse(t.endsAt) > p);
 		return !d || d.fetchedAt <= p - l || d.missing && m <= p ? {
@@ -1989,19 +2022,22 @@ function qe() {
 			listingsUntil: f?.freshUntil
 		};
 	}
-	function L(e, t) {
+	function I(e, t) {
 		let n = e && /^\d+$/.test(e) ? Number(e) * 1e3 : e ? Date.parse(e) - Date.now() : typeof t == "number" && Number.isFinite(t) ? t * 1e3 : 15e3;
 		return Math.max(1e3, Number.isFinite(n) ? n : 15e3);
 	}
-	async function se(e, t) {
+	async function ce(e, t) {
 		let n = await chrome.tabs.query({ url: "https://kosmora.io/*" });
-		await Promise.allSettled(n.flatMap((n) => n.id === void 0 ? [] : [chrome.tabs.sendMessage(n.id, {
-			op: "servicesCardsChanged",
-			ids: e,
-			firstFetchedAt: t
-		}, { frameId: 0 })]));
+		for (let r = 0; r < e.length; r += 100) {
+			let i = {
+				op: "servicesCardsChanged",
+				ids: e.slice(r, r + 100),
+				firstFetchedAt: t
+			};
+			await Promise.allSettled(n.flatMap((e) => e.id === void 0 ? [] : [chrome.tabs.sendMessage(e.id, i, { frameId: 0 })]));
+		}
 	}
-	async function R(e, t, n, i) {
+	async function L(e, t, n, i) {
 		return e.status !== 401 && e.status !== 403 ? !1 : (await b(async () => {
 			!i.aborted && r === n && await T(t, e.status === 403 ? {
 				...n,
@@ -2009,10 +2045,10 @@ function qe() {
 			} : void 0);
 		}), !0);
 	}
-	async function ce(a) {
+	async function R(a) {
 		let o = r, s = n, c = i.signal;
 		if (!o || !a || o.handle?.toLowerCase() !== a || o.blocked || o.expiresAt <= Date.now() || o.scopes && !o.scopes.includes("listings")) return;
-		let l = F(s, o.playerId, "all"), u = await t.get("listings", l);
+		let l = P(s, o.playerId, "all"), u = await t.get("listings", l);
 		if (c.throwIfAborted(), (u?.freshUntil ?? 0) > Date.now() || Math.max(h, f) > Date.now()) return;
 		if (m) return m;
 		let d = (async () => {
@@ -2026,28 +2062,30 @@ function qe() {
 				});
 				return;
 			}
-			if (await R(i, s, o, c)) return;
+			if (await L(i, s, o, c)) return;
 			if (!i.ok) {
-				h = Date.now() + L(i.headers.get("Retry-After")), i.status === 429 && (f = h);
+				h = Date.now() + I(i.headers.get("Retry-After")), i.status === 429 && (f = h);
 				return;
 			}
 			let a = e(await i.json()).auctions;
 			if (!Array.isArray(a)) throw Error("Invalid listing snapshot.");
-			let u = a.flatMap((t) => {
+			let d = a.flatMap((t) => {
 				let n = e(e(t).card).id;
-				if (!N(n)) throw Error("Invalid listing card.");
-				return oe([t], n).map((e) => ({
+				if (!M(n)) throw Error("Invalid listing card.");
+				return se([t], n).map((e) => ({
 					...e,
 					subjectId: n
 				}));
-			}), d = Date.now(), p = Date.parse(i.headers.get("X-KosMore-Fresh-Until") ?? "");
+			}), p = Date.now(), m = Date.parse(i.headers.get("X-KosMore-Fresh-Until") ?? "");
 			await t.save([], [{
 				key: l,
 				startedAt: n,
-				fetchedAt: d,
-				freshUntil: Number.isFinite(p) ? p : d + 6e4,
-				listings: u
+				fetchedAt: p,
+				freshUntil: Number.isFinite(m) ? m : p + 6e4,
+				listings: d
 			}], c);
+			let g = new Set([...u?.listings ?? [], ...d].flatMap((e) => e.subjectId ? [e.subjectId] : []));
+			g.size && ce([...g], {}).catch(() => {});
 		})().catch((e) => {
 			throw c.aborted || (h = Date.now() + 15e3), e;
 		}).finally(() => {
@@ -2061,72 +2099,74 @@ function qe() {
 			includeMyListings: o,
 			...o && { preferScopedBatch: !0 }
 		});
-		if (await R(c, r, i, a)) return;
+		if (await L(c, r, i, a)) return;
 		if (!c.ok) {
-			f = Date.now() + L(c.headers.get("Retry-After"));
+			f = Date.now() + I(c.headers.get("Retry-After"));
 			return;
 		}
 		let l = e(await c.json());
 		if (o && l.myListingsStatus === "scope-missing" && (h = i.expiresAt), !Array.isArray(l.cards)) throw Error("Invalid Services batch.");
 		a.throwIfAborted();
-		let u = new Set(n), d = [], m = {}, g = [], _ = [], v = Date.now(), y = v + L(c.headers.get("Retry-After"), l.retryAfterSeconds);
+		let u = new Set(n), d = [], m = {}, g = [], _ = [], v = /* @__PURE__ */ new Set(), y = Date.now(), b = y + I(c.headers.get("Retry-After"), l.retryAfterSeconds);
 		for (let n of l.cards) try {
 			let a = e(n), c = a.id;
-			if (!N(c) || !u.delete(c)) continue;
+			if (!M(c) || !u.delete(c)) continue;
 			if (o && l.myListingsStatus === "fresh" && Array.isArray(a.myListings)) {
 				let e = Date.parse(String(l.myListingsFreshUntilUtc));
-				_.push({
-					key: F(r, i.playerId, c),
+				v.add(c), _.push({
+					key: P(r, i.playerId, c),
 					startedAt: s,
-					fetchedAt: v,
-					freshUntil: Number.isFinite(e) ? e : v + 6e4,
-					listings: oe(a.myListings, c).map((e) => ({
+					fetchedAt: y,
+					freshUntil: Number.isFinite(e) ? e : y + 6e4,
+					listings: se(a.myListings, c).map((e) => ({
 						...e,
 						subjectId: c
 					}))
 				});
 			}
-			if (o && l.myListingsStatus === "unavailable" && (h = Math.max(h, y)), a.status !== "fresh" && a.status !== "stale" && a.status !== "notFound") {
-				p.set(c, y);
+			if (o && l.myListingsStatus === "unavailable" && (h = Math.max(h, b)), a.status !== "fresh" && a.status !== "stale" && a.status !== "notFound") {
+				p.set(c, b);
 				continue;
 			}
-			let f = Date.parse(String(a.fetchedAtUtc)), b = Date.parse(String(a.freshUntilUtc));
-			if (!Number.isFinite(f) || !Number.isFinite(b) || b < f) throw Error("Invalid Services cache timestamps.");
-			a.status === "stale" && p.set(c, y);
-			let x = P(r, c), S = await t.get("cards", x);
-			if (S && (S.fetchedAt > f || S.fetchedAt === f && S.freshUntil >= b)) continue;
-			let C = a.status === "notFound" ? {
-				key: x,
+			let f = Date.parse(String(a.fetchedAtUtc)), x = Date.parse(String(a.freshUntilUtc));
+			if (!Number.isFinite(f) || !Number.isFinite(x) || x < f) throw Error("Invalid Services cache timestamps.");
+			a.status === "stale" && p.set(c, b);
+			let S = N(r, c), C = await t.get("cards", S);
+			if (C && (C.fetchedAt > f || C.fetchedAt === f && C.freshUntil >= x)) continue;
+			let w = a.status === "notFound" ? {
+				key: S,
 				fetchedAt: f,
-				freshUntil: b,
+				freshUntil: x,
 				missing: !0
 			} : {
-				key: x,
+				key: S,
 				fetchedAt: f,
-				freshUntil: a.status === "stale" ? Math.min(b, v) : b,
-				card: ae(a.details, c)
+				freshUntil: a.status === "stale" ? Math.min(x, y) : x,
+				card: oe(a.details, c)
 			};
-			g.push(C), d.push(c), S || (m[c] = f);
+			g.push(w), d.push(c), C || (m[c] = f);
 		} catch {
-			N(n?.id) && p.set(n.id, y);
+			M(n?.id) && p.set(n.id, b);
 		}
-		for (let e of u) p.set(e, y);
-		a.throwIfAborted(), await t.save(g, _, a), a.throwIfAborted(), d.length && se(d, m).catch(() => {});
+		for (let e of u) p.set(e, b);
+		a.throwIfAborted(), await t.save(g, _, a), a.throwIfAborted();
+		let x = [.../* @__PURE__ */ new Set([...d, ...v])];
+		x.length && ce(x, m).catch(() => {});
 	}
 	async function ue() {
 		s = !0;
 		try {
 			for (; o.size;) {
-				let e = [...o.values()][0].privateDemand, t = [...o].filter(([, t]) => t.privateDemand === e).slice(0, Ge);
+				let e = [...o.values()][0].privateDemand, t = [...o].filter(([, t]) => t.privateDemand === e).slice(0, Ke);
 				_ && g.add(_);
 				for (let n of g) {
-					if (t.length === Ge) break;
-					g.delete(n), o.has(n) || (p.get(n) ?? 0) > Date.now() || (B(n, e), t.push([n, o.get(n)]));
+					if (t.length === Ke) break;
+					g.delete(n), o.has(n) || (p.get(n) ?? 0) > Date.now() || (z(n, e), t.push([n, o.get(n)]));
 				}
 				let a = r, s = i.signal, c = n;
 				try {
 					if (_ && t.some(([e]) => e === _) && await w(), s.throwIfAborted(), a && !a.blocked && a.expiresAt > Date.now() && f <= Date.now()) {
-						let n = await V(t.map(([e]) => e), c);
+						let n = await fe(t.map(([e]) => e), c);
 						s.throwIfAborted(), n.length && await le(n, c, a, s, e);
 					}
 				} catch {
@@ -2139,10 +2179,10 @@ function qe() {
 			s = !1;
 		}
 	}
-	function z(e, t) {
-		if (!(!r || r.blocked || r.expiresAt <= Date.now() || f > Date.now() || (p.get(e) ?? 0) > Date.now())) return g.delete(e), B(e, t);
+	function de(e, t) {
+		if (!(!r || r.blocked || r.expiresAt <= Date.now() || f > Date.now() || (p.get(e) ?? 0) > Date.now())) return g.delete(e), z(e, t);
 	}
-	function B(e, t) {
+	function z(e, t) {
 		let n = o.get(e);
 		if (n) return n.privateDemand ||= t, n.promise;
 		let r, i = new Promise((e) => {
@@ -2156,21 +2196,21 @@ function qe() {
 			d = void 0, ue().catch(() => {});
 		}, 35)), i;
 	}
-	async function V(e, n) {
-		let { freshness: r } = await x, i = await t.getCards(e.map((e) => P(n, e))), a = Date.now();
+	async function fe(e, n) {
+		let { freshness: r } = await x, i = await t.getCards(e.map((e) => N(n, e))), a = Date.now();
 		return e.filter((e, t) => {
 			let n = i[t];
 			return !n || Math.min(n.freshUntil, n.fetchedAt + r) <= a;
 		});
 	}
-	async function de(e, s, c, l = !1, u = !1) {
+	async function pe(e, s, c, l = !1, u = !1) {
 		if (r && r.expiresAt <= Date.now() && await b(async () => {
 			r && r.expiresAt <= Date.now() && await T(n);
 		}), !n) return {};
 		let d = i.signal;
 		if (c) {
 			if (!r || r.blocked) return {};
-			let t = await V([...new Set(e)], n);
+			let t = await fe([...new Set(e)], n);
 			d.throwIfAborted();
 			for (let e of t) o.has(e) || (g.add(e), g.size > 500 && g.delete(g.values().next().value));
 			return !_ && g.size && await w(g.values().next().value), {};
@@ -2183,14 +2223,22 @@ function qe() {
 		}
 		let v = {};
 		return await Promise.all([...new Set(e)].map(async (e) => {
-			let t = await I(e, s);
+			let t = await F(e, s);
 			d.throwIfAborted();
 			let n = u && s !== void 0 && r?.handle?.toLowerCase() === s && !r.blocked && (!r.scopes || r.scopes.includes("listings")) && t.listings === void 0;
 			if (t.stale && !l) {
-				let r = z(e, n && h <= Date.now());
-				(n || !t.card) && (await r, d.throwIfAborted(), t = await I(e, s));
+				let r = de(e, n && h <= Date.now());
+				(n || !t.card) && (await r, d.throwIfAborted(), t = await F(e, s));
 			}
-			n && !t.missing && t.listings === void 0 && (await ce(s), d.throwIfAborted(), t = await I(e, s)), v[e] = t;
+			if (n && !t.missing && t.listings === void 0) {
+				try {
+					await R(s);
+				} catch (e) {
+					if (!t.card || d.aborted) throw e;
+				}
+				d.throwIfAborted(), t = await F(e, s);
+			}
+			v[e] = t;
 		})), d.throwIfAborted(), v;
 	}
 	return chrome.runtime.onMessage.addListener((e, t, a) => {
@@ -2227,12 +2275,12 @@ function qe() {
 				});
 				case "servicesSave": {
 					if (typeof e.base != "string") throw Error("Invalid Services URL.");
-					let t = e.base ? re(e.base) : "";
+					let t = e.base ? ie(e.base) : "";
 					return t !== n && c?.abort(), b(async () => (t !== n && await T(t), C()));
 				}
 				case "servicesFinishLink":
 					if (typeof e.query != "string" || e.query.length > 1024) throw Error("Invalid account-linking callback.");
-					return j(e.query);
+					return ne(e.query);
 				case "servicesConnect":
 				case "servicesCopyLink":
 					if (typeof e.base != "string") throw Error("Invalid Services URL.");
@@ -2249,8 +2297,8 @@ function qe() {
 					return C();
 				});
 				default:
-					if (!Array.isArray(e.ids) || e.ids.length > 500 || !e.ids.every(N)) throw Error("Invalid card request.");
-					return de(e.ids, typeof e.account == "string" && /^[a-z0-9_]{1,24}$/.test(e.account) ? e.account : void 0, e.op === "servicesObserve", e.op === "servicesPeek", e.op === "servicesRead" && e.includeMyListings === !0);
+					if (!Array.isArray(e.ids) || e.ids.length > 500 || !e.ids.every(M)) throw Error("Invalid card request.");
+					return pe(e.ids, typeof e.account == "string" && /^[a-z0-9_]{1,24}$/.test(e.account) ? e.account : void 0, e.op === "servicesObserve", e.op === "servicesPeek", e.op === "servicesRead" && e.includeMyListings === !0);
 			}
 		}).then((t) => a({
 			requestId: e.requestId,
@@ -2264,8 +2312,8 @@ function qe() {
 	}), S;
 }
 // src/background.ts
-Le(qe());
-var Je = Promise.resolve();
+Re(Je());
+var Ye = Promise.resolve();
 chrome.tabs.onZoomChange.addListener(({ tabId: e, newZoomFactor: t }) => {
 	chrome.tabs.sendMessage(e, {
 		op: "browserZoomChanged",
@@ -2276,7 +2324,7 @@ chrome.tabs.onZoomChange.addListener(({ tabId: e, newZoomFactor: t }) => {
 }), chrome.action.onClicked.addListener(() => {
 	chrome.runtime.openOptionsPage();
 }), chrome.runtime.onMessage.addListener((e, t, n) => {
-	if (t.id !== chrome.runtime.id || !ce(e)) return !1;
+	if (t.id !== chrome.runtime.id || !le(e)) return !1;
 	let r = t.url?.split(/[?#]/, 1)[0] === chrome.runtime.getURL("options.html"), i = !!t.tab && t.url?.startsWith("https://kosmora.io/");
 	if (e.op === "browserZoom" && i && t.tab?.id !== void 0) return chrome.tabs.getZoom(t.tab.id).then((t) => n({
 		requestId: e.requestId,
@@ -2288,9 +2336,9 @@ chrome.tabs.onZoomChange.addListener(({ tabId: e, newZoomFactor: t }) => {
 		error: l(t)
 	})), !0;
 	if ((e.op === "popupState" || e.op === "popupLayout" || e.op === "friendPopupState" || e.op === "friendPopupLayout") && i && t.tab?.id !== void 0 && t.frameId === 0) {
-		let r = e.op === "friendPopupState" || e.op === "friendPopupLayout", i = `${r ? te : O}${t.tab.id}`, a = Je.then(async () => {
-			let t = j((await chrome.storage.session.get(i))[i]), n = r ? t : {
-				...j((await chrome.storage.local.get(k))[k]),
+		let r = e.op === "friendPopupState" || e.op === "friendPopupLayout", i = `${r ? te : O}${t.tab.id}`, a = Ye.then(async () => {
+			let t = ne((await chrome.storage.session.get(i))[i]), n = r ? t : {
+				...ne((await chrome.storage.local.get(k))[k]),
 				tab: t.tab
 			};
 			if (e.op === "popupState" || e.op === "friendPopupState") return n;
@@ -2299,12 +2347,12 @@ chrome.tabs.onZoomChange.addListener(({ tabId: e, newZoomFactor: t }) => {
 				pinned: n.pinned,
 				position: n.position
 			} }), a.position || a.width !== void 0 || a.height !== void 0) {
-				let e = await ke();
-				a.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = A(a.position)), a.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(a.width)), a.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(a.height)), await Ae(e);
+				let e = await Me();
+				a.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = A(a.position)), a.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(a.width)), a.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(a.height)), await Ne(e);
 			}
 			return n;
 		});
-		return Je = a.then(() => {}, () => {}), a.then((t) => n({
+		return Ye = a.then(() => {}, () => {}), a.then((t) => n({
 			requestId: e.requestId,
 			ok: !0,
 			data: t

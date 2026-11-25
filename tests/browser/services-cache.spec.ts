@@ -6,8 +6,10 @@ import { launchTestBrowser } from "./browser";
 import { albums, face, me } from "../fixtures/data";
 import { sellManyFixture, singleSellFixture } from "../fixtures/sell-many";
 import { serviceRow } from "../fixtures/services";
+import { myListing, myListingPage } from "../fixtures/my-listings";
 
 test("uses the unified Services response on a cold cache, then reuses it across tabs", async () => {
+  test.slow();
   const profile = await mkdtemp(resolve(tmpdir(), "kosmore-services-"));
   const bundle = resolve(process.env.KOSMORE_TEST_BUNDLE ?? "dist");
   const context = await launchTestBrowser(profile, {
@@ -48,7 +50,7 @@ test("uses the unified Services response on a cold cache, then reuses it across 
         return route.fulfill({
           contentType: "text/html",
           body: sell
-            ? singleSellFixture()
+            ? singleSellFixture(id)
             : `<main><a href="/card/${id}">${face(id, "Northern Lights", faceClass)}</a></main>`,
         });
       }
@@ -71,6 +73,7 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     });
     const row = serviceRow("42");
     row.details.sales.plain.lastSale.numberOne = true;
+    row.myListings.push({ ...row.myListings[0], id: "000000000000000000000043", finish: "plain", price: "10000000", bids: 2 });
     Object.assign(row.details.sales.shiny, {
       ...row.details.sales.plain,
       lastSale: {
@@ -240,8 +243,12 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     ).toBeVisible();
     const listedFor = cards.locator(".listed-for .market-badge-label");
     const priceBadge = cards.locator("main .signal-badge.auction .badge-price");
-    await expect(listedFor).toHaveText("Listed For: $7.5 - 3 bids");
-    await expect(priceBadge).toHaveText("$7.5 - 3 bids");
+    await expect(listedFor).toHaveText("Listed For: $7.5");
+    await expect(priceBadge).toHaveText("$7.5");
+    await expect(cards.locator("main .auction svg text")).toHaveText("3");
+    await expect(cards.locator("main .auction")).not.toContainText("✓");
+    await expect(cards.locator(".listed-for svg text")).toHaveText("3");
+    await expect(cards.locator(".listed-for")).not.toContainText("✓");
     const overlaySettings = options.locator("#card-overlays");
     const activeAuctions = overlaySettings.getByLabel("Show active auctions icon on cards", { exact: true });
     const bidSwitch = overlaySettings.getByRole("switch", { name: "Show bid counts", exact: true });
@@ -256,7 +263,7 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await expect(listedFor).toHaveText("Listed For: $7.5");
     await expect(priceBadge).toHaveText("$7.5");
     await bidSwitch.check();
-    await expect(priceBadge).toHaveText("$7.5 - 3 bids");
+    await expect(priceBadge).toHaveText("$7.5");
     const daily = cards.getByRole("table", {
       name: "Daily sale prices by variant in Kosmo",
     });
@@ -320,6 +327,15 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await expect(tile.locator(".signal-badge.auction .badge-price")).toHaveText(
       "$1",
     );
+    const overlay = tile.locator("[data-kosmore-card-overlays]");
+    for (const [width, gap] of [[200, 2], [140, 1.5]]) {
+      await overlay.evaluate((host, width) => { host.style.width = width + "px"; }, width);
+      for (const kind of ["sale", "auction"]) {
+        const badge = overlay.locator(".signal-badge." + kind);
+        expect(await badge.evaluate(node => node.querySelector(".badge-price")!.getBoundingClientRect().left
+          - node.querySelector("svg")!.getBoundingClientRect().right)).toBeCloseTo(gap, 1);
+      }
+    }
     await cards.goto("https://kosmora.io/collection?finish=fullart");
     await tile.hover();
     await expect(
@@ -349,11 +365,13 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await sales.getByRole("button", { name: /^Last Sale: / }).click();
     await expect(sales.getByTestId("sell-start")).toHaveValue("6.5");
     const lowestButton = sales.getByRole("button", { name: /^Lowest Listed:/ });
-    await expect(lowestButton.locator(".amount")).toHaveText("Lowest Listed: $7.5 - 3 bids");
+    await expect(lowestButton.locator(".amount")).toHaveText("Lowest Listed: $7.5");
+    await expect(lowestButton.locator("svg text")).toHaveText("3");
+    await expect(lowestButton).not.toContainText("✓");
     await bidSwitch.uncheck();
     await expect(lowestButton.locator(".amount")).toHaveText("Lowest Listed: $7.5");
     await bidSwitch.check();
-    await expect(lowestButton.locator(".amount")).toHaveText("Lowest Listed: $7.5 - 3 bids");
+    await expect(lowestButton.locator(".amount")).toHaveText("Lowest Listed: $7.5");
     await lowestButton.click();
     await expect(sales.getByTestId("sell-start")).toHaveValue("7.5");
     await sales.getByRole("button", { name: "Verify account" }).click();
@@ -370,11 +388,11 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     );
     expect(batches).toHaveLength(1);
     expect(batches[0]).toEqual({ ids: ["42"], includeMyListings: false });
-    expect(
-      await worker.evaluate(
-        () => (globalThis as any).servicesFixture.listingCalls,
-      ),
-    ).toBe(0);
+    // Verification enables the first private read. The public snapshot stays warm.
+    await expect.poll(() => worker.evaluate(() => (globalThis as any).servicesFixture.listingCalls)).toBe(1);
+    await expect(lowestButton.locator("svg text")).toHaveText("3");
+    await lowestButton.click();
+    await expect(sales.getByTestId("sell-start")).toHaveValue("7.5");
     expect(
       paths.filter((path) =>
         /\/api\/(?:collection|cards|auctions|me\/auctions)/.test(path),
@@ -615,7 +633,7 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await tiles.first().scrollIntoViewIfNeeded();
     const neighbor = await first.elementHandle();
     const updated = tiles.nth(1).locator(".signal-badge.auction .badge-price");
-    await expect(updated).toHaveText("$7.5 - 3 bids");
+    await expect(updated).toHaveText("$7.5");
     await worker.evaluate(async (base) => {
       const id = "1002";
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -648,11 +666,182 @@ test("uses the unified Services response on a cold cache, then reuses it across 
         ids: [id],
       });
     }, service);
-    await expect(updated).toHaveText("$1,234 - 1 bid");
+    await expect(updated).toHaveText("$1,234");
     expect(
       await first.evaluate((badge, original) => badge === original, neighbor),
     ).toBe(true);
     expect(await totals()).toEqual(warm);
+
+    await test.step("finish-specific bids, visible-only pulse, and warm-cache scrolling", async () => {
+      // Publish a new private snapshot while keeping the public minimum unchanged.
+      const publishListings = async (bids: number | undefined, price: string, addCompetitor = false) => worker.evaluate(async ({ service, bids, price, addCompetitor }) => {
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+          const open = indexedDB.open("kosmore.services");
+          open.onsuccess = () => resolve(open.result);
+          open.onerror = () => reject(open.error);
+        });
+        const ids = Array.from({ length: 200 }, (_, n) => String(n + 1001));
+        try {
+          const now = Date.now();
+          await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(["cards", "listings"], "readwrite");
+            tx.oncomplete = () => resolve();
+            tx.onabort = () => reject(tx.error);
+            if (addCompetitor) {
+              const cards = tx.objectStore("cards");
+              const read = cards.get(JSON.stringify([service, "1001"]));
+              read.onsuccess = () => {
+                const card = read.result;
+                card.card.auctions.push({ finish: "plain", price: "8500000", bids: 4, endsAt: "2099-11-22T00:00:00Z" });
+                cards.put(card);
+              };
+            }
+            tx.objectStore("listings").put({
+              key: JSON.stringify([service, "000000000000000000000001", "all"]),
+              startedAt: now, fetchedAt: now, freshUntil: now + 300000,
+              listings: ids.map(subjectId => ({
+                subjectId, id: subjectId.padStart(24, "0"), finish: "plain", startPrice: price,
+                price, bids, endsAt: "2099-11-21T00:00:00Z",
+              })),
+            });
+          });
+        } finally { db.close(); }
+        for (const tab of await chrome.tabs.query({ url: "https://kosmora.io/*" }))
+          if (tab.id) for (let start = 0; start < ids.length; start += 100)
+            await chrome.tabs.sendMessage(tab.id, { op: "servicesCardsChanged", ids: ids.slice(start, start + 100) }, { frameId: 0 }).catch(() => {});
+      }, { service, bids, price, addCompetitor });
+      const switches = async (green: boolean, red = green) => worker.evaluate(async ({ green, red }) => {
+        const key = "kosmore.settings", saved = await chrome.storage.local.get(key);
+        await chrome.storage.local.set({ [key]: {
+          ...(saved[key] as object), highlightLowestListings: green, warnUndercutListings: red,
+        } });
+      }, { green, red });
+      await publishListings(0, "7500000");
+      await switches(true);
+      const label = tiles.first().locator(".on-sale");
+      await expect(first).toHaveAttribute("data-sole-own-listing", "");
+      await expect(first).toHaveCSS("border-top-color", "rgb(87, 237, 140)");
+      await expect(label).toHaveAttribute("data-state", "lowest");
+      await expect(label).toHaveAttribute("data-pulse", "");
+      await grid.emulateMedia({ reducedMotion: "reduce" });
+      expect(await label.evaluate(el => getComputedStyle(el, "::after").animationName)).toBe("none");
+      await grid.emulateMedia({ reducedMotion: "no-preference" });
+      await tiles.last().scrollIntoViewIfNeeded();
+      await expect(label).not.toHaveAttribute("data-pulse", "");
+      await tiles.first().scrollIntoViewIfNeeded();
+      await publishListings(0, "10000000");
+      await expect(label).toHaveAttribute("data-state", "undercut");
+      await expect(first).not.toHaveAttribute("data-sole-own-listing");
+      await switches(true, false);
+      await expect(label).not.toHaveAttribute("data-state");
+      await switches(false, true);
+      await expect(label).toHaveAttribute("data-state", "undercut");
+      await publishListings(2, "10000000");
+      await expect(label).not.toHaveAttribute("data-state");
+      await switches(true);
+      await expect(label).toHaveText("2For Sale");
+      await expect(label).toHaveAttribute("aria-label", /2 bids/);
+      await label.screenshot({ path: "test-results/screenshots/personal-bid-badge.png" });
+      await expect(label).not.toHaveAttribute("data-pulse", "");
+      await expect(first.locator("svg text")).toHaveText("3");
+      await publishListings(12, "7500000");
+      await expect(first.locator("svg text")).toHaveText("9+");
+      await expect(first).toHaveAttribute("aria-label", /12 bids/);
+      const iconOnly = async (hidePrice: boolean) => worker.evaluate(async hide => {
+        const key = "kosmore.settings", saved = await chrome.storage.local.get(key);
+        await chrome.storage.local.set({ [key]: { ...(saved[key] as object), showLowestListingPriceOverlay: !hide } });
+      }, hidePrice);
+      await iconOnly(true);
+      await expect(first.locator(".badge-price")).toHaveCount(0);
+      await expect(first.locator("svg text")).toHaveText("9+");
+      const geometry = await first.locator("svg text").evaluate(node => {
+        const box = (node as SVGTextElement).getBBox();
+        return { left: box.x, right: box.x + box.width, top: box.y, bottom: box.y + box.height };
+      });
+      expect(Math.abs((geometry.left + geometry.right) / 2 - 12)).toBeLessThan(0.75);
+      expect(Math.abs((geometry.top + geometry.bottom) / 2 - 12)).toBeLessThan(0.75);
+      expect(geometry.left).toBeGreaterThan(3);
+      expect(geometry.top).toBeGreaterThan(3);
+      await first.screenshot({ path: "test-results/screenshots/smallest-card-bid-badge.png" });
+      await iconOnly(false);
+      await tiles.first().hover();
+      await expect(grid.locator(".listed-for svg text")).toHaveText("9+");
+      const album = await context.newPage();
+      await album.goto("https://kosmora.io/albums/fixture?card=1001");
+      const albumBadge = album.locator(".kc-window .on-sale[data-state=bid]");
+      await expect(albumBadge).toHaveText("9+For Sale");
+      await expect(albumBadge.locator("svg")).toHaveCSS("width", "24px");
+      await expect(albumBadge.locator("svg")).toHaveCSS("height", "24px");
+      await expect(label.locator("svg")).toHaveCSS("width", "16px");
+      const nativeRow = (n: number, bids: number) => myListing(n, "1001", {
+        group: "selling", state: "open", bids, startPrice: "7500000", endsAt: "2099-11-21T00:00:00Z",
+      });
+      const winning = nativeRow(32, 12);
+      await album.route("**/api/me/auctions?**", route => route.fulfill({
+        json: myListingPage([nativeRow(31, 2), winning]),
+      }));
+      await album.locator(".kc-window .on-sale").click();
+      await expect(album).toHaveURL("https://kosmora.io/market/" + winning.id);
+      await album.close();
+      const sell = await context.newPage();
+      await sell.goto("https://kosmora.io/market/sell?card=1001");
+      const button = sell.getByRole("button", { name: /^Lowest Listed:/ });
+      // The normal game supplies its identity at startup on the sell screen.
+      await sell.evaluate(() => fetch("/api/me").then(r => r.json()));
+      await expect(button).toBeVisible();
+      await expect(button.locator("svg text")).toHaveText("9+");
+      await button.click();
+      // The preceding sell-settings test configured a -0.25 adjustment.
+      await expect(sell.getByTestId("sell-start")).toHaveValue("7.25");
+      for (const bids of [1, 9, 10, 0, undefined]) {
+        await publishListings(bids, "7500000");
+        await tiles.first().hover();
+        for (const badge of [first, grid.locator(".listed-for"), button]) {
+          if (bids) {
+            await expect(badge.locator("svg text")).toHaveText(bids > 9 ? "9+" : String(bids));
+            await expect(badge).toHaveAttribute("title", new RegExp(bids + " bid"));
+          } else {
+            await expect(badge.locator("svg text")).toHaveCount(0);
+            await expect(badge).not.toHaveAttribute("title", /\d+ bids?/);
+          }
+        }
+      }
+      await publishListings(2, "7500000", true);
+      await expect(label).toHaveText("2For Sale");
+      await expect(first.locator(".badge-price")).toHaveText("$8.5");
+      await expect(first.locator("svg text")).toHaveText("4");
+      await expect(grid.locator(".listed-for .market-badge-label")).toHaveText("Listed For: $8.5");
+      await expect(button.locator(".amount")).toHaveText("Lowest Listed: $8.5");
+      for (const badge of [first, grid.locator(".listed-for"), button])
+        await expect(badge).not.toHaveAttribute("data-sole-own-listing");
+      await expect(button.locator("svg text")).toHaveText("4");
+      await button.click();
+      await expect(sell.getByTestId("sell-start")).toHaveValue("8.25");
+      await sell.close();
+      await grid.bringToFront();
+      await grid.mouse.move(0, 0);
+      await publishListings(0, "7500000");
+      const sample = () => grid.evaluate(async () => {
+        const times: number[] = [];
+        let previous = await new Promise<number>(requestAnimationFrame);
+        for (let i = 0; i < 90; i++) {
+          window.scrollTo(0, Math.round((document.documentElement.scrollHeight - innerHeight) * i / 89));
+          const next = await new Promise<number>(requestAnimationFrame);
+          times.push(next - previous);
+          previous = next;
+        }
+        times.sort((a, b) => a - b);
+        return { medianMs: times[45], p95Ms: times[85] };
+      });
+      for (const enabled of [false, true]) {
+        await switches(enabled);
+        await tiles.first().scrollIntoViewIfNeeded();
+        if (enabled) await expect(label).toHaveAttribute("data-state", "lowest");
+        else await expect(label).not.toHaveAttribute("data-state");
+        console.log("200-card scroll, highlights " + (enabled ? "on" : "off"), await sample());
+      }
+      expect(await totals()).toEqual(warm);
+    });
   } finally {
     await context.close();
     await rm(profile, { recursive: true, force: true });

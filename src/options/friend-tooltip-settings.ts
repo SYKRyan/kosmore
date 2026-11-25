@@ -21,7 +21,7 @@ export const FRIEND_TOOLTIP_NUMBERS = [
   [
     "friendTooltipWidth",
     "Friend tooltip width",
-    "Width in pixels (240–1,200), limited to fit your screen.",
+    "Width at 100% UI Scale (240–1,200 pixels), limited to fit your screen.",
     240,
     1200,
     10,
@@ -29,7 +29,7 @@ export const FRIEND_TOOLTIP_NUMBERS = [
   [
     "friendTooltipHeight",
     "Friend tooltip height",
-    "Height in pixels (160–1,600), limited to fit your screen. Long friend details scroll inside the tooltip.",
+    "Height at 100% UI Scale (160–1,600 pixels), limited to fit your screen. Long friend details scroll inside the tooltip.",
     160,
     1600,
     10,

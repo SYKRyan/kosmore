@@ -125,33 +125,37 @@ export class ListingCacheService {
   updateSaleStatus(
     account: string,
     changes: SaleChange[],
-    identities: Pick<PersonalListing, "id" | "subjectId" | "copyId">[] = [],
+    identities: (Pick<PersonalListing, "id" | "subjectId" | "copyId"> & { finish?: PersonalListing["finish"] })[] = [],
     observed?: ListedCopies & { subjectId: string },
   ) {
     return this.write(async () => {
       const key = saleStatusKey(account);
       const previous = (await this.local.get(key))[key] as
         SaleStatusCache | undefined;
-      if (!previous && !changes.length) return;
-      const auctions = updateSaleChanges(
-        previous?.changes ?? {},
-        changes,
-        identities,
-      );
+      if (!previous && !changes.length && !observed?.auctionIds.length) return;
+      const unresolved = new Set(changes.filter(row => !row.subjectId || !row.finish).map(row => row.auctionId));
+      const known = [...identities];
+      if (unresolved.size) {
+        for (const [subjectId, copies] of Object.entries(previous?.copies ?? {}))
+          for (const id of copies.auctionIds)
+            if (unresolved.has(id)) known.push({ id, subjectId, finish: copies.finishes?.[id] });
+      }
+      const auctions = updateSaleChanges(previous?.changes ?? {}, changes, known);
       const subjects = new Set(
         Object.values(auctions).map((row) => row.subjectId),
       );
       const copies = { ...previous?.copies };
-      for (const id of Object.keys(copies))
-        if (!subjects.has(id)) delete copies[id];
+      for (const [id, snapshot] of Object.entries(copies))
+        if (!subjects.has(id) && (!snapshot.auctionIds.length || snapshot.at < Date.now() - 86400000)) delete copies[id];
       if (
         observed &&
-        subjects.has(observed.subjectId) &&
+        (subjects.has(observed.subjectId) || observed.auctionIds.length || previous?.copies[observed.subjectId]) &&
         observed.at >= (copies[observed.subjectId]?.at ?? 0)
       )
         copies[observed.subjectId] = {
           at: observed.at,
           auctionIds: observed.auctionIds,
+          finishes: observed.finishes,
         };
       const next = { changes: auctions, copies };
       if (JSON.stringify(previous) !== JSON.stringify(next))

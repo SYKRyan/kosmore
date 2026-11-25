@@ -111,6 +111,7 @@ export function parseInsights(v: unknown): CardInsights {
           ? { inTrade: true }
           : {}),
         variant: variantOf(c),
+        ...(typeof c.veil !== "boolean" && !c.fullArt && { finishKnown: false as const }),
         serial: typeof c.serial === "number" ? c.serial : undefined,
         ...(c.numberOne === true && { numberOne: true }),
         acquiredAt:

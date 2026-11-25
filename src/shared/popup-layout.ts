@@ -72,9 +72,9 @@ export interface PopupBounds extends PopupPosition {
   width: number;
   height: number;
 }
-export function tooltipScale(settings: { lockTooltipToBrowserZoom: boolean; tooltipUiScale: number }, browserZoom: number) {
-  const base = settings.tooltipUiScale / 100;
-  return settings.lockTooltipToBrowserZoom ? base / browserZoom : base;
+export function tooltipScale(percent: number, lockToBrowserZoom: boolean, browserZoom: number) {
+  const base = percent / 100;
+  return lockToBrowserZoom ? base / browserZoom : base;
 }
 export function resizedBounds(
   start: PopupBounds,

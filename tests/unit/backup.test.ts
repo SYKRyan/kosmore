@@ -48,6 +48,7 @@ function values(): StoredValues {
       ...defaults(),
       popupWidth: 560,
       tooltipUiScale: 33,
+      lockFriendTooltipToBrowserZoom: true,
       lockTooltipToBrowserZoom: true,
       disableHoverTooltipInPulsar: true,
       disableCardOverlaysInPulsar: true,
@@ -251,6 +252,8 @@ it("imports older family settings and round-trips independent family impact choi
     delete old.settings.hoverTooltipHotkeys;
     delete old.settings.packOpeningsEnabled;
     delete old.settings.tooltipUiScale;
+    old.settings.friendTooltipUiScale = 75;
+    delete old.settings.lockFriendTooltipToBrowserZoom;
     delete old.settings.lockTooltipToBrowserZoom;
     delete old.settings.packOpeningHotkeysEnabled;
     delete old.settings.anyKeyDismissesFoundPack;
@@ -276,6 +279,7 @@ it("imports older family settings and round-trips independent family impact choi
       hoverTooltipHotkeys: {},
       packOpeningsEnabled: true,
       tooltipUiScale: 100,
+      lockFriendTooltipToBrowserZoom: false,
       lockTooltipToBrowserZoom: false,
       packOpeningHotkeysEnabled: false,
       anyKeyDismissesFoundPack: true,
@@ -429,6 +433,12 @@ describe("invalid backups", () => {
     },
     (b: KosMoreBackup) => {
       b.settings.popupWidth = 100;
+    },
+    (b: KosMoreBackup) => {
+      b.settings.tooltipUiScale = 75.5;
+    },
+    (b: KosMoreBackup) => {
+      b.settings.tooltipUiScale = 201;
     },
     (b: KosMoreBackup) => {
       b.settings.enabled = "true" as unknown as boolean;

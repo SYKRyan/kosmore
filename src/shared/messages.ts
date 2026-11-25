@@ -18,6 +18,7 @@ import {
 import { isPopupLayoutChange, type PopupLayoutChange } from "./popup-layout";
 import {
   validSaleChange,
+  validFinish,
   type ListedCopies,
   type SaleChange,
 } from "./sale-status";
@@ -141,6 +142,8 @@ export function isRequest(x: unknown): x is Request {
       Number.isSafeInteger(r.copies.at) &&
       r.copies.at > 0 &&
       r.copies.at <= Date.now() &&
+      (r.copies.finishes === undefined || (r.copies.finishes !== null && typeof r.copies.finishes === "object" &&
+        Object.entries(r.copies.finishes).every(([id, f]) => listingCopyId(id) === id && validFinish(f)))) &&
       Array.isArray(r.copies.auctionIds) &&
       r.copies.auctionIds.every(
         (id) => typeof id === "string" && listingCopyId(id) === id,

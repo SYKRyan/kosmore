@@ -1,4 +1,5 @@
 import { latestSale } from "../shared/last-sale";
+import { finishOf } from "../shared/sale-observations";
 import { ReadCache } from "../shared/cache";
 import {
   setRequestPriority,
@@ -23,6 +24,8 @@ import type { FriendReminder } from "../shared/friend-reminders";
 import { ApiError } from "../kosmora/client";
 export interface CardSignals {
   onSale: boolean;
+  saleHighlight?: import("../shared/types").SaleHighlight;
+  ownListing?: import("../shared/services").ServicesListing;
   activeAuctions: boolean;
   saleHistory: boolean;
   interestedFriends: number;
@@ -42,6 +45,8 @@ export function sameOverlaySignals(a: CardSignals, b: CardSignals) {
   return (
     a === b ||
     (a.onSale === b.onSale &&
+      a.saleHighlight === b.saleHighlight &&
+      a.ownListing === b.ownListing &&
       a.activeAuctions === b.activeAuctions &&
       a.saleHistory === b.saleHistory &&
       a.quest === b.quest &&
@@ -51,13 +56,14 @@ export function sameOverlaySignals(a: CardSignals, b: CardSignals) {
       !!a.lastSale?.numberOne === !!b.lastSale?.numberOne &&
       a.lowestListing?.price === b.lowestListing?.price &&
       a.lowestListing?.bids === b.lowestListing?.bids &&
+      a.lowestListing?.soleOwnListing === b.lowestListing?.soleOwnListing &&
       !!a.staleLastSale === !!b.staleLastSale &&
       !!a.staleListingPrice === !!b.staleListingPrice &&
       a.auctionFetchedAt === b.auctionFetchedAt &&
       a.marketName === b.marketName)
   );
 }
-export type OverlaySettings = Pick<
+export type OverlaySettings = Partial<Pick<Settings, "showAuctionBidCounts">> & Pick<
   Settings,
   | "cardOverlaysEnabled"
   | "showOnSaleOverlay"
@@ -84,6 +90,7 @@ export class CardSignalProvider {
   constructor(
     private client: Pick<
       KosmoraClient,
+      | "saleStatus"
       | "account"
       | "friends"
       | "history"
@@ -189,6 +196,7 @@ export class CardSignalProvider {
       settings.showOnSaleOverlay,
       settings.showActiveAuctionsOverlay,
       settings.showLowestListingPriceOverlay,
+      settings.showAuctionBidCounts,
       settings.showSaleHistoryOverlay,
       settings.showLastSalePriceOverlay,
       settings.showFriendInterestOverlay,
@@ -293,7 +301,7 @@ export class CardSignalProvider {
               const card = await this.client.insights(id, signal, false, true);
               publish({
                 onSale:
-                  card.onSale ?? card.copies.some((copy) => !!copy.auctionId),
+                  this.client.saleStatus?.(id, displayedFinish) ?? card.copies.some((copy) => !!copy.auctionId && copy.finishKnown !== false && finishOf(copy.variant) === displayedFinish),
               });
             });
           if (settings.showQuestOverlay)
@@ -353,8 +361,9 @@ export class CardSignalProvider {
                 publish({ activeAuctions: true, marketName: card.name });
                 if (recap) ready();
               };
+              const needListing = settings.showLowestListingPriceOverlay || settings.showAuctionBidCounts;
               if (
-                !settings.showLowestListingPriceOverlay &&
+                !needListing &&
                 this.client.hasActiveAuctions
               ) {
                 if (
@@ -368,12 +377,12 @@ export class CardSignalProvider {
                   matched();
                 return;
               }
-              const cached = settings.showLowestListingPriceOverlay
+              const cached = needListing
                 ? this.client.peekAuction?.(id, displayedFinish)
                 : undefined;
               const now = Date.now();
               if (
-                settings.showLowestListingPriceOverlay &&
+                needListing &&
                 cached &&
                 cached.value.lowestListing !== undefined &&
                 now - cached.until < 86_400_000
@@ -409,7 +418,7 @@ export class CardSignalProvider {
                     : {}),
               });
               ready();
-              if (activeAuctions && settings.showLowestListingPriceOverlay) {
+              if (activeAuctions && needListing) {
                 const lowestListing = await this.client.lowestListing(
                   id,
                   displayedFinish,
@@ -460,6 +469,11 @@ export class CardSignalProvider {
             throw error;
           }
           signal.throwIfAborted();
+          if (current.value.activeAuctions && (settings.showLowestListingPriceOverlay || settings.showAuctionBidCounts)) {
+            // The private view may have arrived after the public price in this batch.
+            const latest = this.client.peekAuction?.(id, displayedFinish);
+            if (latest?.value.lowestListing) publish({ lowestListing: latest.value.lowestListing });
+          }
           return current.value;
         },
         false,

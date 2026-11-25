@@ -491,12 +491,24 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
     await group
       .getByLabel("Friend tooltip height", { exact: true })
       .fill("220");
+    const scale = group.getByRole("spinbutton", { name: "UI Scale" });
+    const lock = group.getByRole("switch", { name: "Lock to browser zoom" });
+    await expect(scale).toHaveValue("100");
+    await expect(lock).not.toBeChecked();
+    await expect(scale).not.toBeEditable();
+    await settings({ tooltipUiScale: 125 });
+    await expect(scale).toHaveValue("125");
+    await lock.check();
     await save.click();
     await expect(group.getByRole("status")).toContainText("Saved.");
+    await lock.uncheck();
+    await group.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(scale).toHaveValue("125");
+    await expect(lock).toBeChecked();
     await open();
     await expect
       .poll(async () => (await dialog().boundingBox())!.width)
-      .toBe(280);
+      .toBe(350);
     const socialMaster = options.getByRole("switch", { name: "Enable Social", exact: true });
     await socialMaster.uncheck();
     await expect(dialog()).toHaveCount(0);
@@ -548,6 +560,9 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
       friendDismissDelayMs: 800,
       friendTooltipWidth: 280,
       friendTooltipHeight: 220,
+      lockFriendTooltipToBrowserZoom: true,
+      tooltipUiScale: 125,
+      lockTooltipToBrowserZoom: false,
     });
     await page.setViewportSize({ width: 390, height: 700 });
     const parent = page.locator("#kosmore-root");
@@ -559,14 +574,82 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
     await open();
     await dialog().getByRole("button", { name: "batu", exact: true }).click();
     const bounds = (await dialog().boundingBox())!;
-    expect(bounds.x).toBeGreaterThanOrEqual(12);
-    expect(bounds.x + bounds.width).toBeLessThanOrEqual(378);
+    expect(bounds.x).toBeGreaterThanOrEqual(15);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(375);
     await dialog().screenshot({
       path: "test-results/screenshots/friend-tooltip-390.png",
     });
   } finally {
     await fixture.evaluate((remove) => remove());
     await options.close();
+  }
+});
+
+test("friend tooltip UI scale uses its own zoom lock and saves base dimensions after resizing", async () => {
+  const details = serviceDetails("42");
+  const fixture = await mockServiceCard(worker, parseServicesCard({
+    ...details, card: { ...details.card, families: card("42").families },
+  }, "42"));
+  const zoomGame = (zoom: number) => worker.evaluate(async factor => {
+    const [tab] = await chrome.tabs.query({ url: "https://kosmora.io/collection" });
+    await chrome.tabs.setZoom(tab.id!, factor);
+  }, zoom);
+  const width = () => dialog().evaluate(el => el.getBoundingClientRect().width);
+  const options = await context.newPage();
+  try {
+    await settings({ tooltipUiScale: 75, friendTooltipUiScale: 150 });
+    await page.reload();
+    await open();
+    await expect.poll(width).toBe(240);
+    await expect.poll(() => page.locator("#kosmore-root").evaluate(el => el.getBoundingClientRect().width)).toBe(330);
+    await dialog().getByRole("button", { name: "Pin friend tooltip", exact: true }).click();
+    await options.goto(`chrome-extension://${extensionId}/options.html#hover-tooltip`);
+    const hoverSettings = options.locator("#hover-tooltip");
+    const sharedScale = hoverSettings.getByRole("spinbutton", { name: "UI Scale" });
+    for (const percent of [80, 75]) {
+      await sharedScale.fill(String(percent));
+      await hoverSettings.getByRole("button", { name: "Save", exact: true }).click();
+      await expect.poll(width).toBe(320 * percent / 100);
+    }
+    const header = (await dialog().locator("h2").boundingBox())!;
+    const initial = (await dialog().boundingBox())!;
+    await page.mouse.move(header.x + 8, header.y + 6);
+    await page.mouse.down();
+    await page.mouse.move(header.x + 32, header.y + 18);
+    await page.mouse.up();
+    await expect.poll(async () => Math.round((await dialog().boundingBox())!.x)).toBe(Math.round(initial.x + 24));
+    const edge = dialog().getByLabel("Resize friend tooltip e edge", { exact: true });
+    const handle = (await edge.boundingBox())!;
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2 + 30, handle.y + handle.height / 2);
+    await page.mouse.up();
+    await expect.poll(width).toBe(270);
+    const pin = dialog().getByRole("button", { name: "Unpin friend tooltip" });
+    const buttonHeight = () => pin.evaluate(el => el.getBoundingClientRect().height);
+    const initialButtonHeight = await buttonHeight();
+    await zoomGame(3);
+    await expect.poll(width).toBeCloseTo(270, 0);
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await options.getByRole("radio", { name: "Tooltip", exact: true }).click();
+    const group = options.locator("#friend-tooltip");
+    await group.getByRole("switch", { name: "Lock to browser zoom" }).check();
+    await expect(group.getByText(/effective scale is 25%/)).toBeVisible();
+    await group.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(width).toBeCloseTo(90, 0);
+    await expect.poll(async () => (await buttonHeight()) * 3).toBeCloseTo(initialButtonHeight, 0);
+    await edge.press("Shift+ArrowLeft");
+    await expect.poll(width).toBeCloseTo(60, 0);
+    await zoomGame(1.5);
+    await expect.poll(width).toBeCloseTo(120, 0);
+    await page.reload();
+    await expect(dialog()).toHaveAttribute("data-pinned", "");
+    await expect.poll(width).toBeCloseTo(120, 0);
+    await expect(group.getByLabel("Friend tooltip width", { exact: true })).toHaveValue("240");
+  } finally {
+    await zoomGame(1);
+    await options.close();
+    await fixture.evaluate(remove => remove());
   }
 });
 

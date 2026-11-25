@@ -38,7 +38,7 @@ export function validSalePrice(value: unknown, minimum = 0): value is number {
   );
 }
 
-export function validFusionThreshold(value: unknown): value is number {
+export function validWarningThreshold(value: unknown): value is number {
   return value === 0 || validSalePrice(value);
 }
 

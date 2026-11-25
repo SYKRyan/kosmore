@@ -17,6 +17,7 @@ export interface RelayPreferences {
   listingPrices: boolean;
 }
 export const RELAY_PACK = "kosmore.packData";
+export const BEFORE_PACK_CARD_FOCUS = "kosmore.beforePackCardFocus";
 export type PackRelayMessage = {
   type: typeof RELAY_PACK;
   kind: "opening" | "identity" | "inventory";

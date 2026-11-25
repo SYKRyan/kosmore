@@ -35,7 +35,7 @@ import {
 import { request, type Session } from "../shared/messages";
 import { SERVICES_STATE_KEY, type ConnectionStatus } from "../shared/services";
 import { FAMILY_IMPACT_AVAILABLE } from "../shared/feature-availability";
-import { validFusionThreshold } from "../shared/sales-prices";
+import { validWarningThreshold } from "../shared/sales-prices";
 import { messageOf, type Album, type Settings } from "../shared/types";
 const app = document.getElementById("app")!;
 type FeatureKey =
@@ -246,7 +246,7 @@ closeAfterAlbumAdd.addEventListener("change", () => {
 applyCloseToPinned.addEventListener("change", () => {
   draft.applyCloseBehaviorToPinnedTooltips = applyCloseToPinned.checked;
 });
-const uiScale = tooltipScaleControls(general, () => draft);
+const uiScale = tooltipScaleControls(general, () => draft, "lockTooltipToBrowserZoom");
 const delayRow = el("div", "row"),
   delayInfo = el("div");
 const delayLabel = el("label", "setting-name", "Hover delay");
@@ -461,6 +461,7 @@ const friendTooltipEnabled = sectionToggle(
   "friendTooltipEnabled",
   "Enable friend tooltip",
 );
+const friendUiScale = tooltipScaleControls(friendTooltipSettings.host, () => draft, "lockFriendTooltipToBrowserZoom", () => saved.tooltipUiScale);
 const socialSettings = el("section", "settings-subgroup");
 socialSettings.append(
   el("h3", "", "Reminders"),
@@ -596,6 +597,43 @@ function checkboxSetting(
   host.append(row);
   return input;
 }
+function priceWarningControls(
+  host: HTMLElement,
+  section: "pack" | "fusion",
+  hint: string,
+) {
+  const enabledKey = `${section}ShowPriceWarning` as const;
+  const thresholdKey = `${section}WarningThreshold` as const;
+  const threshold = el("input");
+  threshold.type = "number";
+  threshold.min = "0";
+  threshold.step = "0.000001";
+  threshold.id = `${section}-warning-threshold`;
+  threshold.addEventListener("input", () => { draft[thresholdKey] = threshold.valueAsNumber; });
+  const warning = checkboxSetting(`${section}-price-warning`, "Show Price Warning", hint, checked => {
+    draft[enabledKey] = checked;
+    threshold.disabled = !checked;
+    if (!checked && !validWarningThreshold(draft[thresholdKey])) {
+      draft[thresholdKey] = saved[thresholdKey];
+      threshold.value = String(draft[thresholdKey]);
+    }
+  }, host);
+  const row = el("div", "row settings-subsetting");
+  const info = el("div");
+  const label = el("label", "label", "Threshold");
+  label.htmlFor = threshold.id;
+  const units = el("p", "sub", "Price in Kosmo.");
+  units.id = threshold.id + "-hint";
+  threshold.setAttribute("aria-describedby", units.id);
+  info.append(label, units);
+  row.append(info, threshold);
+  host.append(row);
+  return {
+    warning, threshold, enabledKey, thresholdKey,
+    validate: () => validWarningThreshold(draft[thresholdKey]) ? undefined :
+      "Enter a threshold of zero or more Kosmo with up to six decimal places.",
+  };
+}
 const showRemainingPackCount = checkboxSetting(
   "showRemainingPackCount",
   "Show remaining pack count",
@@ -677,7 +715,7 @@ const showAuctionBidCounts = overlayPriceToggle(
   auctionOverlay,
   "show-auction-bid-counts",
   "Show bid counts",
-  "Append the listing’s bid count to auction prices on cards, in tooltips, and on sell buttons.",
+  "Show the bid count inside a scalloped badge on cards, in tooltips, and on sell buttons.",
   (checked) => {
     draft.showAuctionBidCounts = checked;
     void persistFeature(overlays, "showAuctionBidCounts", showAuctionBidCounts);
@@ -686,10 +724,20 @@ const showAuctionBidCounts = overlayPriceToggle(
 const onSaleOverlay = checkboxSetting(
   "on-sale-overlay",
   "Show For Sale label on cards",
-  "Black and white label · you have a copy listed on the market",
+  "You have a copy of this finish listed on the market.",
   (checked) => {
     draft.showOnSaleOverlay = checked;
   },
+);
+const highlightLowest = overlayPriceToggle(
+  onSaleOverlay, "highlight-lowest-listings", "Highlight my lowest listings",
+  "Pulse green when lowest or tied. Show a steady green For Sale label when one of your listings for this finish has a bid.",
+  (checked) => { draft.highlightLowestListings = checked; },
+);
+const warnUndercut = overlayPriceToggle(
+  onSaleOverlay, "warn-undercut-listings", "Warn when my listing is undercut",
+  "Pulse red when another auction is cheaper and none of your listings of this finish has a confirmed bid.",
+  (checked) => { draft.warnUndercutListings = checked; },
 );
 const saleOverlay = checkboxSetting(
   "sale-history-overlay",
@@ -722,7 +770,7 @@ const priceModes = segmentedControl(
 );
 priceModeRow.append(
   priceModes.group,
-  el("span", "hint", "Price for this finish in the last 30 days. Also used by the hover tooltip and fusion warning."),
+  el("span", "hint", "Price for this finish in the last 30 days. Also used by the hover tooltip and price warnings in Fusion and Pack Openings."),
 );
 overlays.append(priceModeRow);
 function syncPriceMode() {
@@ -755,37 +803,10 @@ const fusionEnabled = sectionToggle(
   "fusionSettingsEnabled",
   "Enable Fusion",
 );
-const fusionWarning = checkboxSetting(
-  "fusion-price-warning",
-  "Show Price Warning",
-  "Highlight fusion cards in red when their finish’s selected Card Overlays price exceeds the threshold. Applies during review and on fusion results.",
-  (checked) => {
-    draft.fusionShowPriceWarning = checked;
-    fusionThreshold.disabled = !checked;
-    if (!checked && !validFusionThreshold(draft.fusionWarningThreshold)) {
-      draft.fusionWarningThreshold = saved.fusionWarningThreshold;
-      fusionThreshold.value = String(draft.fusionWarningThreshold);
-    }
-  },
-  fusion,
-);
-const fusionThreshold = el("input");
-fusionThreshold.type = "number";
-fusionThreshold.min = "0";
-fusionThreshold.step = "0.000001";
-fusionThreshold.id = "fusion-warning-threshold";
-fusionThreshold.addEventListener("input", () => {
-  draft.fusionWarningThreshold = fusionThreshold.valueAsNumber;
-});
-const thresholdRow = el("div", "row settings-subsetting");
-const thresholdInfo = el("div");
-const thresholdLabel = el("label", "label", "Threshold");
-thresholdLabel.htmlFor = fusionThreshold.id;
-const thresholdHint = el("p", "sub", "Price in Kosmo.");
-thresholdHint.id = "fusion-warning-threshold-hint";
-fusionThreshold.setAttribute("aria-describedby", thresholdHint.id);
-thresholdInfo.append(thresholdLabel, thresholdHint);
-thresholdRow.append(thresholdInfo, fusionThreshold);
+const packWarning = priceWarningControls(packBehavior, "pack",
+  "Highlight cards in the pack summary in red when the selected Card Overlays price for their finish exceeds the threshold.");
+const fusionWarning = priceWarningControls(fusion, "fusion",
+  "Highlight fusion cards in red when their finish’s selected Card Overlays price exceeds the threshold. Applies during review and on fusion results.");
 const reviewSettings = el("fieldset", "settings-subgroup");
 reviewSettings.append(
   el("legend", "", "Show Them All and Keep Some"),
@@ -796,7 +817,7 @@ reviewSettings.append(
   ),
 );
 const reviewControls = reviewTooltipControls(reviewSettings, true);
-fusion.append(thresholdRow, el("div", "rule"), reviewSettings);
+fusion.append(el("div", "rule"), reviewSettings);
 const familyImpact = el("section", "panel");
 familyImpact.append(
   el("h2", "", "Family Impact Overlay"),
@@ -1017,10 +1038,8 @@ groupControls({
   ],
   render: renderSettings,
   validate: () => {
-    if (!Number.isInteger(draft.tooltipUiScale) || !uiScale.input.validity.valid) {
-      uiScale.input.focus();
-      return "Choose a whole-number UI Scale from 20% to 200%.";
-    }
+    const scaleError = uiScale.validate();
+    if (scaleError) return scaleError;
     for (const { field, input, title, min, max } of popupInputs) {
       if (
         draft.fullScreenCenteredOnOpen &&
@@ -1058,13 +1077,14 @@ groupActions({
 groupControls({
   host: packBehavior,
   name: "pack openings",
-  keys: ["anyKeyDismissesFoundPack", "autoSkipOpening", "autoDismissFoundPack"],
+  keys: ["anyKeyDismissesFoundPack", "autoSkipOpening", "autoDismissFoundPack", packWarning.enabledKey, packWarning.thresholdKey],
+  validate: packWarning.validate,
   render: renderSettings,
 });
 groupControls({
   host: friendTooltipSettings.host,
   name: "friend tooltip settings",
-  keys: [...FRIEND_TOOLTIP_KEYS],
+  keys: [...FRIEND_TOOLTIP_KEYS, "lockFriendTooltipToBrowserZoom"],
   render: renderSettings,
   validate: () => friendTooltipSettings.validate(draft),
 });
@@ -1094,6 +1114,8 @@ groupControls({
     "showActiveAuctionsOverlay",
     "showLowestListingPriceOverlay",
     "showOnSaleOverlay",
+    "highlightLowestListings",
+    "warnUndercutListings",
     "showFriendInterestOverlay",
     "showQuestOverlay",
   ],
@@ -1109,10 +1131,7 @@ groupControls({
     "fusionReviewOverlayButton",
     "fusionReviewOutsideClickOnly",
   ],
-  validate: () =>
-    validFusionThreshold(draft.fusionWarningThreshold)
-      ? undefined
-      : "Enter a threshold of zero or more Kosmo with up to six decimal places.",
+  validate: fusionWarning.validate,
   render: renderSettings,
 });
 groupControls({
@@ -1271,6 +1290,7 @@ function renderSettings() {
   tradeSettings.render(draft);
   friendTooltipEnabled.checked = draft.friendTooltipEnabled;
   friendTooltipSettings.render(draft);
+  friendUiScale.render();
   allHotkeysEnabled.checked = draft.hotkeysEnabled;
   packOpeningsEnabled.checked = draft.packOpeningsEnabled;
   renderHotkeys();
@@ -1280,9 +1300,11 @@ function renderSettings() {
   showRemainingPackCount.checked = draft.showRemainingPackCount;
   overlaysEnabled.checked = draft.cardOverlaysEnabled;
   fusionEnabled.checked = draft.fusionSettingsEnabled;
-  fusionWarning.checked = draft.fusionShowPriceWarning;
-  fusionThreshold.value = String(draft.fusionWarningThreshold);
-  fusionThreshold.disabled = !draft.fusionShowPriceWarning;
+  for (const { warning, threshold, enabledKey, thresholdKey } of [packWarning, fusionWarning]) {
+    warning.checked = draft[enabledKey];
+    threshold.value = String(draft[thresholdKey]);
+    threshold.disabled = !draft[enabledKey];
+  }
   reviewControls.button.checked = draft.fusionReviewOverlayButton;
   reviewControls.outside.checked = draft.fusionReviewOutsideClickOnly;
   familyImpactEnabled.checked =
@@ -1317,6 +1339,9 @@ function renderSettings() {
   showAuctionBidCounts.checked = draft.showAuctionBidCounts;
   showAuctionBidCounts.disabled = !draft.showActiveAuctionsOverlay;
   onSaleOverlay.checked = draft.showOnSaleOverlay;
+  highlightLowest.checked = draft.highlightLowestListings;
+  warnUndercut.checked = draft.warnUndercutListings;
+  highlightLowest.disabled = warnUndercut.disabled = !draft.showOnSaleOverlay;
   friendOverlay.checked = draft.showFriendInterestOverlay;
   questOverlay.checked = draft.showQuestOverlay;
   fusionFamilyOverlay.checked = draft.showFusionFamilyOverlay;
@@ -1610,6 +1635,7 @@ async function persist(
     });
     for (const key of changedKeys)
       Object.assign(saved, { [key]: structuredClone(next[key]) });
+    if (group.host === general) friendUiScale.render();
     if (group.host === hotkeysPanel) renderGroupState(packBehavior);
     if (albumAccounts) {
       for (const key of ALBUM_ACCOUNT_SETTINGS)
@@ -1728,7 +1754,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
     ["autoDismissFoundPack", autoDismissFoundPack],
     ["showRemainingPackCount", showRemainingPackCount],
     ["showAuctionBidCounts", showAuctionBidCounts],
-    ["fusionShowPriceWarning", fusionWarning],
+    [packWarning.enabledKey, packWarning.warning],
+    [fusionWarning.enabledKey, fusionWarning.warning],
     ["fusionReviewOverlayButton", reviewControls.button],
     ["fusionReviewOutsideClickOnly", reviewControls.outside],
   ] as const) {
@@ -1738,19 +1765,23 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
     saved[key] = next[key];
   }
-  if (draft.fusionWarningThreshold === saved.fusionWarningThreshold) {
-    draft.fusionWarningThreshold = next.fusionWarningThreshold;
-    fusionThreshold.value = String(next.fusionWarningThreshold);
+  for (const { threshold, thresholdKey, enabledKey } of [packWarning, fusionWarning]) {
+    if (draft[thresholdKey] === saved[thresholdKey]) {
+      draft[thresholdKey] = next[thresholdKey];
+      threshold.value = String(next[thresholdKey]);
+    }
+    saved[thresholdKey] = next[thresholdKey];
+    threshold.disabled = !draft[enabledKey];
   }
-  saved.fusionWarningThreshold = next.fusionWarningThreshold;
-  if (saved.tooltipUiScale !== next.tooltipUiScale || saved.lockTooltipToBrowserZoom !== next.lockTooltipToBrowserZoom) {
-    for (const key of ["tooltipUiScale", "lockTooltipToBrowserZoom"] as const) {
+  const scaleKeys = ["tooltipUiScale", "lockTooltipToBrowserZoom", "lockFriendTooltipToBrowserZoom"] as const;
+  if (scaleKeys.some(key => saved[key] !== next[key])) {
+    for (const key of scaleKeys) {
       if (draft[key] === saved[key]) Object.assign(draft, { [key]: next[key] });
       Object.assign(saved, { [key]: next[key] });
     }
     uiScale.render();
+    friendUiScale.render();
   }
-  fusionThreshold.disabled = !draft.fusionShowPriceWarning;
   statSettings.render(draft.stats);
   for (const { field, input } of popupInputs) {
     if (field !== "popupWidth" && field !== "popupHeight") continue;

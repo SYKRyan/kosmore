@@ -23,7 +23,7 @@ import {
   SALE_MINIMUMS,
   type SaleRarity,
   validDiscountThreshold,
-  validFusionThreshold,
+  validWarningThreshold,
   validSaleAdjustment,
   validSalePrice,
 } from "./sales-prices";
@@ -98,13 +98,9 @@ function backupSettings(value: unknown): Settings {
       "Unsupported settings version. Update KosMore before importing this backup.",
     );
   const standard = defaults();
-  if (
-    Object.hasOwn(raw, "fusionWarningThreshold") &&
-    !validFusionThreshold(raw.fusionWarningThreshold)
-  )
-    throw new Error(
-      "Fusion warning threshold must be a nonnegative price with up to six decimal places.",
-    );
+  for (const [key, section] of [["fusionWarningThreshold", "Fusion"], ["packWarningThreshold", "Pack"]] as const)
+    if (Object.hasOwn(raw, key) && !validWarningThreshold(raw[key]))
+      throw new Error(`${section} warning threshold must be a nonnegative price with up to six decimal places.`);
   if (Object.hasOwn(raw, "familyBlacklist")) {
     const names = array(raw.familyBlacklist, "Family blacklist");
     if (!names.every((name): name is string => typeof name === "string"))
@@ -115,6 +111,7 @@ function backupSettings(value: unknown): Settings {
     // Retired settings can still appear in format-version-1 backups.
     if (
       key === "collectSaleRateData" ||
+      key === "friendTooltipUiScale" ||
       /^fusion(?:Enabled|NextBatchEnabled|RespectFamilyImpact|RespectBlacklist|RespectPriceThreshold|ExcludeFullArts|ExcludeShiny|ExcludeNumberOnes|PriceThreshold)$/.test(
         key,
       )

@@ -112,6 +112,7 @@ export class ListingHistoryStore {
             id,
             subjectId: record.subjectId,
             startPrice: record.startPrice,
+            ...(record.finish && { finish: record.finish }),
             submittedAt: record.submittedAt,
             copyId: record.copyId,
             owner,
@@ -167,6 +168,7 @@ export class ListingHistoryStore {
           submittedAt,
           subjectId: listing.subjectId,
           startPrice: listing.startPrice,
+          finish: listing.finish,
           copyId: listing.copyId,
         });
       }
@@ -231,13 +233,12 @@ export class ListingHistoryStore {
     return this.transaction("readonly", async (rows, state) => {
       const cutoff: number = (await value(state.get("cutoff:" + handle))) ?? 0;
       const owners = [localOwner(handle), ...(scope ? [scope] : [])];
-      const identities: { id: string; subjectId: string; copyId?: string }[] =
+      const identities: Pick<Stored, "id" | "subjectId" | "copyId" | "finish">[] =
         [];
       for (const { auctionId, relistOf, copyId } of changes) {
         for (const owner of owners) {
           let record: Stored | undefined;
-          if (relistOf)
-            record = await value(rows.index("auction").get([owner, relistOf]));
+          record = await value(rows.index("auction").get([owner, relistOf ?? auctionId]));
           if ((!record || record.submittedAt <= cutoff) && copyId) {
             const range = IDBKeyRange.bound(
               [owner, copyId, cutoff + 1],
@@ -250,6 +251,7 @@ export class ListingHistoryStore {
             identities.push({
               id: auctionId,
               subjectId: record.subjectId,
+              ...(record.finish && { finish: record.finish }),
               copyId: copyId ?? record.copyId,
             });
             break;

@@ -2,7 +2,7 @@ export function marketSearchPath(name: string): string {
   return `/market?${new URLSearchParams({ q: name.trim() })}`;
 }
 
-export function enableMarketLink(link: HTMLAnchorElement): void {
+export function isolateMarketControl(link: HTMLElement): void {
   // These links can sit inside a card link or a native multi-select surface.
   for (const type of [
     "pointerdown",
@@ -21,6 +21,10 @@ export function enableMarketLink(link: HTMLAnchorElement): void {
       )
         event.stopPropagation();
     });
+}
+
+export function enableMarketLink(link: HTMLAnchorElement): void {
+  isolateMarketControl(link);
   link.addEventListener("click", (event) => {
     event.stopPropagation();
     if (!link.hasAttribute("href")) {

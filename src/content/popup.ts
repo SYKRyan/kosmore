@@ -23,8 +23,8 @@ import {
   saleRates,
   type SaleRates,
 } from "../shared/sale-observations";
-import { SIGNAL_BADGE_CSS, signalBadges, numberOneIcon, auctionBidSuffix } from "./signal-badges";
-import { cardIcon } from "./icons";
+import { SIGNAL_BADGE_CSS, signalBadges, numberOneIcon, auctionBidSuffix, highlightOwnPrice } from "./signal-badges";
+import { auctionIcon, cardIcon } from "./icons";
 import { enableMarketLink, marketSearchPath } from "./market-links";
 import type { CardSignals } from "./card-signals";
 import type { Settings } from "../shared/types";
@@ -609,7 +609,7 @@ export class Popup {
       : "Pin popup to keep it visible";
   }
   private get scale() {
-    return tooltipScale(this.settings, this.browserZoom);
+    return tooltipScale(this.settings.tooltipUiScale, this.settings.lockTooltipToBrowserZoom, this.browserZoom);
   }
   setBrowserZoom(zoom: number) {
     if (zoom === this.browserZoom) return;
@@ -922,6 +922,9 @@ export class Popup {
     this.renderAlbums();
     this.refreshTrade();
     void this.loadActiveAuctions(fresh);
+  }
+  refreshAccountPrice() {
+    if (this.activeAuctions) void this.loadActiveAuctions(true);
   }
   private async loadActiveAuctions(fresh = false) {
     if (this.closed || !this.details || !this.displayedFinish) return;
@@ -1329,7 +1332,7 @@ export class Popup {
     this.renderMarket();
   }
   setSettings(settings: Settings) {
-    if (settings.fullScreenCenteredOnOpen || tooltipScale(settings, this.browserZoom) !== this.scale)
+    if (settings.fullScreenCenteredOnOpen || tooltipScale(settings.tooltipUiScale, settings.lockTooltipToBrowserZoom, this.browserZoom) !== this.scale)
       this.finishInteraction?.();
     if (this.resizeBounds) {
       this.settings = {
@@ -1517,9 +1520,9 @@ export class Popup {
     const bids = price && this.settings.showAuctionBidCounts
       ? auctionBidSuffix(price.bids)
       : "";
-    const label = price ? `$${formatKosmo(price.price)}${bids}` : "-";
+    const label = price ? `$${formatKosmo(price.price)}` : "-";
     this.listedFor.replaceChildren(
-      cardIcon("auction"),
+      auctionIcon(bids ? price?.bids : undefined),
       el("span", "market-badge-label", `Listed For: ${label}`),
     );
     this.listedFor.title =
@@ -1533,6 +1536,7 @@ export class Popup {
     this.listedFor.toggleAttribute("data-stale-price", this.listingPriceStale);
     if (this.listingPriceStale)
       this.listedFor.title = "Last known lowest listing price.";
+    this.listedFor.title += highlightOwnPrice(this.listedFor, price, this.listingPriceStale);
     const fetchedAt =
       this.context &&
       this.client.peekAuction?.(this.context.subjectId, finish)?.fetchedAt;
@@ -1542,6 +1546,7 @@ export class Popup {
         new Date(fetchedAt).toLocaleTimeString() +
         ". Auction prices are delayed five minutes.";
     if (price && marketName) this.listedFor.title += ` Find ${marketName} at Market.`;
+    this.listedFor.setAttribute("aria-label", `Listed For: ${label}${bids}. ${this.listedFor.title}`);
   }
   private saleRates(): SaleRates | undefined {
     if (!this.context) return;

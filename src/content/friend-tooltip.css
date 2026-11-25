@@ -8,13 +8,13 @@
   display: flex;
   flex-direction: column;
   overflow: visible;
-  border: 1px solid #cab4ff40;
-  border-radius: 18px;
+  border: calc(1px * var(--friend-tooltip-scale)) solid #cab4ff40;
+  border-radius: calc(18px * var(--friend-tooltip-scale));
   background: radial-gradient(100% 65% at 0 0, #6e46dc25, transparent), #110e22;
   color: #ece7f3;
   box-shadow:
-    0 20px 60px #0009,
-    inset 0 1px 0 #ffffff08;
+    0 calc(20px * var(--friend-tooltip-scale)) calc(60px * var(--friend-tooltip-scale)) #0009,
+    inset 0 calc(1px * var(--friend-tooltip-scale)) 0 #ffffff08;
   font:
     13px/1.5 system-ui,
     sans-serif;
@@ -24,6 +24,14 @@
 }
 :host(:not(:popover-open)) {
   display: none;
+}
+.friend-tooltip-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  position: relative;
+  min-height: 0;
+  zoom: var(--friend-tooltip-scale);
 }
 * {
   box-sizing: border-box;

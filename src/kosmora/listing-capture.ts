@@ -1,7 +1,9 @@
 import { amount, object, subjectId, uuid } from "./contracts";
 import { listingCopyId } from "./my-listings";
+import type { Finish } from "../shared/types";
 
 export interface ListingConfirmation {
+  finish?: Finish;
   auctionId: string;
   submittedAt: number;
   copyId?: string;
@@ -32,6 +34,7 @@ export function validReceipt(value: unknown): value is ListingReceipt {
 }
 
 export interface RecordedListing {
+  finish?: Finish;
   id: string;
   subjectId: string;
   startPrice: string;
@@ -44,6 +47,7 @@ export function validRecordedListing(value: unknown): value is RecordedListing {
     const row = object(value);
     return (
       uuid(row.id) === row.id &&
+      (row.finish === undefined || ["plain", "veil", "fullart"].includes(String(row.finish))) &&
       subjectId(row.subjectId) === row.subjectId &&
       amount(row.startPrice) === row.startPrice &&
       (row.copyId === undefined || listingCopyId(row.copyId) === row.copyId) &&
@@ -64,7 +68,16 @@ export function listingSubjectId(value: unknown): string | undefined {
   }
 }
 
-export function saleSubjects(value: unknown): Map<string, string> {
+function reportedFinish(row: Record<string, unknown>, subject?: string): Finish | undefined {
+  if (row.fullArt) return "fullart";
+  if (row.veil === true) return "veil";
+  if (subject && row.key === subject) return "plain";
+  if (subject && row.key === subject + ".v") return "veil";
+  if (subject && row.key === subject + ".f") return "fullart";
+  if (row.veil === false) return "plain";
+}
+
+export function saleSubjects(value: unknown, finishes?: Map<string, Finish>): Map<string, string> {
   const data = object(value);
   const items = Array.isArray(data.items) ? data.items : [data];
   const result = new Map<string, string>();
@@ -77,27 +90,32 @@ export function saleSubjects(value: unknown): Map<string, string> {
       );
       if (!subject) continue;
       const copies = Array.isArray(item.copies) ? item.copies : [];
-      for (const value of [
-        item.instanceId,
-        item.copy,
-        ...copies.map((copy) => copy?.id),
-      ]) {
+      const finish = reportedFinish(item, subject);
+      const remember = (value: unknown, copyFinish = finish) => {
         const id = listingCopyId(value);
-        if (!id) continue;
+        if (!id) return;
         if (result.has(id) && result.get(id) !== subject) conflicts.add(id);
         result.set(id, subject);
-      }
+        if (copyFinish) finishes?.set(id, copyFinish);
+      };
+      remember(item.instanceId);
+      remember(item.copy);
+      for (const copy of copies)
+        if (copy && typeof copy === "object") remember(copy.id, reportedFinish(copy, subject) ?? finish);
     } catch {
       // Missing mappings can be recovered from the confirmed auction itself.
     }
   }
-  for (const id of conflicts) result.delete(id);
+  for (const id of conflicts) {
+    result.delete(id);
+    finishes?.delete(id);
+  }
   return result;
 }
 
 type SubmittedItem = Pick<
   ListingConfirmation,
-  "subjectId" | "copyId" | "relistOf" | "startPrice"
+  "subjectId" | "copyId" | "relistOf" | "startPrice" | "finish"
 >;
 
 export function listingSubmission(
@@ -132,9 +150,11 @@ export function listingSubmission(
       typeof item.startPrice === "string" && /^\d+$/.test(item.startPrice)
         ? item.startPrice
         : undefined;
+    const finish = reportedFinish(item, subject);
     return {
       copyId,
       subjectId: subject,
+      ...(finish && { finish }),
       startPrice,
       ...(relistOf && { relistOf }),
     };
@@ -153,6 +173,7 @@ export function listingConfirmations(
   submittedAt: number,
   subjects: ReadonlyMap<string, string>,
   auctionSubjects: ReadonlyMap<string, string>,
+  finishes?: ReadonlyMap<string, Finish>,
 ): ListingConfirmation[] {
   const result = object(response);
   const { batch, items, single } = submission;
@@ -180,6 +201,7 @@ export function listingConfirmations(
         item?.subjectId ??
         (copyId && subjects.get(copyId)) ??
         (item?.relistOf && auctionSubjects.get(item.relistOf));
+      const finish = reportedFinish(row, subject) ?? item?.finish ?? (copyId ? finishes?.get(copyId) : undefined);
       let price = item?.startPrice;
       const reportedPrice = row.startPrice;
       if (reportedPrice !== undefined) {
@@ -192,6 +214,7 @@ export function listingConfirmations(
       return [
         {
           auctionId,
+          ...(finish && { finish }),
           submittedAt,
           copyId,
           ...(item?.relistOf && { relistOf: item.relistOf }),

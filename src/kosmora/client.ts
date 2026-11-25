@@ -3,9 +3,11 @@ import {
   FRIENDS_TTL,
   type NativeReadCache,
 } from "../shared/native-read-cache";
-import { CardNotFoundError, validCardId, type CardView } from "../shared/services";
+import { CardNotFoundError, validCardId, type CardView, type ServicesListing } from "../shared/services";
 import {
   localSaleStatus,
+  mostBidListing,
+  pendingListingPrice,
   nativeSaleBaseline,
   type SaleBaseline,
   type SaleChange,
@@ -13,6 +15,9 @@ import {
   type SaleStatusCache,
 } from "../shared/sale-status";
 import { request } from "../shared/messages";
+import { summarizeAuctions } from "../shared/auction-summary";
+import { finishOf } from "../shared/sale-observations";
+import { validFinish } from "../shared/sale-status";
 import { validRecordedListing, type ListingReceipt, type RecordedListing } from "./listing-capture";
 import { ReadCache } from "../shared/cache";
 import {
@@ -36,6 +41,8 @@ import {
   listingCopyId,
   auctionListingOutcome,
   initialListingLimits,
+  listingPath,
+  nextListingLimits,
   parseListingBatch,
   type PersonalListing,
   type TrackedListing,
@@ -44,7 +51,6 @@ import {
 import type { Result } from "../shared/messages";
 import type {
   Account,
-  AuctionPrice,
   Album,
   CardContext,
   CardInsights,
@@ -80,12 +86,18 @@ export class GameClient implements KosmoraClient {
   private familyCatalog = new ReadCache(1, FAMILIES_TTL);
   private pendingViews = new Map<string, Promise<Record<string, CardView>>>();
   private cardViews = new Map<string, CardView>();
+  private privateViews = new Map<string, CardView>();
+  private summaries = new WeakMap<CardView, Map<Finish, {
+    mine?: CardView; changes?: SaleChanges; native?: SaleBaseline;
+    value: NonNullable<ReturnType<typeof summarizeAuctions>>;
+  }>>();
   private observedAuctions = new Map<string, PersonalListing>();
   private observedOwners = new Map<string, string>();
   private observedCards = new Map<string, CardInsights>();
   private saleChanges = new Map<string, SaleChanges>();
   private saleBaselines = new Map<string, SaleBaseline>();
   private nativeSaleBaselines = new Map<string, SaleBaseline>();
+  private finishBaselines = new WeakMap<SaleBaseline | CardView, Map<Finish, SaleBaseline>>();
 
   setSaleCache(cache?: SaleStatusCache) {
     this.saleChanges.clear();
@@ -110,23 +122,46 @@ export class GameClient implements KosmoraClient {
       id,
       undefined,
       {
-        copies: { at: baseline.at, auctionIds: [...baseline.auctionIds] },
+        copies: { at: baseline.at, auctionIds: [...baseline.auctionIds], finishes: baseline.finishes },
       },
     ).catch(() => {});
   }
-  saleStatus(id: string) {
+  saleStatus(id: string, finish?: Finish) {
     if (!this.lastAccount) return;
-    const service = this.saleBaselines.get(id);
-    const native = this.nativeSaleBaselines.get(id);
+    const now = Date.now();
+    const stored = finish ? this.finishBaseline(this.privateViews.get(id), finish, now) : this.saleBaselines.get(id);
+    const observed = this.nativeSaleBaselines.get(id);
+    const scoped = finish ? this.finishBaseline(observed, finish, now) : observed;
+    const service = stored && (stored.until ?? Infinity) > now ? stored : undefined;
+    const native = scoped && (scoped.until ?? Infinity) > now ? scoped : undefined;
     const baseline =
       native && native.at >= (service?.at ?? 0) ? native : service;
     const changes = this.saleChanges.get(id);
     return (
-      (changes && localSaleStatus(changes, id, baseline, Date.now(), native)) ??
-      (baseline && (baseline.until ?? Infinity) > Date.now()
-        ? baseline.count > 0
-        : undefined)
+      (changes && localSaleStatus(changes, id, baseline, now, native, finish)) ??
+      (baseline && baseline.count > 0)
     );
+  }
+  private finishBaseline(source: CardView | SaleBaseline | undefined, finish: Finish, now: number) {
+    if (!source) return;
+    let finishes = this.finishBaselines.get(source);
+    const cached = finishes?.get(finish);
+    if (cached && (cached.until ?? 0) > now) return cached;
+    let baseline: SaleBaseline;
+    if ("stale" in source) {
+      if (!source.listings || (source.listingsUntil ?? 0) <= now) return;
+      const rows = source.listings.filter(row => row.finish === finish && Date.parse(row.endsAt) > now);
+      baseline = { at: source.listingsAsOf ?? 0, count: rows.length, topListing: mostBidListing(rows),
+        until: Math.min(source.listingsUntil!, ...rows.map(row => Date.parse(row.endsAt))) };
+    } else {
+      if (!source.finishes || !source.auctionIds || (source.until ?? 0) <= now) return;
+      const ids = new Set([...source.auctionIds].filter(id => source.finishes?.[id] === finish));
+      if (!ids.size && [...source.auctionIds].some(id => !source.finishes?.[id])) return;
+      baseline = { ...source, count: ids.size, auctionIds: ids };
+    }
+    if (!finishes) this.finishBaselines.set(source, finishes = new Map());
+    finishes.set(finish, baseline);
+    return baseline;
   }
   private observeSaleBaseline(id: string, baseline: SaleBaseline) {
     const baselines = baseline.auctionIds
@@ -214,6 +249,39 @@ export class GameClient implements KosmoraClient {
     const copy = card.copies.find((item) => item.id === copyId);
     if (!copy) throw new Error("You no longer own this copy.");
     return copy;
+  }
+
+  async ownAuctionFor(id: string, finish: Finish, expectedAccount: string, signal: AbortSignal, displayed?: ServicesListing) {
+    if ((await this.account(signal, true)).key !== expectedAccount)
+      throw new Error("Your Kosmora account changed. Try the badge again.");
+    const version = this.accountVersion;
+    if (!displayed) {
+      const details = parseInsights(await this.read("/collection/" + subjectId(id), signal));
+      if (details.subjectId !== id || version !== this.accountVersion)
+        throw new Error("Could not verify this card for the current account.");
+      const listed = details.copies.filter(copy => copy.auctionId && copy.finishKnown !== false && finishOf(copy.variant) === finish);
+      if (listed.length === 1) return listed[0].auctionId!;
+    }
+
+    // Services listing IDs are opaque. Only native owned auctions have game-page URLs.
+    let limits = { selling: 50, sold: 1, unsold: 1 };
+    for (;;) {
+      const batch = parseListingBatch(await this.read(listingPath(limits), signal), expectedAccount, limits);
+      if (version !== this.accountVersion) throw new Error("Your Kosmora account changed.");
+      const matches = batch.listings.filter(row => row.subjectId === id && row.finish === finish &&
+        row.group === "selling" && row.state === "open" && Date.parse(row.endsAt) > Date.now());
+      if (batch.counts.selling >= batch.totals.selling) {
+        const candidates = displayed ? matches.filter(row =>
+          row.startPrice === displayed.startPrice && Date.parse(row.endsAt) === Date.parse(displayed.endsAt)) : matches;
+        // A fresh bid can change the count after the badge was drawn. Use the
+        // displayed count to disambiguate otherwise identical listings.
+        const sameBids = displayed && candidates.filter(row => row.bids === displayed.bids);
+        const selected = mostBidListing(sameBids?.length ? sameBids : candidates);
+        if (!selected) throw new Error("The displayed auction is no longer available.");
+        return selected.id;
+      }
+      limits = nextListingLimits(batch, ["selling"]);
+    }
   }
   private blockedUntil = 0;
   private rateLimitRequestStartedAt = 0;
@@ -406,6 +474,7 @@ export class GameClient implements KosmoraClient {
   }
   clearServiceViews() {
     this.cardViews.clear();
+    this.privateViews.clear();
     this.pendingViews.clear();
     this.saleBaselines.clear();
     this.nativeSaleBaselines.clear();
@@ -421,6 +490,7 @@ export class GameClient implements KosmoraClient {
     )
       return false;
     this.cardViews.delete(id);
+    this.privateViews.delete(id);
     this.pendingViews.delete(id);
     this.pendingViews.delete(id + ":mine");
     this.pendingViews.delete(id + ":peek");
@@ -439,12 +509,15 @@ export class GameClient implements KosmoraClient {
       if (owner) {
         const copies = {
           at: startedAt,
+          finishes: Object.fromEntries(card.copies.flatMap(copy => copy.auctionId && copy.finishKnown !== false
+            ? [[copy.auctionId.toLowerCase(), finishOf(copy.variant)]] : [])),
           auctionIds: card.copies.flatMap((copy) =>
             copy.auctionId ? [copy.auctionId.toLowerCase()] : [],
           ),
         };
+        const previouslyListed = this.nativeSaleBaselines.get(card.subjectId)?.count;
         this.observeSaleBaseline(card.subjectId, nativeSaleBaseline(copies));
-        if (this.saleChanges.has(card.subjectId)) this.shareListedCopies(card.subjectId);
+        if (previouslyListed || copies.auctionIds.length || this.saleChanges.has(card.subjectId)) this.shareListedCopies(card.subjectId);
       }
       this.remember(this.observedCards, card.subjectId, card);
       if (owner) this.remember(this.observedOwners, card.subjectId, owner);
@@ -495,7 +568,11 @@ export class GameClient implements KosmoraClient {
     id = subjectId(id);
     signal?.throwIfAborted();
     const cached = this.cardViews.get(id);
-    // Listings have an independent expiry and game-account check in the worker.
+    // Private snapshots are installed only after the worker checks the game account.
+    const mine = this.privateViews.get(id);
+    if (includeMyListings && this.lastAccount && mine && (mine.listingsUntil ?? 0) > Date.now()
+        && cached && !cached.stale && cached.until > Date.now())
+      return mine.card === cached.card ? mine : { ...cached, listings: mine.listings, listingsUntil: mine.listingsUntil, listingsAsOf: mine.listingsAsOf };
     if (
       !includeMyListings &&
       cached &&
@@ -532,11 +609,13 @@ export class GameClient implements KosmoraClient {
         includeMyListings: mode === "mine",
       })
         .then((result) => {
-          if (this.pendingViews.get(pendingKey) === read && result[id])
-            this.remember(this.cardViews, id, {
-              ...result[id],
-              listings: undefined,
-            });
+          const view = result[id];
+          if (this.pendingViews.get(pendingKey) === read && view && version === this.accountVersion) {
+            this.remember(this.cardViews, id, { ...view, listings: undefined });
+            if (account && this.lastAccount?.key === account && view.listings && mode !== "public") {
+              this.remember(this.privateViews, id, view);
+            }
+          }
           return result;
         })
         .finally(() => {
@@ -767,7 +846,15 @@ export class GameClient implements KosmoraClient {
           observed?.subjectId ??
           row.subjectId ??
           (relistOf && this.observedAuctions.get(relistOf)?.subjectId);
+        const copy = validCardId(subject) && this.observedOwners.get(subject) === account.key
+          ? this.observedCards.get(subject)?.copies.find(item => item.id === copyId) : undefined;
+        const finish = observed?.finish ?? (validFinish(row.finish) ? row.finish : undefined)
+          ?? (copy && copy.finishKnown !== false ? finishOf(copy.variant) : undefined)
+          ?? (relistOf ? this.observedAuctions.get(relistOf)?.finish : undefined);
+        const startPrice = observed?.startPrice ?? row.startPrice;
         changes.push({
+          finish,
+          ...(!canceled && typeof startPrice === "string" && /^\d+$/.test(startPrice) && { startPrice }),
           auctionId: id,
           copyId,
           relistOf,
@@ -785,7 +872,8 @@ export class GameClient implements KosmoraClient {
         const record = {
           id,
           subjectId: subject,
-          startPrice: observed?.startPrice ?? row.startPrice,
+          startPrice,
+          ...(finish && { finish }),
           submittedAt: row.submittedAt,
           copyId,
         };
@@ -874,19 +962,41 @@ export class GameClient implements KosmoraClient {
   ) {
     return (await this.activeAuctions(id, finish, signal, false, onMatch)) > 0;
   }
+  private currentPersonalView(id: string | undefined, finish: Finish) {
+    if (!id || !this.lastAccount) return;
+    const mine = this.privateViews.get(id);
+    if (!mine || (mine.listingsUntil ?? 0) <= Date.now()) return;
+    // The game and Services use different auction IDs. A cancellation makes this
+    // finish's older private prices ambiguous until the next listing snapshot.
+    const changes = this.saleChanges.get(id);
+    if (changes && Object.values(changes).some(row =>
+      row.finish === finish && (row.canceled ?? 0) > (mine.listingsAsOf ?? 0) &&
+      (row.listed ?? 0) <= (mine.listingsAsOf ?? 0))) return;
+    return mine;
+  }
   private auctionStats(view: CardView, finish: Finish) {
-    const open =
-      view.card?.auctions.filter(
-        (auction) => Date.parse(auction.endsAt) > Date.now(),
-      ) ?? [];
-    // Snapshots saved before 2.0.3 omitted auction finishes.
-    if (open.some((row) => !row.finish)) return undefined;
-    const matching = open.filter((row) => row.finish === finish);
-    let lowestListing: AuctionPrice | undefined;
-    for (const row of matching)
-      if (!lowestListing || BigInt(row.price) < BigInt(lowestListing.price))
-        lowestListing = { price: row.price, bids: row.bids };
-    return { count: matching.length, lowestListing };
+    const now = Date.now();
+    const id = view.card?.id;
+    const mine = this.currentPersonalView(id, finish);
+    const changes = id && this.lastAccount ? this.saleChanges.get(id) : undefined;
+    const native = id && changes ? this.nativeSaleBaselines.get(id) : undefined;
+    let byFinish = this.summaries.get(view);
+    if (!byFinish) this.summaries.set(view, byFinish = new Map());
+    const cached = byFinish.get(finish);
+    if (cached && cached.mine === mine && cached.changes === changes && cached.native === native &&
+        cached.value.until > now) return cached.value;
+    const pending = changes && pendingListingPrice(changes, finish, now, native, mine?.listingsAsOf, mine?.listings);
+    const value = summarizeAuctions(view, mine, finish, now, pending);
+    if (value) byFinish.set(finish, { mine, changes, native, value });
+    return value;
+  }
+  saleHighlight(id: string, finish: Finish) {
+    const mine = this.currentPersonalView(id, finish);
+    const listing = this.finishBaseline(mine, finish, Date.now())?.topListing;
+    if (listing?.bids) return { state: "bid" as const, listing };
+    const view = this.cardViews.get(id);
+    const state = view && this.auctionStats(view, finish)?.highlight;
+    return { state, listing };
   }
   private async auctionSummary(
     id: string,
@@ -894,7 +1004,11 @@ export class GameClient implements KosmoraClient {
     signal?: AbortSignal,
     onMatch?: () => void,
   ) {
-    const view = await this.serviceView(id, signal);
+    // A native identity hint can start verification, but cannot authorize a private read.
+    if (this.identityHint && !this.lastAccount) {
+      try { await this.account(signal, false); } catch { signal?.throwIfAborted(); }
+    }
+    const view = await this.serviceView(id, signal, !!this.lastAccount);
     if (!view.card) throw new Error("Auction data is unavailable.");
     const value = this.auctionStats(view, finish);
     if (!value)

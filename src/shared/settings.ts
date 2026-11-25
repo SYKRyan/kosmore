@@ -11,7 +11,7 @@ import {
   SALE_MINIMUMS,
   type SaleRarity,
   validDiscountThreshold,
-  validFusionThreshold,
+  validWarningThreshold,
   validSaleAdjustment,
   validSalePrice,
 } from "./sales-prices";
@@ -48,6 +48,7 @@ export const defaults = (): Settings => ({
   friendHoverDelayMs: 300,
   friendDismissDelayMs: 200,
   friendTooltipWidth: 320,
+  lockFriendTooltipToBrowserZoom: false,
   friendTooltipHeight: 560,
   friendTooltipPosition: null,
   hotkeysEnabled: true,
@@ -59,6 +60,8 @@ export const defaults = (): Settings => ({
   autoSkipOpening: false,
   autoDismissFoundPack: false,
   showRemainingPackCount: true,
+  packShowPriceWarning: false,
+  packWarningThreshold: 200,
   cardOverlaysEnabled: true,
   disableCardOverlaysInPulsar: false,
   disableCardOverlaysInVortex: false,
@@ -99,6 +102,8 @@ export const defaults = (): Settings => ({
   showLowestListingPriceOverlay: true,
   showAuctionBidCounts: true,
   showOnSaleOverlay: true,
+  highlightLowestListings: false,
+  warnUndercutListings: false,
   showFriendInterestOverlay: true,
   showQuestOverlay: true,
   fusionSettingsEnabled: true,
@@ -162,6 +167,7 @@ export function parseSettings(value: unknown): Settings {
     "outsideClickClosesTooltipOnly",
     "fullScreenCenteredOnOpen",
     "lockTooltipToBrowserZoom",
+    "lockFriendTooltipToBrowserZoom",
     "socialEnabled",
     "socialRemindersMasterEnabled",
     "profileRemindersEnabled",
@@ -193,8 +199,11 @@ export function parseSettings(value: unknown): Settings {
     "autoSkipOpening",
     "autoDismissFoundPack",
     "showRemainingPackCount",
+    "packShowPriceWarning",
     "cardOverlaysEnabled",
     "showAuctionBidCounts",
+    "highlightLowestListings",
+    "warnUndercutListings",
     "salesOverlaysEnabled",
     "showSalesLastSale",
     "salesLastSaleSetsPrice",
@@ -219,8 +228,8 @@ export function parseSettings(value: unknown): Settings {
     "salesMyLastListingAdjustment",
   ] as const)
     if (validSaleAdjustment(v[key])) d[key] = v[key];
-  if (validFusionThreshold(v.fusionWarningThreshold))
-    d.fusionWarningThreshold = v.fusionWarningThreshold;
+  for (const key of ["fusionWarningThreshold", "packWarningThreshold"] as const)
+    if (validWarningThreshold(v[key])) d[key] = v[key];
   if (validSalePrice(v.salesDiscountAmount, 1))
     d.salesDiscountAmount = v.salesDiscountAmount;
   if (v.salesDiscountMode === "percent") d.salesDiscountMode = "percent";

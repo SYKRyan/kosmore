@@ -5,6 +5,8 @@ import type { Settings } from "../shared/types";
 export function tooltipScaleControls(
   host: HTMLElement,
   settings: () => Settings,
+  lockKey: "lockTooltipToBrowserZoom" | "lockFriendTooltipToBrowserZoom",
+  sharedPercent?: () => number,
 ) {
   const row = el("div", "row");
   const info = el("div");
@@ -12,10 +14,13 @@ export function tooltipScaleControls(
   const field = el("span", "tooltip-scale-field");
   const input = el("input");
   input.type = "number";
-  input.id = label.htmlFor = "tooltip-ui-scale";
+  input.id = label.htmlFor = sharedPercent ? "friend-tooltip-ui-scale" : "tooltip-ui-scale";
+  input.readOnly = !!sharedPercent;
   input.min = "20";
   input.max = "200";
-  info.append(label, el("p", "sub", "Scale tooltip content and dimensions from 20% to 200%."));
+  info.append(label, el("p", "sub", sharedPercent
+    ? "Set the scale for both tooltips in Hover Tooltip settings."
+    : "Scale the card and Social tooltip content and dimensions from 20% to 200%."));
   field.append(input, el("span", "", "%"));
   row.append(info, field);
   const lockRow = el("div", "row settings-subsetting");
@@ -36,7 +41,7 @@ export function tooltipScaleControls(
   function renderPreview() {
     const validScale = Number.isFinite(input.valueAsNumber) && input.validity.valid;
     preview.textContent = lock.checked && validScale && browserZoom
-      ? ` At ${percent.format(browserZoom)} browser zoom, the effective scale is ${percent.format(tooltipScale(settings(), browserZoom))}.`
+      ? ` At ${percent.format(browserZoom)} browser zoom, the effective scale is ${percent.format(tooltipScale(input.valueAsNumber, lock.checked, browserZoom))}.`
       : "";
   }
   async function refreshZoom() {
@@ -52,17 +57,17 @@ export function tooltipScaleControls(
   const updateZoom = () => { void refreshZoom().catch(() => {}); };
   function render() {
     const draft = settings();
-    lock.checked = draft.lockTooltipToBrowserZoom;
-    input.value = String(draft.tooltipUiScale);
+    lock.checked = draft[lockKey];
+    input.value = String(sharedPercent ? sharedPercent() : draft.tooltipUiScale);
     renderPreview();
     updateZoom();
   }
-  input.addEventListener("input", () => {
+  if (!sharedPercent) input.addEventListener("input", () => {
     settings().tooltipUiScale = input.valueAsNumber;
     renderPreview();
   });
   lock.addEventListener("change", () => {
-    settings().lockTooltipToBrowserZoom = lock.checked;
+    settings()[lockKey] = lock.checked;
     renderPreview();
     updateZoom();
   });
@@ -70,5 +75,11 @@ export function tooltipScaleControls(
   chrome.tabs.onActivated.addListener(updateZoom);
   chrome.tabs.onRemoved.addListener(updateZoom);
   window.addEventListener("focus", updateZoom);
-  return { input, render };
+  function validate() {
+    if (!Number.isInteger(settings().tooltipUiScale) || !input.validity.valid) {
+      input.focus();
+      return "Choose a whole-number UI Scale from 20% to 200%.";
+    }
+  }
+  return { render, validate };
 }

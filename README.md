@@ -139,10 +139,12 @@ Sale observations stay in this browser, are limited to 20,000 listings with 35-d
 
 Add indicators to visible cards and tooltip headers. Each indicator can be configured independently:
 
-- **Active auctions:** a red sale tag for current listings, with an optional lowest listed price. The price uses the highest bid, or the starting price when a listing has no bids, for this finish. When that listing has bids, the price includes the count on the same line (for example, $1,234 - 1 bid). Turn off **Show bid counts** under **Show active auctions icon on cards** to hide the count on cards, in tooltips, and on sell buttons. The badge links to the card's Market search.
-- **For Sale:** a black-and-white label when you have a copy listed on the Market. KosMore matches successful Sell Single, Sell Many, and relist responses to the submitted copies or previous auctions and updates the label across open tabs for the same account. It uses local listing history when it needs to identify a card. If only part of a batch succeeds, only the accepted listings count. In albums, the label is larger and centered on the card art.
+- **Active auctions** shows the lowest observed auction price for the displayed finish. When you hold the lowest price, the card, tooltip, and sell button use the lowest competing listing available. If yours is the only listing, they use your price. With **Show bid counts** enabled, the numbered badge shows the bids on the displayed auction. Counts above nine appear as **9+**. Hover for the exact count. The card badge opens the Market search.
+- **For Sale** appears only when you have a listing for the displayed finish. Confirming a listing or relist immediately compares its starting price with the cached market price. Changes and cancellations update the label across tabs for the same account. **Highlight my lowest listings** pulses the border green when you are lowest or tied. Once one of your listings for that finish receives a bid, the label turns steady green. With **Show bid counts** enabled, a numbered badge before **For Sale** shows the highest bid count on any one of your matching listings. **Warn when my listing is undercut** pulses the border red when another auction is cheaper and none of yours has a confirmed bid. Both highlights respect reduced motion.
 - **Sale history:** a gavel for final sale prices in the last 30 days, with an optional last sale price for this finish.
 - **Interested friends:** a purple friend indicator when the card's families match preferences you saved for current friends.
+
+Click **For Sale** to open your active auction with the most bids for that card and finish. Ties favor the auction ending soonest. The **lowest listed price** badge turns green when yours is the only active auction for that finish.
 - **Quest:** a gold Quest badge when the card belongs to any quest, whether you follow it or not.
   The price switches are subsettings of their respective indicators. Friend indicators on cards are passive; use the indicator inside the card tooltip to open the companion friend popup.
 
@@ -150,7 +152,9 @@ Compact Market Activity and journal thumbnails omit price/signal overlays. They 
 
 ### Pack Openings
 
-The **Pack Openings** switch starts on. Turn it off to pause the remaining-pack count, pack shortcuts, automatic card focus, auto-skip, and found-pack dismissal in open game tabs. Turn it back on to use your saved settings and bindings again.
+The **Pack Openings** switch starts on. Turn it off to pause pack price warnings, the remaining-pack count, pack shortcuts, automatic card focus, auto-skip, and found-pack dismissal in open game tabs. Turn it back on to use your saved settings and bindings again.
+
+**Show Price Warning** starts off. Enable it to outline a pack-summary card in red when its finish’s last sale or median price exceeds your threshold. The price choice comes from Card Overlays. The pack threshold starts at 200 Kosmo and can be changed independently of Fusion.
 
 Find the shortcuts under **Hotkeys → Pack Opening** and the automation and display options under **Pack Openings**. Pack hotkeys start off and bindings start empty. You can also record arrows, Home, and End. Use **Save** at the bottom of Hotkeys to apply changes across all three tabs.
 
@@ -158,6 +162,7 @@ Find the shortcuts under **Hotkeys → Pack Opening** and the automation and dis
 
 - **Next Card** tears the ready pack and steps through the reveal. A pinned tooltip follows each card as you advance. On the summary, use **Next Card**, **Previous Card**, **Focus First Card**, or **Focus Last Card** to inspect the grid with the tooltip. The selected card keeps focus while summary badges finish loading.
 - **See Card** opens the focused card’s detail page. Press **Enter** on a focused summary card to use Kosmora’s close-up viewer.
+- Hovering or focusing a later summary card, or using a card-navigation hotkey, cancels pending first-card autofocus for that opening.
 - **Dismiss Found Pack**, **Skip Opening**, **Later**, **Share**, and **Home** activate the corresponding controls when Kosmora offers them. **Next Pack/Back to Packs** opens the next pack or returns to Packs when the summary offers that link.
 - **Any key dismisses found pack** starts on under **Pack Openings**. Turn it off to use the **Dismiss Found Pack** keybind instead.
 - **Auto-dismiss found pack** starts off. Turn it on to dismiss the full-screen Rogue and Mega pack alerts automatically. The found packs still appear on the summary.
@@ -229,7 +234,9 @@ Hover, focus, or click the purple friend indicator in the card tooltip header to
 - Use **Social** or **Profile** to open that player's page. Edit their reminders there; the companion shows saved information.
 - Pin the companion independently of the card tooltip. A pinned companion restores an empty view after page navigation until another card is selected.
 
-Settings control the hover delay, dismiss delay, width, and height independently of the main tooltip. Defaults are **300 ms**, **200 ms**, and **320 × 560 px**. Position and dimensions save automatically. To open this popup, enable card hover tooltips, Card overlays, the interested-friends indicator, and Friend tooltip.
+In **Social → Tooltip**, width and height are measured at **100% UI Scale** and default to **320 × 560 px**. Set **UI Scale** in **Hover Tooltip** to scale both tooltips together. The Social Tooltip has its own **Lock to browser zoom** switch to keep its visual size as you zoom a game tab. The defaults are **100%** with the lock off. Dragging and resizing save the position and base dimensions automatically.
+
+The friend tooltip's hover and dismiss delays default to **300 ms** and **200 ms**. To open this popup, enable card hover tooltips, Card overlays, the interested-friends indicator, and Friend tooltip.
 
 ### Hotkeys
 

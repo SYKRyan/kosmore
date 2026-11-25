@@ -24,6 +24,7 @@ export interface PersonalListing {
   copyId?: string;
   endsAt: string;
   startPrice: string;
+  bids?: number;
   state: string;
   finish: Finish;
   group: ListingGroup;
@@ -296,6 +297,7 @@ export function parseListingBatch(
       copyId: auctionCopyId(item, card) ?? relistCopies.get(id.toLowerCase()),
       endsAt: date(item.endsAt),
       startPrice: amount(item.startPrice),
+      ...(typeof item.bids === "number" && Number.isSafeInteger(item.bids) && item.bids >= 0 && { bids: item.bids }),
       state: text(item.state),
       group,
       finish: finishOf({

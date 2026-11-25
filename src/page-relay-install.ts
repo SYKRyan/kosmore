@@ -69,8 +69,10 @@ export function installPageRelay(win: Window = window) {
   let revision = 0;
   const subjects = new Map<string, string>();
   const auctionSubjects = new Map<string, string>();
+  const copyFinishes = new Map<string, import("./shared/types").Finish>();
   const rememberSubjects = (value: unknown) => {
-    for (const [id, subject] of saleSubjects(value)) subjects.set(id, subject);
+    for (const [id, subject] of saleSubjects(value, copyFinishes)) subjects.set(id, subject);
+    while (copyFinishes.size > 1000) copyFinishes.delete(copyFinishes.keys().next().value!);
     while (subjects.size > 1000) subjects.delete(subjects.keys().next().value!);
   };
   const decodingSubjects = new Set<Promise<unknown>>();
@@ -227,6 +229,7 @@ export function installPageRelay(win: Window = window) {
                   );
               rememberSubjects({
                 items: data.copies.map((copy: { id?: unknown }) => ({
+                  ...copy,
                   instanceId: copy?.id,
                   subjectId: copySubject,
                 })),
@@ -471,10 +474,10 @@ export function installPageRelay(win: Window = window) {
             win.location.href === sellPage.href &&
             (submitted.batch
               ? Array.from(submitted.items.values()).some(
-                  (item) => !item.subjectId,
+                  (item) => !item.subjectId || !item.finish,
                 )
               : submitted.single?.copyId &&
-                !submitted.single.subjectId &&
+                (!submitted.single.subjectId || !submitted.single.finish) &&
                 !submitted.single.relistOf)
           ) {
             try {
@@ -486,8 +489,10 @@ export function installPageRelay(win: Window = window) {
                     : target.copyId
                       ? submitted.items.get(target.copyId)
                       : undefined;
-                if (item && (!target.copyId || target.copyId === item.copyId))
-                  item.subjectId ??= target.context.subjectId;
+                if (item && (!target.copyId || target.copyId === item.copyId) && (!item.subjectId || item.subjectId === target.context.subjectId)) {
+                  item.subjectId = target.context.subjectId;
+                  item.finish ??= target.context.variant.fullArt ? "fullart" : target.context.variant.veil ? "veil" : "plain";
+                }
               }
             } catch {
               // The game may already have replaced the form.
@@ -508,6 +513,7 @@ export function installPageRelay(win: Window = window) {
               submittedAt,
               subjects,
               auctionSubjects,
+              copyFinishes,
             );
             if (
               listings.length ||

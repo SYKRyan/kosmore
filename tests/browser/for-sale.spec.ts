@@ -3,6 +3,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { launchTestBrowser } from "./browser";
+import { mockServiceCard } from "./service-card";
+import { serviceDetails } from "../fixtures/services";
+import { parseServicesCard } from "../../src/shared/services";
 import { card, COPY_A, COPY_B, face, me } from "../fixtures/data";
 import { auction } from "../fixtures/auctions";
 import { myListing, myListingPage } from "../fixtures/my-listings";
@@ -37,6 +40,10 @@ test("confirmed changes update album and collection labels across tabs", async (
         },
       }),
     );
+    const market = parseServicesCard(serviceDetails("42"), "42");
+    market.auctions.push({ finish: "veil", price: "500000", bids: 0, endsAt: "2099-01-01" });
+    // The backend snapshot still says the player has no listings throughout this test.
+    await mockServiceCard(worker, market, []);
     const first = auction(1).id,
       second = auction(2).id;
     const chosenCopy = auction(10).id,
@@ -112,7 +119,7 @@ test("confirmed changes update album and collection labels across tabs", async (
                     {
                       subjectId: "42",
                       instanceId: COPY_A,
-                      copies: [{ id: chosenCopy }],
+                      copies: [{ id: chosenCopy, veil: false, fullArt: null }],
                     },
                     { subjectId: "43", instanceId: failedCopy },
                   ],
@@ -142,6 +149,7 @@ test("confirmed changes update album and collection labels across tabs", async (
             copies: [COPY_A, COPY_B].map((id) => ({
               ...detail.copies[0],
               id,
+              veil: id === COPY_A,
               auction_id: id === COPY_A ? nativeListing : undefined,
             })),
           },
@@ -162,9 +170,12 @@ test("confirmed changes update album and collection labels across tabs", async (
         return route.fulfill({ status: rejectCancel ? 409 : 204 });
       if (path.startsWith("/api/") || path.startsWith("/media/"))
         return route.fulfill({ json: {} });
+      if (/^\/market\/[a-f0-9-]{36}$/.test(path))
+        return route.fulfill({ contentType: "text/html", body: "<main>Auction detail</main>" });
       return route.fulfill({
         contentType: "text/html",
-        body: '<main><a href="/card/42">' + face() + "</a></main>",
+        body: '<main style="display:flex">' + ["kc-rare", "kc-veil", "kc-fa"].map(finish =>
+          '<a href="/card/42" data-finish="' + finish + '">' + face("42", "Northern Lights", finish) + '</a>').join("") + "</main>",
       });
     });
     const collection = await context.newPage(),
@@ -194,12 +205,36 @@ test("confirmed changes update album and collection labels across tabs", async (
     await listed(COPY_A);
     const collectionLabel = collection.locator("main .on-sale"),
       albumLabel = album.locator(".kc-window .on-sale");
-    await expect(collectionLabel).toBeVisible();
-    await expect(albumLabel).toBeVisible();
+    for (const page of [collection, album]) {
+      await expect(page.locator('[data-finish="kc-veil"] .on-sale')).toBeVisible();
+      await expect(page.locator('[data-finish="kc-rare"] .on-sale, [data-finish="kc-fa"] .on-sale')).toHaveCount(0);
+    }
     await album.reload();
     await expect(albumLabel).toBeVisible();
+    await worker.evaluate(async () => {
+      const key = "kosmore.settings", saved = await chrome.storage.local.get(key);
+      await chrome.storage.local.set({ [key]: {
+        ...(saved[key] as object), highlightLowestListings: true, warnUndercutListings: true,
+      } });
+    });
     await listed(COPY_B);
+    for (const page of [collection, album]) {
+      await expect(page.locator(".on-sale")).toHaveCount(2);
+      await expect(page.locator('[data-finish="kc-fa"] .on-sale')).toHaveCount(0);
+      const veil = page.locator('[data-finish="kc-veil"] .on-sale');
+      const plain = page.locator('[data-finish="kc-rare"] .on-sale');
+      await expect(veil).toHaveAttribute("data-state", "undercut");
+      await expect(plain).toHaveAttribute("data-state", "lowest");
+      await page.bringToFront();
+      await expect(veil).toHaveAttribute("data-pulse", "");
+      expect(await veil.evaluate(el => getComputedStyle(el, "::after").animationDuration)).toBe("1.92s");
+      expect(await plain.evaluate(el => getComputedStyle(el, "::after").animationDuration)).toBe("2.4s");
+    }
     await cancel(first);
+    for (const page of [collection, album]) {
+      await expect(page.locator('[data-finish="kc-veil"] .on-sale')).toHaveCount(0);
+      await expect(page.locator('[data-finish="kc-rare"] .on-sale')).toBeVisible();
+    }
     rejectCancel = true;
     expect(await cancel(second)).toBe(false);
     await expect(albumLabel).toBeVisible();
@@ -251,8 +286,8 @@ test("confirmed changes update album and collection labels across tabs", async (
       },
       [chosenCopy, failedCopy],
     );
-    await expect(albumLabel).toBeVisible();
-    await expect(collectionLabel).toBeVisible();
+    await expect(albumLabel).toHaveAttribute("data-state", "lowest");
+    await expect(collectionLabel).toHaveAttribute("data-state", "lowest");
     expect(listingReads).toBe(0);
     await cancel(batchListing);
     await expect(albumLabel).toHaveCount(0);
@@ -318,8 +353,17 @@ test("confirmed changes update album and collection labels across tabs", async (
     await cancel(unknownRelist);
     await expect(albumLabel).toHaveCount(0);
     await listed(historicalCopy);
-    await expect(albumLabel).toBeVisible();
+    // This legacy record only proves the subject, so it cannot mark any finish.
+    await expect(albumLabel).toHaveCount(0);
     expect(listingReads).toBe(1);
+    nativeListing = auction(66).id;
+    await album.evaluate(() => fetch("/api/collection/42").then(r => r.json()));
+    await expect(albumLabel).toBeVisible();
+    await expect(collectionLabel).toBeVisible();
+    await albumLabel.click();
+    await expect(album).toHaveURL("https://kosmora.io/market/" + nativeListing);
+    await collectionLabel.press("Enter");
+    await expect(collection).toHaveURL("https://kosmora.io/market/" + nativeListing);
   } finally {
     await context.close();
     await rm(profile, { recursive: true, force: true });

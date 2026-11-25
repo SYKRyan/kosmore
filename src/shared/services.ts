@@ -38,6 +38,8 @@ export interface ConnectionStatus {
 export interface ServicesListing {
   id: string;
   startPrice: string;
+  price?: string;
+  bids?: number;
   endsAt: string;
   finish: Finish;
 }
@@ -160,6 +162,8 @@ export function parseServicesListings(
       id: row.id,
       finish: serviceFinish(row.finish),
       startPrice: amount(row.startPrice),
+      ...(typeof row.price === "string" && /^\d+$/.test(row.price) && { price: row.price }),
+      ...(typeof row.bids === "number" && Number.isSafeInteger(row.bids) && row.bids >= 0 && { bids: row.bids }),
       endsAt: date(row.endsAt),
     };
   });

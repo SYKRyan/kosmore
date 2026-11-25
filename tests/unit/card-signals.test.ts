@@ -148,6 +148,7 @@ it("uses the latest returned sale for the displayed finish and loads listing pri
       ...settings,
       showLastSalePriceOverlay: false,
       showLowestListingPriceOverlay: false,
+      showAuctionBidCounts: false,
     },
     "plain",
   );
@@ -212,7 +213,8 @@ it("shows On Sale only for your own listed copies, independently of public aucti
     }),
   );
   h.client.activeAuctions.mockResolvedValue(0);
-  expect(await h.provider.get("42", settings, "veil")).toMatchObject({
+  expect((await h.provider.get("42", settings, "veil")).onSale).toBe(false);
+  expect(await h.provider.get("42", settings, "plain")).toMatchObject({
     onSale: true,
     activeAuctions: false,
   });

@@ -32,6 +32,7 @@ export interface OwnedCopy {
   subjectId: string;
   state: string;
   auctionId?: string;
+  finishKnown?: false;
   lockedInAlbum?: boolean;
   exclusive?: boolean;
   inTrade?: boolean;
@@ -63,9 +64,11 @@ export interface Friend {
   handle: string;
   key: string;
 }
+export type SaleHighlight = "bid" | "lowest" | "undercut";
 export interface AuctionPrice {
   price: string;
   bids?: number;
+  soleOwnListing?: true;
 }
 export interface MarketSale {
   price: string;
@@ -144,6 +147,7 @@ export interface Settings {
   friendHoverDelayMs: number;
   friendDismissDelayMs: number;
   friendTooltipWidth: number;
+  lockFriendTooltipToBrowserZoom: boolean;
   friendTooltipHeight: number;
   friendTooltipPosition: import("./popup-layout").PopupPosition | null;
   hotkeysEnabled: boolean;
@@ -155,6 +159,8 @@ export interface Settings {
   autoSkipOpening: boolean;
   autoDismissFoundPack: boolean;
   showRemainingPackCount: boolean;
+  packShowPriceWarning: boolean;
+  packWarningThreshold: number;
   cardOverlaysEnabled: boolean;
   disableCardOverlaysInPulsar: boolean;
   disableCardOverlaysInVortex: boolean;
@@ -195,6 +201,8 @@ export interface Settings {
   showLowestListingPriceOverlay: boolean;
   showAuctionBidCounts: boolean;
   showOnSaleOverlay: boolean;
+  highlightLowestListings: boolean;
+  warnUndercutListings: boolean;
   showFriendInterestOverlay: boolean;
   showQuestOverlay: boolean;
   fusionSettingsEnabled: boolean;
@@ -221,7 +229,9 @@ export interface Settings {
   pinnedAlbumHotkeys: import("./hotkeys").PinnedAlbumHotkeys;
 }
 export interface KosmoraClient {
-  saleStatus?(id: string): boolean | undefined;
+  ownAuctionFor?(id: string, finish: Finish, expectedAccount: string, signal: AbortSignal, displayed?: import("./services").ServicesListing): Promise<string>;
+  saleStatus?(id: string, finish?: Finish): boolean | undefined;
+  saleHighlight?(id: string, finish: Finish): { state?: SaleHighlight; listing?: import("./services").ServicesListing } | undefined;
   observeCardIds?(ids: string[]): void;
   readonly displayAccount?: Account;
   hasInteractiveReads?(): boolean;

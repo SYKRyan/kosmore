@@ -56,6 +56,8 @@ export function serviceRow(id: string, now = Date.now()) {
         card: { id },
         finish: "shiny",
         startPrice: "8250000",
+        price: "8250000",
+        bids: 0,
         endsAt: "2099-11-21T00:00:00Z",
       },
     ],

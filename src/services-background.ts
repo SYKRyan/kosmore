@@ -570,19 +570,11 @@ export function installServicesBackground() {
 
   async function notify(ids: string[], firstFetchedAt: Record<string, number>) {
     const tabs = await chrome.tabs.query({ url: "https://kosmora.io/*" });
-    await Promise.allSettled(
-      tabs.flatMap((tab) =>
-        tab.id === undefined
-          ? []
-          : [
-              chrome.tabs.sendMessage(
-                tab.id,
-                { op: "servicesCardsChanged", ids, firstFetchedAt },
-                { frameId: 0 },
-              ),
-            ],
-      ),
-    );
+    for (let start = 0; start < ids.length; start += 100) {
+      const message = { op: "servicesCardsChanged", ids: ids.slice(start, start + 100), firstFetchedAt };
+      await Promise.allSettled(tabs.flatMap(tab => tab.id === undefined
+        ? [] : [chrome.tabs.sendMessage(tab.id, message, { frameId: 0 })]));
+    }
   }
 
   async function accessDenied(
@@ -682,6 +674,8 @@ export function installServicesBackground() {
         ],
         signal,
       );
+      const affected = new Set([...(cached?.listings ?? []), ...listings].flatMap(row => row.subjectId ? [row.subjectId] : []));
+      if (affected.size) void notify([...affected], {}).catch(() => {});
     })()
       .catch((error) => {
         if (!signal.aborted) listingRetryAt = Date.now() + 15_000;
@@ -728,6 +722,7 @@ export function installServicesBackground() {
     const firstFetchedAt: Record<string, number> = {};
     const cards: CachedCard[] = [];
     const privateRows: CachedListings[] = [];
+    const privateIds = new Set<string>();
     const now = Date.now();
     const retry =
       now +
@@ -743,6 +738,7 @@ export function installServicesBackground() {
           Array.isArray(row.myListings)
         ) {
           const until = Date.parse(String(data.myListingsFreshUntilUtc));
+          privateIds.add(id);
           privateRows.push({
             key: privateKey(url, linked.playerId, id),
             startedAt,
@@ -804,7 +800,8 @@ export function installServicesBackground() {
     signal.throwIfAborted();
     await store.save(cards, privateRows, signal);
     signal.throwIfAborted();
-    if (changed.length) void notify(changed, firstFetchedAt).catch(() => {});
+    const affected = [...new Set([...changed, ...privateIds])];
+    if (affected.length) void notify(affected, firstFetchedAt).catch(() => {});
   }
 
   async function flush() {
@@ -959,7 +956,12 @@ export function installServicesBackground() {
           }
         }
         if (wantsMine && !view.missing && view.listings === undefined) {
-          await privateListings(account);
+          try {
+            await privateListings(account);
+          } catch (error) {
+            // Preserve the independently usable public auction price.
+            if (!view.card || signal.aborted) throw error;
+          }
           signal.throwIfAborted();
           view = await snapshot(id, account);
         }

@@ -3158,6 +3158,53 @@ test("auto-dismiss closes both found-pack alerts while keeping both summary noti
   await expect(page.locator("dialog")).toBeVisible();
 });
 
+test("a late Rogue Pack prompt leaves the fifth hotkey-selected card and its pinned tooltip in place", async () => {
+  await pulsarSettings({
+    packOpeningHotkeysEnabled: true,
+    autoDismissFoundPack: true,
+    packOpeningHotkeys: shortcutBindings({ nextCard: "ArrowRight", previousCard: "ArrowLeft" }),
+  });
+  await worker.evaluate(() => chrome.storage.local.set({ "kosmore.popupPin": { pinned: true } }));
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  const cards = page.locator(".ko-grid-open");
+  const popup = page.locator("#kosmore-root");
+  await expect(cards.first()).toBeFocused();
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowRight");
+  await expect(cards.nth(4)).toBeFocused();
+  await expect(popup.locator("h2")).toHaveText("Orion Nebula");
+
+  const result = await cards.nth(4).evaluate(async (card) => {
+    const tooltip = document.querySelector("#kosmore-root");
+    let blurs = 0;
+    card.addEventListener("blur", () => blurs++, { once: true });
+    // Kosmora mounts the reward after the grid entrance and autofocuses Continue.
+    const drop = document.createElement("div");
+    drop.className = "ko-drop ko-drop-rogue";
+    drop.setAttribute("role", "dialog");
+    drop.setAttribute("aria-modal", "true");
+    const button = document.createElement("button");
+    button.className = "ko-drop-btn";
+    button.textContent = "Continue";
+    drop.append(button);
+    const dismissed = new Promise<void>((done) => {
+      button.addEventListener("click", () => requestAnimationFrame(() => {
+        drop.remove();
+        requestAnimationFrame(() => done());
+      }), { once: true });
+    });
+    card.closest(".ko-summary")!.prepend(drop);
+    button.focus();
+    await dismissed;
+    return { blurs, sameTooltip: tooltip === document.querySelector("#kosmore-root"),
+      selected: card === document.activeElement && card.hasAttribute("data-kosmore-pack-focus") };
+  });
+  expect(result).toEqual({ blurs: 0, sameTooltip: true, selected: true });
+  await expect(popup.locator("h2")).toHaveText("Orion Nebula");
+  await page.keyboard.press("ArrowLeft");
+  await expect(cards.nth(3)).toBeFocused();
+  await expect(popup.locator("h2")).toHaveText("Andromeda");
+});
+
 test("pack hotkeys dismiss found packs with an unassigned key by default", async () => {
   await worker.evaluate(async () => {
     const key = "kosmore.settings";
@@ -3474,8 +3521,130 @@ test("a pinned tooltip follows card reveals and focuses the first summary card a
   await expect(cards.nth(1)).toBeFocused();
 });
 
+test("a quick hover or last-card shortcut wins over pending pack summary autofocus", async () => {
+  await pulsarSettings({
+    packOpeningHotkeysEnabled: true,
+    packOpeningHotkeys: { focusLastCard: { code: "End", ctrl: false, alt: false, shift: false, meta: false } },
+  });
+  await worker.evaluate(() => chrome.storage.local.set({ "kosmore.popupPin": { pinned: true } }));
+  for (const action of ["hover", "hotkey"]) {
+    await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1&autoSkipCase=normal`);
+    await expect(page.locator("#kosmore-root")).toHaveAttribute("data-pinned", "");
+    await page.evaluate(async action => {
+      document.querySelector<HTMLButtonElement>(".ko-skip:not(.ko-later,.ko-talents,[hidden])")!.click();
+      document.querySelector(".ko-drop")!.remove();
+      const [first, second] = document.querySelectorAll<HTMLButtonElement>(".ko-grid-open");
+      first.addEventListener("focus", () => document.body.dataset.focusStolen = "yes");
+      if (action === "hover") {
+        const face = second.parentElement!.querySelector(".kc-article")!;
+        face.remove();
+        second.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+        second.before(face);
+      } else {
+        document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "End", code: "End", bubbles: true, cancelable: true }));
+      }
+      await new Promise<void>(done => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+    }, action);
+    if (action === "hotkey") await expect(page.locator(".ko-grid-open").last()).toBeFocused();
+    await expect(page.locator("body")).not.toHaveAttribute("data-focus-stolen");
+  }
+});
+
+for (const action of ["hotkey", "hover", "overlay"] as const) {
+  test(`pack summary animation preserves a card selected by ${action}`, async () => {
+    await pulsarSettings({
+      packOpeningHotkeysEnabled: true,
+      packOpeningHotkeys: shortcutBindings({ nextCard: "ArrowRight", focusFirstCard: "Home" }),
+      useOverlayButtonInsteadOfHover: action === "overlay",
+    });
+    await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+    const cards = page.locator(".ko-grid-open");
+    const selected = cards.nth(2);
+    await expect(page.locator("#kosmore-pack-hotkeys-style")).toHaveCount(1);
+    const summary = page.locator(".ko-summary");
+    await summary.evaluate((element) => {
+      const animation = element.animate([{ opacity: 0.95 }, { opacity: 1 }], 1000);
+      animation.id = "summary-entrance";
+      animation.pause();
+      animation.onfinish = () => element.querySelector<HTMLButtonElement>(".ko-grid-open")!.focus();
+    });
+    if (action === "hotkey") {
+      await page.keyboard.press("Home");
+      await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("ArrowRight");
+      await expect(selected).toBeFocused();
+    } else if (action === "hover") {
+      await selected.hover();
+    } else {
+      await tooltipButton("Voyager 1").click();
+    }
+    const title = page.locator("#kosmore-root h2");
+    await expect(title).toHaveText("Voyager 1");
+    const focusEvents = await summary.evaluate(async (element) => {
+      const events: string[] = [];
+      const listeners = new AbortController();
+      for (const type of ["focusin", "focusout"])
+        document.addEventListener(type, () => events.push(type), { capture: true, signal: listeners.signal });
+      const animation = element.getAnimations().find((entry) => entry.id === "summary-entrance")!;
+      const finished = new Promise((done) => animation.addEventListener("finish", done, { once: true }));
+      animation.finish();
+      await finished;
+      await new Promise<void>((done) => requestAnimationFrame(() => done()));
+      listeners.abort();
+      return events;
+    });
+    expect(focusEvents).toEqual([]);
+    await expect(cards.first()).not.toBeFocused();
+    await expect(title).toHaveText("Voyager 1");
+    if (action === "hotkey") await expect(selected).toBeFocused();
+    if (action === "overlay") await expect(tooltipButton("Voyager 1")).toBeFocused();
+    await page.keyboard.press("Home");
+    await expect(cards.first()).toBeFocused();
+    if (action === "hotkey") {
+      await page.keyboard.press("ArrowRight");
+      await expect(cards.nth(1)).toBeFocused();
+      await page.keyboard.press("Shift+Tab");
+      await expect(cards.first()).toBeFocused();
+    }
+  });
+}
+
+test("a summary card moving under a stationary mouse preserves hotkey inspection", async () => {
+  await pulsarSettings({
+    packOpeningHotkeysEnabled: true,
+    packOpeningHotkeys: shortcutBindings({ focusFirstCard: "Home", nextCard: "ArrowRight" }),
+    hoverDelayMs: 20,
+  });
+  await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
+  const cards = page.locator(".ko-grid-open");
+  const point = await cards.first().evaluate((button) => {
+    const { x, y } = button.getBoundingClientRect();
+    button.parentElement!.style.transform = "translateX(-900px)";
+    return { x: x + 40, y: y + 40 };
+  });
+  await page.mouse.move(point.x, point.y);
+  await page.keyboard.press("Home");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  const title = page.locator("#kosmore-root h2");
+  await expect(title).toHaveText("Voyager 1");
+  await cards.first().evaluate(async (button) => {
+    const tile = button.parentElement!;
+    tile.style.transform = "";
+    await new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+  });
+  await expect.poll(() => cards.first().evaluate((card) => card.matches(":hover"))).toBe(true);
+  await expect(cards.nth(2)).toBeFocused();
+  // Wait through the hover delay so the assertion sees any scheduled tooltip change.
+  await page.waitForTimeout(300);
+  await expect(title).toHaveText("Voyager 1");
+  await page.mouse.move(point.x + 5, point.y);
+  await expect(title).toHaveText("Northern Lights");
+});
+
 test("an unpinned pack tooltip follows the mouse without changing keyboard focus", async () => {
   await pulsarSettings({
+    tooltipTakesFocus: true,
     packOpeningHotkeysEnabled: true,
     packOpeningHotkeys: {
       nextCard: {
@@ -5866,25 +6035,14 @@ test("For Sale marks only your listings, centers in albums and honors overlay se
       },
     });
   });
-  await page.route("**/api/collection/*", async (route) => {
-    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
-    const source = card(id);
-    await route.fulfill({
-      json: {
-        ...source,
-        copies:
-          id === "42"
-            ? [
-                {
-                  ...source.copies[0],
-                  state: "escrow",
-                  auction_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-                },
-              ]
-            : source.copies,
-      },
-    });
-  });
+  const marketFixtures = await Promise.all(["42", "43"].map(id => {
+    const data = parseServicesCard(serviceDetails(id), id);
+    data.families = [{ id: "space.astronomy", name: "Astronomy" }];
+    data.quests = ["wanderers"];
+    return mockServiceCard(worker, data, id === "42" ? [{
+      id: id.padStart(24, "0"), finish: "plain", startPrice: "7500000", endsAt: "2099-01-01",
+    }] : []);
+  }));
   const options = await context.newPage();
   try {
     const albumUrl = `https://kosmora.io/albums/${ALBUM_A}`;
@@ -5913,7 +6071,7 @@ test("For Sale marks only your listings, centers in albums and honors overlay se
     await expect(label).toHaveText("For Sale");
     await expect(label).toHaveAttribute(
       "aria-label",
-      "You have this card for sale on the market",
+      "You have this finish for sale on the market",
     );
     await expect(
       own.locator("[data-kosmore-card-overlays] .signal-badge"),
@@ -6048,7 +6206,7 @@ test("For Sale marks only your listings, centers in albums and honors overlay se
     expect(writeRequests).toBe(0);
   } finally {
     await options.close();
-    await page.unroute("**/api/collection/*");
+    for (const handle of marketFixtures) await handle.evaluate(remove => remove());
   }
 });
 test("market overlays show sale and listing prices at top right and quest before friends at bottom right with independent price switches", async () => {
@@ -10760,6 +10918,62 @@ test("Fusion What Goes temporarily closes pinned tooltips in only the review tab
     await other.close();
     await page.unroute(path);
     await worker.evaluate(() => chrome.storage.local.remove("kosmore.popupPin"));
+  }
+});
+
+test("Pack Openings price warning uses its own saved threshold only on summary cards", async () => {
+  const details = serviceDetails("42");
+  details.sales.plain.lastSale.price = "200000001";
+  const cached = await mockServiceCard(worker, parseServicesCard(details, "42"));
+  const options = await context.newPage();
+  const route = "**/packs/open?packPriceWarning=1";
+  const html = fixture("summary").replace("</main>", face() + "</main>");
+  await page.route(route, r => r.fulfill({ contentType: "text/html", body: html }));
+  try {
+    await pulsarSettings({ cardOverlaysEnabled: false, fusionWarningThreshold: 900 });
+    await options.goto(`chrome-extension://${extensionId}/options.html#pack-openings`);
+    const pack = options.locator("#pack-openings");
+    const toggle = pack.getByLabel("Show Price Warning", { exact: true });
+    const threshold = pack.getByLabel("Threshold", { exact: true });
+    const save = pack.getByRole("button", { name: "Save", exact: true });
+    await expect(toggle).not.toBeChecked();
+    await expect(threshold).toBeDisabled();
+    await expect(threshold).toHaveValue("200");
+    await page.goto("https://kosmora.io/packs/open?packPriceWarning=1");
+    const warned = page.locator("[data-kosmore-pack-price-warning]");
+    await expect(warned).toHaveCount(0);
+    await toggle.check();
+    await save.click();
+    const first = page.locator(".ko-grid > li").first();
+    await expect(first.locator("[data-kosmore-pack-price-warning]")).toHaveCSS("outline-color", "rgb(255, 69, 79)");
+    await expect(page.locator("main > [data-kosmore-pack-price-warning]")).toHaveCount(0);
+    await page.locator(".ko-grid > li").nth(1).locator(".kc").evaluate(node => node.classList.add("kc-fa"));
+    await expect(warned).toHaveCount(1);
+    await threshold.fill("200.000001");
+    await save.click();
+    await expect(warned).toHaveCount(0);
+    await threshold.fill("7");
+    await save.click();
+    await expect(warned).toHaveCount(1);
+    await pulsarSettings({ useMedianOverlayPrice: true });
+    await expect(warned).toHaveCount(0);
+    await options.reload();
+    await expect(threshold).toHaveValue("7");
+    await expect(options.locator("#fusion-warning-threshold")).toHaveValue("900");
+    await threshold.fill("6");
+    await save.click();
+    await expect(warned).toHaveCount(1);
+    const master = pack.getByRole("switch", { name: "Enable pack openings" });
+    await master.uncheck();
+    await expect(warned).toHaveCount(0);
+    await master.check();
+    await expect(warned).toHaveCount(1);
+    await page.evaluate(() => history.pushState({}, "", "/collection"));
+    await expect(warned).toHaveCount(0);
+  } finally {
+    await options.close();
+    await cached.evaluate(remove => remove());
+    await page.unroute(route);
   }
 });
 

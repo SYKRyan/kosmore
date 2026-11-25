@@ -12,6 +12,7 @@ import { messageOf, type KosmoraClient, type Settings } from "../shared/types";
 import {
   parsePopupState,
   resizedBounds,
+  tooltipScale,
   type PopupBounds,
   type PopupLayoutChange,
   type PopupPosition,
@@ -33,6 +34,7 @@ const LIMITS = { minWidth: 240, minHeight: 160 };
 /** A single account-scoped companion popup for the card hover tooltip. */
 export class FriendTooltip {
   private settings = defaults();
+  private browserZoom = 1;
   private state: PopupState = { pinned: false, position: null };
   private beforeFusionReview?: PopupState;
   private source?: Source;
@@ -127,8 +129,12 @@ export class FriendTooltip {
       this.hide();
       return;
     }
-    this.view?.setSettings(settings);
+    this.view?.setSettings(settings, this.browserZoom);
     if (this.state.pinned && !this.view) this.createView();
+  }
+  setBrowserZoom(zoom: number) {
+    this.browserZoom = zoom;
+    this.view?.setSettings(this.settings, zoom);
   }
   setFusionReview(active: boolean) {
     if (active) {
@@ -299,6 +305,7 @@ export class FriendTooltip {
   private createView() {
     const view = new FriendTooltipView(
       this.settings,
+      this.browserZoom,
       this.state,
       () => this.dismiss(true),
       (change) => this.saveLayout(change),
@@ -409,6 +416,7 @@ class FriendTooltipView {
   pinned: boolean;
   private placement: PopupPosition | null;
   private body = el("div", "body");
+  private content = el("div", "friend-tooltip-content");
   private status = el("p", "status");
   private privacy = el("p", "privacy");
   private friends = new FriendList();
@@ -419,8 +427,10 @@ class FriendTooltipView {
   private disposed = false;
   private resizeBounds?: PopupBounds;
   private finishInteraction?: () => void;
+  private scale: number;
   constructor(
     private settings: Settings,
+    browserZoom: number,
     state: PopupState,
     close: () => void,
     private changed: (change: PopupLayoutChange) => void,
@@ -428,6 +438,7 @@ class FriendTooltipView {
     left: () => void,
     refresh: () => void,
   ) {
+    this.scale = tooltipScale(settings.tooltipUiScale, settings.lockFriendTooltipToBrowserZoom, browserZoom);
     this.pinned = state.pinned;
     this.placement = state.position ?? settings.friendTooltipPosition;
     this.host.id = FRIEND_TOOLTIP_ID;
@@ -454,7 +465,8 @@ class FriendTooltipView {
     this.status.setAttribute("role", "status");
     this.status.setAttribute("aria-live", "polite");
     this.body.append(this.privacy, this.status, this.list);
-    this.shadow.append(style, header, this.body);
+    this.content.append(header, this.body);
+    this.shadow.append(style, this.content);
     this.host.addEventListener("pointerenter", entered);
     this.host.addEventListener("pointerleave", left);
     this.host.addEventListener("focusin", entered);
@@ -513,15 +525,26 @@ class FriendTooltipView {
         : "No matching friends for this card.";
     this.friends.setData(data);
   }
-  setSettings(settings: Settings) {
-    if (this.finishInteraction) return;
+  setSettings(settings: Settings, browserZoom: number) {
+    const scale = tooltipScale(settings.tooltipUiScale, settings.lockFriendTooltipToBrowserZoom, browserZoom);
+    if (this.resizeBounds) {
+      settings = {
+        ...settings,
+        friendTooltipWidth: this.settings.friendTooltipWidth,
+        friendTooltipHeight: this.settings.friendTooltipHeight,
+      };
+    }
+    if (scale !== this.scale) this.finishInteraction?.();
+    this.scale = scale;
     this.settings = settings;
     this.applySize();
     this.position();
   }
   private applySize() {
-    this.host.style.width = `${Math.max(0, Math.min(this.settings.friendTooltipWidth, innerWidth - 24))}px`;
-    this.host.style.height = `${Math.max(0, Math.min(this.settings.friendTooltipHeight, innerHeight - 24))}px`;
+    const gutter = 24 * this.scale;
+    this.host.style.setProperty("--friend-tooltip-scale", String(this.scale));
+    this.host.style.width = `${Math.max(0, Math.min(this.settings.friendTooltipWidth * this.scale, innerWidth - gutter))}px`;
+    this.host.style.height = `${Math.max(0, Math.min(this.settings.friendTooltipHeight * this.scale, innerHeight - gutter))}px`;
   }
   mount() {
     const parent = topDialog() ?? document.body;
@@ -541,24 +564,24 @@ class FriendTooltipView {
       this.frame = 0;
       if (this.disposed) return;
       this.applySize();
-      const width = this.host.offsetWidth,
-        height = this.host.offsetHeight,
-        anchor = this.anchor?.isConnected
-          ? this.anchor.getBoundingClientRect()
-          : undefined;
-      let left = this.placement?.left ?? Math.max(12, innerWidth - width - 12),
-        top = this.placement?.top ?? 12;
+      const { width, height } = this.host.getBoundingClientRect();
+      const gap = 12 * this.scale;
+      const anchor = this.anchor?.isConnected
+        ? this.anchor.getBoundingClientRect()
+        : undefined;
+      let left = this.placement?.left ?? innerWidth - width - gap,
+        top = this.placement?.top ?? gap;
       if (!this.pinned && anchor) {
-        left = anchor.right + 8;
-        if (left + width > innerWidth - 12) left = anchor.left - width - 8;
+        left = anchor.right + 8 * this.scale;
+        if (left + width > innerWidth - gap) left = anchor.left - width - 8 * this.scale;
         top = anchor.top;
       }
       if (this.resizeBounds) {
         left = this.resizeBounds.left;
         top = this.resizeBounds.top;
       }
-      left = Math.max(12, Math.min(left, innerWidth - width - 12));
-      top = Math.max(12, Math.min(top, innerHeight - height - 12));
+      left = Math.max(gap, Math.min(left, innerWidth - width - gap));
+      top = Math.max(gap, Math.min(top, innerHeight - height - gap));
       this.host.style.left = `${left}px`;
       this.host.style.top = `${top}px`;
     });
@@ -604,19 +627,20 @@ class FriendTooltipView {
       event.preventDefault();
       const move = (next: PointerEvent) => {
         if (next.pointerId !== event.pointerId) return;
+        const gap = 12 * this.scale;
         this.placement = {
           left: Math.max(
-            12,
+            gap,
             Math.min(
               rect.left + next.clientX - startX,
-              innerWidth - this.host.offsetWidth - 12,
+              innerWidth - rect.width - gap,
             ),
           ),
           top: Math.max(
-            12,
+            gap,
             Math.min(
               rect.top + next.clientY - startY,
-              innerHeight - this.host.offsetHeight - 12,
+              innerHeight - rect.height - gap,
             ),
           ),
         };
@@ -638,12 +662,16 @@ class FriendTooltipView {
     });
   }
   private enableResize() {
-    const apply = (bounds: PopupBounds) => {
+    const apply = (bounds: PopupBounds, edge: string) => {
       this.resizeBounds = bounds;
       this.settings = {
         ...this.settings,
-        friendTooltipWidth: bounds.width,
-        friendTooltipHeight: bounds.height,
+        friendTooltipWidth: /[ew]/.test(edge)
+          ? Math.max(LIMITS.minWidth, Math.round(bounds.width / this.scale))
+          : this.settings.friendTooltipWidth,
+        friendTooltipHeight: /[ns]/.test(edge)
+          ? Math.max(LIMITS.minHeight, Math.round(bounds.height / this.scale))
+          : this.settings.friendTooltipHeight,
       };
       this.applySize();
       if (this.pinned) this.placement = { left: bounds.left, top: bounds.top };
@@ -686,9 +714,10 @@ class FriendTooltipView {
                 edge,
                 next.clientX - x,
                 next.clientY - y,
-                { width: innerWidth, height: innerHeight },
+                { width: innerWidth, height: innerHeight, scale: this.scale },
                 LIMITS,
               ),
+              edge,
             );
         };
         const stop = () => {
@@ -734,13 +763,14 @@ class FriendTooltipView {
               : event.key === "ArrowDown"
                 ? step
                 : 0,
-            { width: innerWidth, height: innerHeight },
+            { width: innerWidth, height: innerHeight, scale: this.scale },
             LIMITS,
           ),
+          edge,
         );
         finish();
       });
-      this.shadow.append(handle);
+      this.content.append(handle);
     }
   }
   dispose() {

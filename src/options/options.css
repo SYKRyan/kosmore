@@ -428,6 +428,7 @@ input.section-switch:checked::before {
   border: 1px solid var(--settings-border);
   border-radius: 10px;
 }
+#pack-warning-threshold,
 #fusion-warning-threshold {
   margin-inline-start: auto;
 }

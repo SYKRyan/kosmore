@@ -6,6 +6,8 @@ import {
 } from "../../src/kosmora/auctions";
 import { GameClient } from "../../src/kosmora/client";
 import { auction } from "../fixtures/auctions";
+import { card, COPY_A, COPY_B, me } from "../fixtures/data";
+import { myListing, myListingPage } from "../fixtures/my-listings";
 
 const withoutListings = <T extends { listings: unknown }>({
   listings: _listings,
@@ -13,6 +15,31 @@ const withoutListings = <T extends { listings: unknown }>({
 }: T) => summary;
 
 afterEach(() => vi.restoreAllMocks());
+
+it("opens the displayed most-bid owned auction for the finish using its native ID", async () => {
+  const rows = [
+    myListing(1, "42", { state: "open", group: "selling", startPrice: "1", bids: 2, endsAt: "2099-01-01" }),
+    myListing(2, "42", { state: "open", group: "selling", startPrice: "1", bids: 11, endsAt: "2099-01-01" }),
+    myListing(3, "42", { state: "open", group: "selling", startPrice: "2", bids: 15, endsAt: "2099-01-01", veil: true }),
+  ];
+  const detail = card();
+  const copies = [COPY_A, COPY_B].map((id, i) => ({
+    ...detail.copies[0], id, auction_id: rows[i].id, veil: false, fullArt: null,
+  }));
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    if (input === "/api/me") return Response.json(me);
+    if (input === "/api/collection/42") return Response.json({ ...detail, copies });
+    expect(String(input)).toContain("/api/me/auctions?");
+    return Response.json(myListingPage(rows));
+  });
+  const client = new GameClient(fetcher);
+  const signal = new AbortController().signal;
+  const displayed = { id: "a".repeat(24), finish: "plain" as const, startPrice: "1", endsAt: "2099-01-01", bids: 11 };
+  expect(await client.ownAuctionFor("42", "plain", "fixtureplayer", signal, displayed)).toBe(rows[1].id);
+  expect(await client.ownAuctionFor("42", "plain", "fixtureplayer", signal)).toBe(rows[1].id);
+  await expect(client.ownAuctionFor("42", "plain", "fixtureplayer", signal, { ...displayed, startPrice: "42" })).rejects.toThrow("no longer available");
+  await expect(client.ownAuctionFor("42", "plain", "anotherplayer", signal)).rejects.toThrow("account changed");
+});
 
 it("finds the lowest current listing price using bids before starting prices and exact active subjects", async () => {
   const read = vi
@@ -150,6 +177,8 @@ it("filters elapsed auctions from the Services snapshot and refreshes the tab vi
       data: {
         "42": {
           stale: false,
+          listings: [],
+          listingsUntil: Date.now() + 300_000,
           until: Date.now() + 300_000,
           card: {
             auctions: [
@@ -176,8 +205,8 @@ it("filters elapsed auctions from the Services snapshot and refreshes the tab vi
     expect(client.peekAuction("42", "plain")).toBeUndefined();
     expect(await client.lowestListing("42", "plain")).toEqual({price: "20", bids: 1});
     expect(send.mock.calls.map(([call]) => call.account)).toEqual([
-      undefined,
-      undefined,
+      "firstplayer",
+      "secondplayer",
     ]);
     expect(fetcher).toHaveBeenCalledTimes(2);
   } finally {

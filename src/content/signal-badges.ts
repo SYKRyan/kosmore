@@ -1,6 +1,6 @@
 import type { Settings } from "../shared/types";
 import { overlaySalePrice, type CardSignals, type OverlaySettings } from "./card-signals";
-import { cardIcon } from "./icons";
+import { auctionIcon, cardIcon } from "./icons";
 import { el } from "./ui";
 import { formatKosmo } from "../kosmora/contracts";
 import { enableMarketLink, marketSearchPath } from "./market-links";
@@ -16,7 +16,13 @@ export function auctionBidSuffix(bids?: number) {
   return " - " + bids.toLocaleString() + (bids === 1 ? " bid" : " bids");
 }
 
-export const MARKET_BADGE_CSS = `.price-badge.auction .amount{white-space:nowrap}.number-one{display:inline-block;flex:none;border-radius:3px;padding:1px 3px;background:#f5cd68;color:#382707;font:bold 10px/1.2 system-ui;white-space:nowrap}.sale{background:#171027ed;border-color:#b6955a;color:#f4d68c}.auction{background:#8d2034ed;border-color:#ff7185;color:#fff1f3}.history{background:#21182fed;border-color:#9a7fc6;color:#d1b7fc}[data-stale-price]{opacity:.72}`;
+export function highlightOwnPrice(badge: HTMLElement, listing?: { soleOwnListing?: true }, stale = false) {
+  const own = !!listing?.soleOwnListing && !stale;
+  badge.toggleAttribute("data-sole-own-listing", own);
+  return own ? " Yours is the only active auction for this finish." : "";
+}
+
+export const MARKET_BADGE_CSS = `.price-badge.auction .amount{white-space:nowrap}.number-one{display:inline-block;flex:none;border-radius:3px;padding:1px 3px;background:#f5cd68;color:#382707;font:bold 10px/1.2 system-ui;white-space:nowrap}.sale{background:#171027ed;border-color:#b6955a;color:#f4d68c}.auction{background:#8d2034ed;border-color:#ff7185;color:#fff1f3}.auction[data-sole-own-listing]{background:#145834;border-color:#57ed8c;color:white}.history{background:#21182fed;border-color:#9a7fc6;color:#d1b7fc}[data-stale-price]{opacity:.72}`;
 export const SIGNAL_BADGE_CSS = `${MARKET_BADGE_CSS}.signal-badge.quest{display:inline-flex;align-items:center;justify-content:center;width:auto;padding:0 6px;gap:4px;border-radius:6px;white-space:nowrap;background:#f4d68c;border-color:#b6955a;color:#171027}.signal-badge.friend{background:#171027ed;border-color:#9a7fc6;color:#d1b7fc}.friend-trigger{pointer-events:auto;cursor:pointer;padding:0;font:inherit}.friend-trigger:hover{filter:brightness(1.2)}.friend-trigger:focus-visible{outline:2px solid #e7cb84;outline-offset:2px}`;
 
 export function signalBadges(
@@ -51,13 +57,14 @@ export function signalBadges(
     const description =
       price !== undefined
         ? `${label}. ${kind === "sale" ? (settings.useMedianOverlayPrice ? "Median" : "Last sale") : "Lowest observed auction price"}: ${formatKosmo(price)} Kosmo${bids}, for this finish.`
-        : label;
+        : label + bids;
     const accessibleDescription =
       badge instanceof HTMLAnchorElement
         ? `${description} Find ${marketName} at Market.`
         : description;
     const detail =
       accessibleDescription +
+      (kind === "auction" && price !== undefined ? highlightOwnPrice(badge, signals.lowestListing, stale) : "") +
       (stale ? " Last known price." : "") +
       (kind === "auction" && signals.auctionFetchedAt
         ? " Snapshot fetched " +
@@ -68,11 +75,11 @@ export function signalBadges(
     badge.title = detail;
     badge.toggleAttribute("data-stale-price", !!stale);
     if (kind === "friend") onFriendBadge?.(badge);
-    badge.append(cardIcon(kind));
+    badge.append(kind === "auction" ? auctionIcon(bids ? signals.lowestListing?.bids : undefined) : cardIcon(kind));
     if (kind === "quest") badge.append(el("span", "badge-label", "Quest"));
     if (price !== undefined) {
       badge.classList.add("with-price");
-      badge.append(el("span", "badge-price", `$${formatKosmo(price)}${bids}`));
+      badge.append(el("span", "badge-price", `$${formatKosmo(price)}`));
     }
     if (kind === "sale" && !settings.useMedianOverlayPrice && price !== undefined && signals.lastSale?.numberOne) {
       badge.append(numberOneIcon());

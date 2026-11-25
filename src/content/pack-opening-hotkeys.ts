@@ -6,6 +6,7 @@ import {
   shortcutKey,
 } from "../shared/hotkeys";
 import type { CardContext, Settings } from "../shared/types";
+import { BEFORE_PACK_CARD_FOCUS } from "../shared/page-relay";
 import { observePage } from "./page-changes";
 
 export const PACK_FOCUS = "data-kosmore-pack-focus";
@@ -75,6 +76,11 @@ function gridCards(summary: HTMLElement): HTMLElement[] {
   );
 }
 
+function foundPackKind(dialog: Element | null | undefined) {
+  if (!dialog?.matches(`${SUMMARY} .ko-drop`)) return;
+  return FOUND_PACK_TYPES.find((kind) => dialog.classList.contains(kind));
+}
+
 export class PackOpeningHotkeys {
   private focusStyle = document.createElement("style");
   private url = location.href;
@@ -94,10 +100,13 @@ export class PackOpeningHotkeys {
   private revealedOpening?: string;
   private summaryFocus?: {
     opening: string | HTMLElement;
+    summary: HTMLElement;
     pending: boolean;
     requiresPinnedTooltip: boolean;
+    manualSelection: boolean;
     card?: HTMLElement;
   };
+  private nativeFocusInput?: Event;
   private skipAttempts = new Set<string>();
   private autoDismissedDrops = new WeakMap<HTMLElement, Set<string>>();
   private nextPackSkip?: {
@@ -159,6 +168,12 @@ export class PackOpeningHotkeys {
     // A found-pack prompt gets first refusal before navigation shortcuts.
     window.addEventListener("keydown", this.onKeyDown, true);
     window.addEventListener("click", this.onPackClick, true);
+    window.addEventListener("pointerdown", (event) => {
+      if (this.summaryFocus?.manualSelection && event.target instanceof Element &&
+          event.target.closest(".ko-grid > li:first-child"))
+        this.allowNativeFocus(event);
+    }, true);
+    window.addEventListener(BEFORE_PACK_CARD_FOCUS, this.beforePageCardFocus, true);
     document.addEventListener("focusin", this.onFocusIn, true);
     document.addEventListener(
       "focusout",
@@ -209,12 +224,12 @@ export class PackOpeningHotkeys {
       this.focused.focus({ preventScroll: true });
   }
 
-  keepFocusOnRecap(previous: URL) {
+  keepFocusOnRecap(previous: URL, current: CardContext | null) {
     const recap = new URL(location.href);
     const openingId = this.openingId(previous.searchParams);
     if (
-      !this.focused?.isConnected ||
-      !this.focused.closest(SUMMARY) ||
+      (!(this.focused?.isConnected && this.focused.closest(SUMMARY)) &&
+        !(current?.surface === "summary" && current.anchor.isConnected)) ||
       previous.pathname !== OPENING_PATH ||
       recap.pathname !== OPENING_PATH ||
       previous.searchParams.get("recap") === "1" ||
@@ -226,11 +241,37 @@ export class PackOpeningHotkeys {
     return true;
   }
 
-  inspectSummaryCard(context: CardContext) {
-    if (!this.settings().packOpeningsEnabled || context.surface !== "summary" || context.entryIndex === 0) return;
-    const summary = context.anchor.closest<HTMLElement>(SUMMARY);
-    if (summary) this.cancelSummaryFocus(summary);
+  inspectSummaryCard(target: Element) {
+    if (location.pathname !== OPENING_PATH || !this.settings().packOpeningsEnabled) return;
+    // A grid slot is interactive before its card data or tooltip is ready.
+    const tile = target.closest(".ko-grid > li");
+    const summary = tile?.closest<HTMLElement>(SUMMARY);
+    if (summary && tile?.previousElementSibling)
+      this.cancelSummaryFocus(summary).manualSelection = true;
   }
+
+  // Tab and a pointer press can intentionally focus the first button. Allow
+  // their native default action without rearming autofocus for this opening.
+  private allowNativeFocus(event: Event) {
+    this.nativeFocusInput = event;
+    setTimeout(() => {
+      if (this.nativeFocusInput === event) this.nativeFocusInput = undefined;
+    }, 0);
+  }
+
+  private beforePageCardFocus = (event: Event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLButtonElement)) return;
+    if (target.matches(FOUND_PACK_CONTINUE)) {
+      if (this.autoDismissEnabled() && foundPackKind(target.closest(MODAL)))
+        event.preventDefault();
+      return;
+    }
+    if (this.nativeFocusInput || !this.summaryFocus?.manualSelection) return;
+    const summary = target.closest<HTMLElement>(SUMMARY);
+    if (summary?.querySelector(GRID_CARD) === target && this.summaryFocusFor(summary).manualSelection)
+      event.preventDefault();
+  };
 
   private onFocusIn = (event: FocusEvent) => {
     if (!this.settings().packOpeningsEnabled) return;
@@ -239,7 +280,10 @@ export class PackOpeningHotkeys {
         const drop = event.target.closest(".ko-drop");
         const summary = document.querySelector<HTMLElement>(SUMMARY);
         if (drop) this.deferFocusForDrop(drop);
-        else if (summary) this.cancelSummaryFocus(summary);
+        else if (summary) {
+          const focus = this.cancelSummaryFocus(summary);
+          if (event.target.closest(".ko-grid > li:not(:first-child)")) focus.manualSelection = true;
+        }
       }
       this.cancelBatch();
       this.reveal = undefined;
@@ -248,6 +292,8 @@ export class PackOpeningHotkeys {
   };
 
   private onKeyDown = (event: KeyboardEvent) => {
+    if (this.summaryFocus?.manualSelection && event.key === "Tab")
+      this.allowNativeFocus(event);
     const settings = this.settings();
     if (
       location.pathname !== OPENING_PATH ||
@@ -276,7 +322,7 @@ export class PackOpeningHotkeys {
     if (!action && !settings.anyKeyDismissesFoundPack) return;
 
     const dialog = modal();
-    if (dialog) {
+    if (dialog && !this.dismissFoundPackAutomatically(dialog)) {
       if (
         dialog.matches(`${SUMMARY} .ko-drop`) &&
         (settings.anyKeyDismissesFoundPack
@@ -287,7 +333,7 @@ export class PackOpeningHotkeys {
       return;
     }
     if (!action) return;
-    if (this.url !== location.href) this.reset();
+    if (this.url !== location.href && !this.keepFocusOnRecap(new URL(this.url), null)) this.reset();
     this.cancelBatch();
 
     const summary = control(document, SUMMARY);
@@ -352,6 +398,7 @@ export class PackOpeningHotkeys {
                   : Math.max(0, current - 1);
         if (cards.length) {
           this.consume(event);
+          this.cancelSummaryFocus(summary).manualSelection = true;
           this.focusGridCard(summary, cards, index);
         }
       }
@@ -538,35 +585,33 @@ export class PackOpeningHotkeys {
     event.stopImmediatePropagation();
   }
 
-  dismissFoundPackAutomatically() {
+  private autoDismissEnabled() {
     const { packOpeningsEnabled, packOpeningHotkeysEnabled, autoDismissFoundPack } = this.settings();
-    if (
-      location.pathname !== OPENING_PATH ||
-      !packOpeningsEnabled ||
-      !packOpeningHotkeysEnabled ||
-      !autoDismissFoundPack
-    )
-      return;
-    const dialog = modal();
-    if (!dialog?.matches(".ko-drop")) return;
-    const summary = dialog.closest<HTMLElement>(SUMMARY);
-    const kind = FOUND_PACK_TYPES.find((type) =>
-      dialog.classList.contains(type),
-    );
-    const button = control(dialog, FOUND_PACK_CONTINUE);
-    if (!summary || !kind || !button) return;
+    return location.pathname === OPENING_PATH && packOpeningsEnabled &&
+      packOpeningHotkeysEnabled && autoDismissFoundPack;
+  }
+
+  dismissFoundPackAutomatically(dialog?: HTMLElement) {
+    if (!this.autoDismissEnabled()) return false;
+    dialog ??= modal();
+    const kind = foundPackKind(dialog);
+    if (!dialog || !kind) return false;
+    const summary = dialog.closest<HTMLElement>(SUMMARY)!;
     const dismissed = this.autoDismissedDrops.get(summary) ?? new Set<string>();
-    if (dismissed.has(kind)) return;
+    if (dismissed.has(kind)) return true;
+    const button = control(dialog, FOUND_PACK_CONTINUE);
+    if (!button) return false;
     // Kosmora can reuse the same dialog element for the next reward.
     dismissed.add(kind);
     this.autoDismissedDrops.set(summary, dismissed);
-    this.deferFocusForDrop(dialog);
-    this.activate(null, button);
+    // Continue only acknowledges the reward. The same summary stays open.
+    button.click();
+    return true;
   }
 
-  private activate(event: KeyboardEvent | null, target?: HTMLElement) {
+  private activate(event: KeyboardEvent, target?: HTMLElement) {
     if (!target) return;
-    if (event) this.consume(event);
+    this.consume(event);
     this.reset();
     this.beforeActivate();
     target.click();
@@ -595,7 +640,6 @@ export class PackOpeningHotkeys {
     context = resolveCard(card),
     tooltip: "always" | "pinned" = "always",
   ) {
-    if (context) this.inspectSummaryCard(context);
     if (this.focused !== card) this.focused?.removeAttribute(PACK_FOCUS);
     this.focused = card;
     card.setAttribute(PACK_FOCUS, "");
@@ -622,28 +666,36 @@ export class PackOpeningHotkeys {
   private summaryFocusFor(summary: HTMLElement) {
     // A recap URL update or replacement summary can still be the same opening.
     const openingId = this.summaryOpeningId();
-    const opening = openingId || summary;
-    if (opening !== this.summaryFocus?.opening) {
-      const fromReveal = this.revealedOpening === openingId;
-      this.revealedOpening = undefined;
-      this.summaryFocus = {
-        opening,
-        pending: fromReveal || this.pinnedTooltipVisible(),
-        requiresPinnedTooltip: !fromReveal,
-      };
+    const previous = this.summaryFocus;
+    if (previous && (previous.opening === openingId ||
+        (previous.summary === summary && (!openingId || previous.opening === summary)) ||
+        (typeof previous.opening === "string" && openingId.split(",").includes(previous.opening)))) {
+      previous.summary = summary;
+      if (openingId) previous.opening = openingId;
+      return previous;
     }
+    const fromReveal = this.revealedOpening === openingId;
+    this.revealedOpening = undefined;
+    this.summaryFocus = {
+      opening: openingId || summary,
+      summary,
+      pending: fromReveal || this.pinnedTooltipVisible(),
+      requiresPinnedTooltip: !fromReveal,
+      manualSelection: false,
+    };
     return this.summaryFocus;
   }
 
   private summaryOpeningId() {
     const params = new URLSearchParams(location.search);
-    return params.get("batch") || this.openingId(params);
+    return params.get("batch")?.toLowerCase() || this.openingId(params);
   }
 
   private cancelSummaryFocus(summary: HTMLElement) {
     const focus = this.summaryFocusFor(summary);
     focus.pending = false;
     focus.card = undefined;
+    return focus;
   }
 
   private focusSummary() {
@@ -656,7 +708,6 @@ export class PackOpeningHotkeys {
     if (!summary) {
       const scene = control(document, REVEAL);
       if (!scene) return;
-      this.summaryFocus = undefined;
       const opening = this.summaryOpeningId();
       if (opening !== this.revealedOpening)
         this.revealedOpening = control(scene, REVEALED_CARD)
@@ -678,6 +729,11 @@ export class PackOpeningHotkeys {
     }
     if (!focus.pending) return;
     const card = summary.querySelector<HTMLElement>(GRID_CARD);
+    const activeTile = document.activeElement?.closest(".ko-grid > li");
+    if (activeTile && summary.contains(activeTile) && !activeTile.contains(card)) {
+      this.cancelSummaryFocus(summary);
+      return;
+    }
     const context = card && available(card) && resolveCard(card);
     if (!context) return;
     focus.card = card;
@@ -714,18 +770,23 @@ export class PackOpeningHotkeys {
       cards[
         index === "last" ? cards.length - 1 : Math.min(index, cards.length - 1)
       ];
-    if (card) this.focusCard(card);
+    if (card) {
+      const focus = this.summaryFocusFor(summary);
+      focus.manualSelection = card !== summary.querySelector(GRID_CARD);
+      this.focusCard(card);
+    }
   }
 
   private pageChanged() {
     if (!this.settings().packOpeningsEnabled) return;
     this.autoSkip();
+    // The page may leave the acknowledged dialog mounted until its next render.
+    if (this.dismissFoundPackAutomatically()) return;
     this.focusSummary();
-    this.dismissFoundPackAutomatically();
     if (location.pathname !== OPENING_PATH && this.url === location.href)
       return;
     if (!this.focused && !this.reveal && !this.batch) return;
-    if (this.url !== location.href || modal()) {
+    if ((this.url !== location.href && !this.keepFocusOnRecap(new URL(this.url), null)) || modal()) {
       this.reset();
       return;
     }

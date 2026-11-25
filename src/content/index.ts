@@ -6,7 +6,6 @@ import {
   fusionReviewVisible,
   HOST_ID,
   inFusionReview,
-  isFusionPage,
   resolveCard,
   topDialog,
 } from "../kosmora/dom";
@@ -38,7 +37,7 @@ import {
   saveMarketFinishes,
 } from "../shared/market-preferences";
 import { Popup } from "./popup";
-import { CardOverlays } from "./card-overlays";
+import { CardOverlays, priceWarningForPage } from "./card-overlays";
 import { NavigationHotkeys } from "./navigation";
 import { PACK_FOCUS, PackOpeningHotkeys } from "./pack-opening-hotkeys";
 import { SalesOverlays } from "./sales-overlays";
@@ -168,6 +167,9 @@ window.addEventListener("message", (event) => {
     if (event.data.type === RELAY_PACK) {
       if (event.data.kind === "identity") {
         const observed = client.observeIdentity(event.data.data) ?? "";
+        if (observed && !client.displayAccount && settings.showAuctionBidCounts &&
+            (salesOverlays.enabled() || overlays.enabled() || popup))
+          void client.account(undefined, false).catch(() => {});
         void chrome.storage.local.set({ "kosmore.gameAccountHint": observed });
       }
       if (event.data.kind === "inventory" && remainingPackCountEnabled()) {
@@ -217,9 +219,7 @@ function needsServicesCards() {
   return (
     page.enabled ||
     page.cardOverlaysEnabled ||
-    (isFusionPage() &&
-      settings.fusionSettingsEnabled &&
-      settings.fusionShowPriceWarning) ||
+    !!priceWarningForPage(settings) ||
     settings.salesOverlaysEnabled ||
     (FAMILY_IMPACT_AVAILABLE && settings.familyImpactOverlaysEnabled) ||
     (settings.socialEnabled && (settings.friendTooltipEnabled || settings.showTradePossibleInterest))
@@ -329,6 +329,7 @@ const preferencesReady = Promise.all([
   request<number>({ op: "browserZoom" }).catch(() => 1),
 ]).then(([finishes, state, savedSettings, initialZoom]) => {
   browserZoom ??= initialZoom;
+  friendTooltip.setBrowserZoom(browserZoom);
   marketFinishes = finishes;
   settings = savedSettings;
   pinnedState = state;
@@ -426,10 +427,15 @@ function checkUrl() {
   lastUrl = location.href;
   syncRelayPreferences();
   const reviewChanged = syncFusionReview();
-  if (packOpeningHotkeys.keepFocusOnRecap(previousUrl)) {
+  if (packOpeningHotkeys.keepFocusOnRecap(previousUrl, current)) {
     const recap = current && resolveCard(current.anchor);
-    if (recap && current && contextKey(recap) !== contextKey(current))
-      openFromKeyboard(recap);
+    if (recap && current && contextKey(recap) !== contextKey(current)) {
+      if (keyboardOpened) openFromKeyboard(recap);
+      else {
+        current = recap;
+        void show(recap);
+      }
+    }
     return;
   }
   packOpeningHotkeys.reset();
@@ -437,7 +443,7 @@ function checkUrl() {
   tooltipButtons.setSettings(settings);
   if (
     previous.cardOverlaysEnabled !== pageSettings().cardOverlaysEnabled ||
-    isFusionPage(previousUrl.pathname) !== isFusionPage()
+    priceWarningForPage(settings, previousUrl.pathname) !== priceWarningForPage(settings)
   )
     overlays.invalidate();
   if (!reviewChanged) navigationAway();
@@ -485,6 +491,7 @@ async function show(
   if (
     fromHover &&
     settings.tooltipTakesFocus &&
+    !(context.surface === "summary" && document.activeElement?.matches(".ko-summary .ko-grid-open")) &&
     context.anchor.matches(":hover")
   ) {
     let active = document.activeElement;
@@ -573,7 +580,7 @@ async function show(
   }
 }
 function pinPosition() {
-  const scale = tooltipScale(settings, browserZoom ?? 1);
+  const scale = tooltipScale(settings.tooltipUiScale, settings.lockTooltipToBrowserZoom, browserZoom ?? 1);
   return visiblePin().position ?? settings.popupPosition ?? {
     left: Math.max(12 * scale, innerWidth - (settings.popupWidth + 12) * scale),
     top: 12 * scale,
@@ -743,6 +750,7 @@ function outsideClickClosesTooltipOnly() {
   );
 }
 function enter(target: Element, pointer?: PointerEvent) {
+  if (pointer) packOpeningHotkeys.inspectSummaryCard(target);
   if (!pageSettings().enabled) return;
   if (tooltipButtons.contains(target)) {
     clearTimeout(openTimer);
@@ -771,7 +779,6 @@ function enter(target: Element, pointer?: PointerEvent) {
     clearTimeout(openTimer);
     return;
   }
-  packOpeningHotkeys.inspectSummaryCard(context);
   hovered = true;
   cancelClose();
   if (
@@ -791,7 +798,7 @@ function enter(target: Element, pointer?: PointerEvent) {
   }, settings.hoverDelayMs);
 }
 function openFromButton(context: CardContext) {
-  packOpeningHotkeys.inspectSummaryCard(context);
+  packOpeningHotkeys.inspectSummaryCard(context.anchor);
   clearTimeout(openTimer);
   cancelClose();
   if (
@@ -948,9 +955,34 @@ document.addEventListener(
   },
   true,
 );
+// A summary entrance animation can move a card under a stationary mouse and
+// generate pointerover. Keep the inspection until the user actually moves.
+let pointerX: number | undefined;
+let pointerY: number | undefined;
+let deferredSummaryHover: Element | undefined;
+document.addEventListener("pointermove", (event) => {
+  if (location.pathname !== "/packs/open" || event.pointerType !== "mouse") return;
+  if (event.clientX === pointerX && event.clientY === pointerY) return;
+  pointerX = event.clientX;
+  pointerY = event.clientY;
+  if (deferredSummaryHover && event.target === deferredSummaryHover)
+    enter(deferredSummaryHover, event);
+  deferredSummaryHover = undefined;
+}, true);
 document.addEventListener(
   "pointerover",
   (event) => {
+    deferredSummaryHover = undefined;
+    if (location.pathname === "/packs/open" && event.pointerType === "mouse") {
+      const stationary = pointerX === undefined ||
+        (event.clientX === pointerX && event.clientY === pointerY);
+      if (stationary && current?.surface === "summary" && event.target instanceof Element &&
+          event.target.closest(".ko-summary .ko-grid > li") && !current.anchor.contains(event.target)) {
+        deferredSummaryHover = event.target;
+        cancelClose();
+        return;
+      }
+    }
     if (
       event
         .composedPath()
@@ -1161,14 +1193,25 @@ function applySaleChanges(next?: SaleStatusCache, before?: SaleStatusCache) {
   saleRevision++;
   client.setSaleCache(next);
   const ids = new Set<string>();
-  for (const row of [
-    ...Object.values(before?.changes ?? {}),
-    ...Object.values(next?.changes ?? {}),
-  ])
-    if (row.subjectId) ids.add(row.subjectId);
+  for (const id of new Set([...Object.keys(before?.changes ?? {}), ...Object.keys(next?.changes ?? {})])) {
+    const old = before?.changes[id], change = next?.changes[id];
+    if (old?.subjectId === change?.subjectId && old?.finish === change?.finish &&
+        old?.listed === change?.listed && old?.canceled === change?.canceled &&
+        old?.startPrice === change?.startPrice) continue;
+    if (old?.subjectId) ids.add(old.subjectId);
+    if (change?.subjectId) ids.add(change.subjectId);
+  }
+  for (const id of new Set([...Object.keys(before?.copies ?? {}), ...Object.keys(next?.copies ?? {})]))
+    if (before?.copies[id]?.at !== next?.copies[id]?.at) ids.add(id);
+  if (!ids.size) return;
   overlays.refreshSaleStatus(ids);
+  salesOverlays.refreshCachedPrices(ids);
+  if (current && ids.has(current.subjectId)) popup?.showCachedAuction();
 }
 client.onVerifiedAccount = (account) => {
+  salesOverlays.refreshAccountPrices();
+  overlays.refreshAccountPrices();
+  popup?.refreshAccountPrice();
   const key = saleStatusKey(account.key);
   const revision = ++saleRevision;
   void chrome.storage.local
@@ -1320,6 +1363,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return false;
   if (message?.op === "browserZoomChanged" && Number.isFinite(message.zoom) && message.zoom > 0) {
     browserZoom = message.zoom;
+    friendTooltip.setBrowserZoom(message.zoom);
     popup?.setBrowserZoom(message.zoom);
     return false;
   }
