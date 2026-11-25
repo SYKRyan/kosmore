@@ -58,6 +58,7 @@ import { CardNotes } from "./card-notes";
 import type { FriendTooltip } from "./friend-tooltip";
 import {
   resizedBounds,
+  tooltipScale,
   POPUP_TABS,
   type PopupBounds,
   type PopupLayoutChange,
@@ -206,6 +207,7 @@ export class Popup {
     private onLayoutChange: (change: PopupLayoutChange) => void = () => {},
     private friendTooltip?: FriendTooltip,
     initialTab: PopupTab = "market",
+    private browserZoom = 1,
   ) {
     this.displayedFinish = context ? finishOf(context.variant) : undefined;
     this.placement = placement ? { ...placement } : undefined;
@@ -381,8 +383,10 @@ export class Popup {
     const empty = el("div", "empty-state", "No Card Selected");
     empty.setAttribute("role", "status");
     this.layoutStatus.setAttribute("role", "status");
-    this.shadow.append(top, empty, body, footer, this.layoutStatus);
-    this.enableResizing();
+    const content = el("div", "popup-content");
+    content.append(top, empty, body, footer, this.layoutStatus);
+    this.shadow.append(content);
+    this.enableResizing(content);
     this.metrics.setAttribute("aria-live", "polite");
     this.albumArea.setAttribute("aria-live", "polite");
     this.tradeArea.setAttribute("aria-live", "polite");
@@ -489,7 +493,7 @@ export class Popup {
             ? scroller.clientHeight
             : deltaMode === WheelEvent.DOM_DELTA_LINE
               ? parseFloat(getComputedStyle(scroller).lineHeight) || 16
-              : 1;
+              : 1 / this.scale;
         const previous = scroller.scrollTop;
         scroller.scrollTop += deltaY * unit;
         if (scroller.scrollTop !== previous) break;
@@ -604,19 +608,33 @@ export class Popup {
         : "Unpin popup · drag the header to move"
       : "Pin popup to keep it visible";
   }
+  private get scale() {
+    return tooltipScale(this.settings, this.browserZoom);
+  }
+  setBrowserZoom(zoom: number) {
+    if (zoom === this.browserZoom) return;
+    if (this.settings.lockTooltipToBrowserZoom) this.finishInteraction?.();
+    this.browserZoom = zoom;
+    if (this.settings.lockTooltipToBrowserZoom) {
+      this.applySize();
+      this.position();
+    }
+  }
   private applySize() {
     this.host.toggleAttribute(
       "data-full-screen",
       this.settings.fullScreenCenteredOnOpen,
     );
     const viewport = this.visibleViewport();
+    const scale = this.scale;
+    this.host.style.setProperty("--popup-scale", String(scale));
     this.host.style.setProperty(
       "--popup-width",
-      `${this.settings.fullScreenCenteredOnOpen ? Math.max(0, viewport.width - 48) : this.settings.popupWidth}px`,
+      `${this.settings.fullScreenCenteredOnOpen ? Math.max(0, viewport.width - 48 * scale) : this.settings.popupWidth * scale}px`,
     );
     this.host.style.setProperty(
       "--popup-height",
-      `${this.settings.fullScreenCenteredOnOpen ? Math.max(0, viewport.height - 48) : this.settings.popupHeight}px`,
+      `${this.settings.fullScreenCenteredOnOpen ? Math.max(0, viewport.height - 48 * scale) : this.settings.popupHeight * scale}px`,
     );
   }
   private visibleViewport() {
@@ -665,7 +683,7 @@ export class Popup {
     if (!this.host.matches(":popover-open")) this.host.showPopover();
     this.position();
   }
-  private enableResizing() {
+  private enableResizing(content: HTMLElement) {
     for (const edge of ["n", "e", "s", "w", "ne", "se", "sw", "nw"]) {
       const handle = el("div", `resize-handle resize-${edge}`);
       handle.dataset.edge = edge;
@@ -682,8 +700,8 @@ export class Popup {
         this.resizeBounds = bounds;
         this.settings = {
           ...this.settings,
-          popupWidth: Math.max(320, Math.round(bounds.width)),
-          popupHeight: Math.max(480, Math.round(bounds.height)),
+          popupWidth: Math.max(320, Math.round(bounds.width / this.scale)),
+          popupHeight: Math.max(480, Math.round(bounds.height / this.scale)),
         };
         if (this.placement) {
           this.placement.left = bounds.left;
@@ -722,6 +740,7 @@ export class Popup {
               resizedBounds(start, edge, event.clientX - x, event.clientY - y, {
                 width: innerWidth,
                 height: innerHeight,
+                scale: this.scale,
               }),
             );
         };
@@ -772,12 +791,12 @@ export class Popup {
               : event.key === "ArrowDown"
                 ? step
                 : 0,
-            { width: innerWidth, height: innerHeight },
+            { width: innerWidth, height: innerHeight, scale: this.scale },
           ),
         );
         finish();
       });
-      this.shadow.append(handle);
+      content.append(handle);
     }
   }
   private enableDragging(header: HTMLElement) {
@@ -814,18 +833,19 @@ export class Popup {
     });
     header.addEventListener("pointermove", (event) => {
       if (!drag || drag.id !== event.pointerId || !this.placement) return;
+      const gap = 12 * this.scale;
       this.placement.left = Math.max(
-        12,
+        gap,
         Math.min(
           drag.left + event.clientX - drag.x,
-          innerWidth - this.host.offsetWidth - 12,
+          innerWidth - this.host.offsetWidth - gap,
         ),
       );
       this.placement.top = Math.max(
-        12,
+        gap,
         Math.min(
           drag.top + event.clientY - drag.y,
-          innerHeight - this.host.offsetHeight - 12,
+          innerHeight - this.host.offsetHeight - gap,
         ),
       );
       this.position();
@@ -842,6 +862,8 @@ export class Popup {
   }
   position() {
     if (this.closed) return;
+    const gap = 12 * this.scale;
+    this.host.toggleAttribute("data-compact", innerHeight / this.scale <= 740);
     if (this.settings.fullScreenCenteredOnOpen) {
       this.applySize();
       const viewport = this.visibleViewport();
@@ -856,12 +878,12 @@ export class Popup {
     }
     if (this.placement) {
       const left = Math.max(
-        12,
-        Math.min(this.placement.left, innerWidth - this.host.offsetWidth - 12),
+        gap,
+        Math.min(this.placement.left, innerWidth - this.host.offsetWidth - gap),
       );
       const top = Math.max(
-        12,
-        Math.min(this.placement.top, innerHeight - this.host.offsetHeight - 12),
+        gap,
+        Math.min(this.placement.top, innerHeight - this.host.offsetHeight - gap),
       );
       this.host.style.left = `${left}px`;
       this.host.style.top = `${top}px`;
@@ -871,10 +893,10 @@ export class Popup {
     const r = this.context.anchor.getBoundingClientRect(),
       w = this.host.offsetWidth,
       h = this.host.offsetHeight;
-    let left = r.right + 12;
-    if (left + w > innerWidth - 12) left = r.left - w - 12;
-    if (left < 12) left = Math.max(12, Math.min(r.left, innerWidth - w - 12));
-    const top = Math.max(12, Math.min(r.top, innerHeight - h - 12));
+    let left = r.right + gap;
+    if (left + w > innerWidth - gap) left = r.left - w - gap;
+    if (left < gap) left = Math.max(gap, Math.min(r.left, innerWidth - w - gap));
+    const top = Math.max(gap, Math.min(r.top, innerHeight - h - gap));
     this.host.style.left = `${left}px`;
     this.host.style.top = `${top}px`;
   }
@@ -1230,8 +1252,11 @@ export class Popup {
         request.signal,
       );
       if (request.signal.aborted) return;
-      this.ownedCopies = result.copies;
-      this.chosen = result.chosen;
+      const { copies, chosen: matched } = result;
+      this.ownedCopies = matched && copies && copies[0]?.id !== matched.id
+        ? [matched, ...copies.filter(copy => copy.id !== matched.id)]
+        : copies;
+      this.chosen = this.ownedCopies?.[0];
       this.copyProblem = result.problem;
     } catch (error) {
       if (request.signal.aborted) return;
@@ -1304,7 +1329,8 @@ export class Popup {
     this.renderMarket();
   }
   setSettings(settings: Settings) {
-    if (settings.fullScreenCenteredOnOpen) this.finishInteraction?.();
+    if (settings.fullScreenCenteredOnOpen || tooltipScale(settings, this.browserZoom) !== this.scale)
+      this.finishInteraction?.();
     if (this.resizeBounds) {
       this.settings = {
         ...settings,
@@ -1857,9 +1883,6 @@ export class Popup {
       const label = el("label", "copy-label", "Choose an owned copy");
       const select = el("select");
       select.setAttribute("aria-label", "Owned copy");
-      const blank = el("option", "", "Select a copy…");
-      blank.value = "";
-      select.append(blank);
       for (const c of copies) {
         const o = el(
           "option",

@@ -3,6 +3,7 @@ import { NativeReadCache } from "../shared/native-read-cache";
 import { GameClient } from "../kosmora/client";
 import {
   contextKey,
+  fusionReviewVisible,
   HOST_ID,
   inFusionReview,
   isFusionPage,
@@ -12,6 +13,7 @@ import {
 import { isTabRequest, request } from "../shared/messages";
 import {
   parsePopupState,
+  tooltipScale,
   POPUP_PIN_KEY,
   type PopupState,
   type PopupLayoutChange,
@@ -199,6 +201,7 @@ window.addEventListener("message", (event) => {
   });
 });
 let settings = defaults();
+let browserZoom: number | undefined;
 function tracksSaleStatus() {
   return settings.cardOverlaysEnabled && settings.showOnSaleOverlay;
 }
@@ -291,6 +294,11 @@ const remainingPacks = new RemainingPacks(
   remainingPackCountEnabled,
 );
 let pinnedState: PopupState = { pinned: false, position: null };
+let fusionReview: { pin: PopupState; previousCard: CardContext | null; url: string } | undefined;
+let preferencesLoaded = false;
+function visiblePin() {
+  return fusionReview?.pin ?? pinnedState;
+}
 const navigationHotkeys = new NavigationHotkeys(
   () => settings,
   client,
@@ -318,9 +326,14 @@ const preferencesReady = Promise.all([
     .then(parsePopupState)
     .catch(() => pinnedState),
   readSettings().catch(() => settings),
-]).then(([finishes, state, savedSettings]) => {
+  request<number>({ op: "browserZoom" }).catch(() => 1),
+]).then(([finishes, state, savedSettings, initialZoom]) => {
+  browserZoom ??= initialZoom;
   marketFinishes = finishes;
   settings = savedSettings;
+  pinnedState = state;
+  preferencesLoaded = true;
+  syncFusionReview();
   marketOutcomes.start();
   listenToPageRelay(saleObservations, window, false);
   client.onHistoryLoaded((id, history, loadedAt) =>
@@ -330,13 +343,12 @@ const preferencesReady = Promise.all([
   friendTooltip.setSettings(pageSettings());
   void friendTooltip.restore();
   navigationHotkeys.start();
-  pinnedState = state;
   overlays.setSettings(settings);
   salesOverlays.setSettings(settings);
   fusionFamily?.setSettings(settings);
   tooltipButtons.setSettings(settings);
   if (!pageSettings().enabled) hide();
-  else if (pinnedState.pinned && !popup && !current) createView(null);
+  else if (visiblePin().pinned && !popup && !current) createView(null);
   packOpeningHotkeys.start();
   remainingPacks.start();
 });
@@ -375,7 +387,37 @@ function dismiss() {
 function navigationAway() {
   hovered = false;
   hide();
-  if (pageSettings().enabled && pinnedState.pinned) createView(null);
+  if (pageSettings().enabled && visiblePin().pinned) createView(null);
+}
+function syncFusionReview() {
+  if (!preferencesLoaded) return false;
+  const active = settings.fusionSettingsEnabled &&
+    (settings.fusionReviewOverlayButton || settings.fusionReviewOutsideClickOnly) &&
+    fusionReviewVisible();
+  if (active === !!fusionReview) return false;
+  const previous = fusionReview;
+  if (active) {
+    fusionReview = {
+      pin: { pinned: false, position: null, tab: pinnedState.tab },
+      previousCard: popup?.isPinned ? popup.context : null,
+      url: lastUrl,
+    };
+  }
+  hovered = false;
+  hide();
+  friendTooltip.setFusionReview(active);
+  if (!active) {
+    fusionReview = undefined;
+    if (pageSettings().enabled && pinnedState.pinned) {
+      const card = previous?.previousCard;
+      const restored = card?.anchor.isConnected && previous?.url === location.href && resolveCard(card.anchor);
+      if (restored && card && contextKey(restored) === contextKey(card)) {
+        current = restored;
+        void show(restored, { restorePinned: true });
+      } else createView(null);
+    }
+  }
+  return true;
 }
 function checkUrl() {
   if (lastUrl === location.href) return;
@@ -383,6 +425,7 @@ function checkUrl() {
   const previous = settingsForPage(settings, previousUrl.pathname);
   lastUrl = location.href;
   syncRelayPreferences();
+  const reviewChanged = syncFusionReview();
   if (packOpeningHotkeys.keepFocusOnRecap(previousUrl)) {
     const recap = current && resolveCard(current.anchor);
     if (recap && current && contextKey(recap) !== contextKey(current))
@@ -397,7 +440,7 @@ function checkUrl() {
     isFusionPage(previousUrl.pathname) !== isFusionPage()
   )
     overlays.invalidate();
-  navigationAway();
+  if (!reviewChanged) navigationAway();
 }
 function laterHide() {
   cancelClose();
@@ -421,13 +464,13 @@ function options(section?: "stat-boxes") {
 }
 async function show(
   context: CardContext,
-  { fresh = false, fromHover = false } = {},
+  { fresh = false, fromHover = false, restorePinned = false } = {},
 ) {
   await preferencesReady;
   if (
     !pageSettings().enabled ||
     current !== context ||
-    (!buttonOpened && !keyboardOpened && tooltipButtons.showing(context))
+    (!restorePinned && !buttonOpened && !keyboardOpened && tooltipButtons.showing(context))
   )
     return;
   activeRequest?.abort();
@@ -530,9 +573,10 @@ async function show(
   }
 }
 function pinPosition() {
-  return pinnedState.position ?? settings.popupPosition ?? {
-    left: Math.max(12, innerWidth - settings.popupWidth - 12),
-    top: 12,
+  const scale = tooltipScale(settings, browserZoom ?? 1);
+  return visiblePin().position ?? settings.popupPosition ?? {
+    left: Math.max(12 * scale, innerWidth - (settings.popupWidth + 12) * scale),
+    top: 12 * scale,
   };
 }
 function createView(
@@ -540,10 +584,11 @@ function createView(
   placement = popup?.pinnedPlacement(),
 ) {
   dialog = topDialog();
-  if (!placement && pinnedState.pinned)
+  const pin = visiblePin();
+  if (!placement && pin.pinned)
     placement = {
       ...pinPosition(),
-      tab: pinnedState.tab ?? "market",
+      tab: pin.tab ?? "market",
     };
   const view = new Popup(
     context,
@@ -587,7 +632,8 @@ function createView(
     },
     (change) => saveLayout(view, change),
     friendTooltip,
-    pinnedState.tab,
+    pin.tab,
+    browserZoom,
   );
   popup = view;
   view.host.addEventListener("mousedown", (event) => {
@@ -646,12 +692,13 @@ function createView(
   return view;
 }
 function saveLayout(view: Popup, change: PopupLayoutChange) {
-  pinnedState = {
-    ...pinnedState,
+  const pin = visiblePin();
+  Object.assign(pin, {
     ...(change.tab ? { tab: change.tab } : {}),
-    pinned: change.pinned ?? pinnedState.pinned,
-    position: change.position ?? pinnedState.position,
-  };
+    pinned: change.pinned ?? pin.pinned,
+    position: change.position ?? pin.position,
+  });
+  if (fusionReview) return;
   settings = {
     ...settings,
     popupPosition: change.position ?? settings.popupPosition,
@@ -1066,13 +1113,14 @@ const navigation = (window as Window & { navigation?: EventTarget }).navigation;
 navigation?.addEventListener("navigatesuccess", checkUrl);
 window.addEventListener("pagehide", hide);
 window.addEventListener("pageshow", (event) => {
-  if (event.persisted) navigationAway();
+  if (event.persisted && !syncFusionReview()) navigationAway();
 });
 observePage(() => {
   if (lastUrl !== location.href) {
     checkUrl();
     return;
   }
+  if (syncFusionReview()) return;
   if (popup && topDialog() !== dialog) {
     if (popup.isPinned) {
       dialog = topDialog();
@@ -1181,8 +1229,9 @@ function applySettings(next: Settings) {
     return;
   }
   syncRelayPreferences();
+  const reviewChanged = syncFusionReview();
   if (
-    current &&
+    !reviewChanged && current &&
     tooltipButtons.usesButton(current.anchor, previous) !==
       tooltipButtons.usesButton(current.anchor, settings)
   )
@@ -1206,7 +1255,7 @@ function applySettings(next: Settings) {
     updateTooltipHistory?.(marketFinishes);
     if (current && activeRequest)
       loadHeaderSignals(popup, current, activeRequest.signal);
-  } else if (pinnedState.pinned && !settingsForPage(previous, location.pathname).enabled) {
+  } else if (visiblePin().pinned && !settingsForPage(previous, location.pathname).enabled) {
     createView(null);
   }
   packOpeningHotkeys.dismissFoundPackAutomatically();
@@ -1218,7 +1267,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     void preferencesReady.then(() => {
       const wasPinned = pinnedState.pinned;
       pinnedState = { ...pinnedState, pinned, position };
-      if (!pageSettings().enabled) return;
+      if (fusionReview || !pageSettings().enabled) return;
       if (popup) popup.setPinnedPlacement(pinned ? pinPosition() : undefined);
       else if (pinned && !wasPinned && !current) createView(null);
     });
@@ -1269,6 +1318,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     (sender.url && sender.url !== chrome.runtime.getURL("background.js"))
   )
     return false;
+  if (message?.op === "browserZoomChanged" && Number.isFinite(message.zoom) && message.zoom > 0) {
+    browserZoom = message.zoom;
+    popup?.setBrowserZoom(message.zoom);
+    return false;
+  }
   if (
     message?.op === "servicesCardsChanged" &&
     Array.isArray(message.ids) &&

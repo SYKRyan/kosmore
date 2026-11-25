@@ -12,6 +12,10 @@ import { installListingBackground } from "./listing-background";
 import { installServicesBackground } from "./services-background";
 installListingBackground(installServicesBackground());
 let layoutWrites = Promise.resolve();
+chrome.tabs.onZoomChange.addListener(({ tabId, newZoomFactor }) => {
+  void chrome.tabs.sendMessage(tabId, { op: "browserZoomChanged", zoom: newZoomFactor })
+    .catch(() => {}); // Only a loaded game tab has a receiver.
+});
 chrome.tabs.onRemoved.addListener((tabId) => {
   void chrome.storage.session.remove([
     `${POPUP_SESSION_PREFIX}${tabId}`,
@@ -26,6 +30,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   const isOptions =
     sender.url?.split(/[?#]/, 1)[0] === chrome.runtime.getURL("options.html");
   const isGame = !!sender.tab && sender.url?.startsWith("https://kosmora.io/");
+  if (message.op === "browserZoom" && isGame && sender.tab?.id !== undefined) {
+    void chrome.tabs.getZoom(sender.tab.id).then(
+      (data) => respond({ requestId: message.requestId, ok: true, data }),
+      (error) => respond({ requestId: message.requestId, ok: false, error: messageOf(error) }),
+    );
+    return true;
+  }
   if (
     (message.op === "popupState" ||
       message.op === "popupLayout" ||

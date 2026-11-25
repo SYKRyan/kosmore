@@ -122,6 +122,8 @@ export interface Settings {
   tooltipTakesFocus: boolean;
   outsideClickClosesTooltipOnly: boolean;
   fullScreenCenteredOnOpen: boolean;
+  tooltipUiScale: number;
+  lockTooltipToBrowserZoom: boolean;
   socialEnabled: boolean;
   socialRemindersMasterEnabled: boolean;
   profileRemindersEnabled: boolean;

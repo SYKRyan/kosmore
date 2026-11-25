@@ -57,7 +57,7 @@ export class FriendTooltipSettings {
     for (const [field, title, help, min, max, step] of FRIEND_TOOLTIP_NUMBERS) {
       const row = el("div", "row"),
         info = el("div"),
-        label = el("label", "", title),
+        label = el("label", "setting-name", title),
         input = el("input");
       input.id = field;
       input.type = "number";

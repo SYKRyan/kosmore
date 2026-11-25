@@ -72,12 +72,16 @@ export interface PopupBounds extends PopupPosition {
   width: number;
   height: number;
 }
+export function tooltipScale(settings: { lockTooltipToBrowserZoom: boolean; tooltipUiScale: number }, browserZoom: number) {
+  const base = settings.tooltipUiScale / 100;
+  return settings.lockTooltipToBrowserZoom ? base / browserZoom : base;
+}
 export function resizedBounds(
   start: PopupBounds,
   edge: string,
   dx: number,
   dy: number,
-  viewport: { width: number; height: number },
+  viewport: { width: number; height: number; scale?: number },
   limits = { minWidth: 320, minHeight: 480 },
 ): PopupBounds {
   const bounds = { ...start },
@@ -85,31 +89,35 @@ export function resizedBounds(
     bottom = start.top + start.height;
   const clamp = (n: number, min: number, max: number) =>
     Math.max(min, Math.min(n, max));
+  const scale = viewport.scale ?? 1;
+  const gap = 12 * scale;
+  const minWidth = limits.minWidth * scale, maxWidth = 1200 * scale;
+  const minHeight = limits.minHeight * scale, maxHeight = 1600 * scale;
   if (edge.includes("e"))
     bounds.width = clamp(
       start.width + dx,
-      Math.min(limits.minWidth, viewport.width - 12 - start.left),
-      Math.min(1200, viewport.width - 12 - start.left),
+      Math.min(minWidth, viewport.width - gap - start.left),
+      Math.min(maxWidth, viewport.width - gap - start.left),
     );
   if (edge.includes("s"))
     bounds.height = clamp(
       start.height + dy,
-      Math.min(limits.minHeight, viewport.height - 12 - start.top),
-      Math.min(1600, viewport.height - 12 - start.top),
+      Math.min(minHeight, viewport.height - gap - start.top),
+      Math.min(maxHeight, viewport.height - gap - start.top),
     );
   if (edge.includes("w")) {
     bounds.left = clamp(
       start.left + dx,
-      Math.max(12, right - 1200),
-      right - Math.min(limits.minWidth, right - 12),
+      Math.max(gap, right - maxWidth),
+      right - Math.min(minWidth, right - gap),
     );
     bounds.width = right - bounds.left;
   }
   if (edge.includes("n")) {
     bounds.top = clamp(
       start.top + dy,
-      Math.max(12, bottom - 1600),
-      bottom - Math.min(limits.minHeight, bottom - 12),
+      Math.max(gap, bottom - maxHeight),
+      bottom - Math.min(minHeight, bottom - gap),
     );
     bounds.height = bottom - bounds.top;
   }

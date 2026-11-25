@@ -258,14 +258,26 @@ h2 {
   flex: 1 1 400px;
   min-width: 0;
 }
-.badge {
+.header button.account-badge {
+  --badge-fill: #163e32;
+  --badge-border: #68bf92;
+  --badge-text: #b9f2d0;
   font-size: 11px;
-  color: #a4d8f7;
-  background: linear-gradient(130deg, #3a9adb26, #26799812);
-  border: 1px solid #6bbbec55;
+  color: var(--badge-text);
+  background: var(--badge-fill);
+  border: 1px solid var(--badge-border);
   border-radius: 20px;
   padding: 5px 11px;
-  white-space: nowrap;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.header .account-badge.disconnected {
+  --badge-fill: #46252c;
+  --badge-border: #f08080;
+  --badge-text: #ffcdce;
+}
+.account-badge:is(:hover, :focus-visible) {
+  filter: brightness(1.15);
 }
 .panel {
   background:
@@ -835,16 +847,24 @@ input.section-switch:checked::before {
   color: var(--settings-muted);
   font-size: 12px;
 }
-#delay-label {
-  display: block;
+.setting-name,
+.settings-toggle {
+  font-size: 14px;
+  color: var(--settings-text);
+}
+.tooltip-scale-field {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.tooltip-scale-field input {
+  width: 6em;
 }
 .settings-toggle {
   display: grid;
   grid-template-columns: var(--toggle-control-width, 17px) minmax(0, 1fr);
   align-items: center;
   width: 100%;
-  font-size: 14px;
-  color: var(--settings-text);
 }
 .settings-toggle:has(> .section-switch) {
   grid-template-columns: var(--settings-switch-width) minmax(0, 1fr);
@@ -926,8 +946,8 @@ input.section-switch:checked::before {
   margin-block-start: 14px;
 }
 .quick-price-value {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 12.5pt;
+  font-weight: 600;
   overflow-wrap: anywhere;
   min-width: 0;
 }
@@ -1090,9 +1110,6 @@ button.icon-remove:is(:hover, :focus-visible):not(:disabled) {
   }
   .grid {
     grid-template-columns: 1fr;
-  }
-  .badge {
-    display: none;
   }
   .savebar {
     align-items: flex-start;

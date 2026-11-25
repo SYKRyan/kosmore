@@ -26,6 +26,8 @@ export const defaults = (): Settings => ({
   tooltipTakesFocus: false,
   outsideClickClosesTooltipOnly: false,
   fullScreenCenteredOnOpen: false,
+  tooltipUiScale: 100,
+  lockTooltipToBrowserZoom: false,
   socialEnabled: true,
   socialRemindersMasterEnabled: true,
   profileRemindersEnabled: true,
@@ -159,6 +161,7 @@ export function parseSettings(value: unknown): Settings {
     "tooltipTakesFocus",
     "outsideClickClosesTooltipOnly",
     "fullScreenCenteredOnOpen",
+    "lockTooltipToBrowserZoom",
     "socialEnabled",
     "socialRemindersMasterEnabled",
     "profileRemindersEnabled",
@@ -265,6 +268,7 @@ export function parseSettings(value: unknown): Settings {
     ["friendTooltipHeight", 160, 1600],
     ["dismissDelayMs", 0, 30000],
     ["popupWidth", 320, 1200],
+    ["tooltipUiScale", 20, 200],
     ["popupHeight", 480, 1600],
   ] as const) {
     const value = v[key];

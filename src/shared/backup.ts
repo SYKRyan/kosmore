@@ -134,6 +134,7 @@ function backupSettings(value: unknown): Settings {
     ["hoverDelayMs", 100, 2000],
     ["dismissDelayMs", 0, 30000],
     ["popupWidth", 320, 1200],
+    ["tooltipUiScale", 20, 200],
     ["popupHeight", 480, 1600],
     ["friendHoverDelayMs", 100, 2000],
     ["friendDismissDelayMs", 0, 30000],

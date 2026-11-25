@@ -5,16 +5,17 @@
   inset: auto;
   margin: 0;
   padding: 0;
-  border: 1px solid #756344;
-  border-radius: 18px;
+  border: calc(1px * var(--popup-scale, 1)) solid #756344;
+  border-radius: calc(18px * var(--popup-scale, 1));
   background: #17112c;
   color: #eeeaf7;
   box-shadow:
-    0 20px 70px #0009,
-    0 0 35px #9d76d419;
-  width: min(var(--popup-width, 440px), calc(100vw - 24px));
-  height: min(var(--popup-height, 900px), calc(100vh - 24px));
-  max-height: calc(100vh - 24px);
+    0 calc(20px * var(--popup-scale, 1)) calc(70px * var(--popup-scale, 1)) #0009,
+    0 0 calc(35px * var(--popup-scale, 1)) #9d76d419;
+  --popup-gutters: calc(24px * var(--popup-scale, 1));
+  width: min(var(--popup-width, 440px), calc(100vw - var(--popup-gutters)));
+  height: min(var(--popup-height, 900px), calc(100vh - var(--popup-gutters)));
+  max-height: calc(100vh - var(--popup-gutters));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -26,6 +27,14 @@
     sans-serif;
   color-scheme: dark;
   z-index: 2147483647;
+}
+.popup-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  zoom: var(--popup-scale, 1);
 }
 :host([data-pinned]) .top {
   cursor: grab;
@@ -764,7 +773,7 @@ h3 {
   background: transparent;
   color: #fff0c9;
 }
-@media (max-height: 740px) {
+:host([data-compact]) {
   .top {
     padding: 12px 16px;
   }

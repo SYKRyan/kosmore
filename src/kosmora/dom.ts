@@ -9,6 +9,23 @@ export function isFusionPage(pathname = location.pathname) {
 export function inFusionReview(anchor?: Element | null) {
   return isFusionPage() && !!anchor?.closest(FUSION_REVIEW_GRID);
 }
+export function fusionReviewVisible() {
+  if (!isFusionPage()) return false;
+  const candidates = document.querySelectorAll<HTMLElement>(
+    `${FUSION_REVIEW_GRID}, dialog[open], [role="dialog"], [aria-modal="true"]`,
+  );
+  return [...candidates].some((node) => {
+    if (node.closest('[hidden], [aria-hidden="true"]') || !node.getClientRects().length ||
+        getComputedStyle(node).visibility !== "visible") return false;
+    if (node.matches(FUSION_REVIEW_GRID)) return true;
+    const titles = [
+      node.getAttribute("aria-label"),
+      document.getElementById(node.getAttribute("aria-labelledby") ?? "")?.textContent,
+      node.querySelector("h1,h2,h3,[role=heading]")?.textContent,
+    ];
+    return titles.some(title => /^what goes\b/i.test(title?.trim() ?? ""));
+  });
+}
 export const MARKET_ACTIVITY_LINK =
   "a.mk-act-main, a.md-lot-link, .md-ledger > li > a";
 export const MARKET_ACTIVITY_ROW = ".mk-act, .md-lot, .md-ledger > li";

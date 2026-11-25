@@ -341,7 +341,8 @@ function ce(e) {
 	].includes(t.op) && "accountKey" in t && "subjectId" in t && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && typeof t.subjectId == "string" && /^\d+$/.test(t.subjectId) && (t.op !== "listingRecord" || Array.isArray(t.records) && t.records.length <= 500 && t.records.every(E) && (t.changes === void 0 || Array.isArray(t.changes) && t.changes.length <= 500 && t.changes.every(L)) && (t.receipts === void 0 || Array.isArray(t.receipts) && t.receipts.length <= 500 && t.receipts.every(T))) && (t.op !== "listingMetadata" || Array.isArray(t.metadata) && t.metadata.length <= 100 && t.metadata.every((e) => Array.isArray(e) && e.length === 2 && typeof e[0] == "string" && m(e[0]) === e[0] && v(e[1]))) && (t.op !== "listingHistory" || ["more", "refresh"].includes(t.mode) && (t.limits === void 0 || S(t.limits))) || t.op === "listingCancel" && R(t.target) || t.op === "openOptions" && (t.section === void 0 || t.section === "stat-boxes") || [
 		"sessions",
 		"popupState",
-		"friendPopupState"
+		"friendPopupState",
+		"browserZoom"
 	].includes(t.op) || t.op === "popupLayout" && M(t.change) || t.op === "friendPopupLayout" && M(t.change, {
 		minWidth: 240,
 		minHeight: 160
@@ -773,6 +774,8 @@ var Ee = "kosmore.settings", De = () => ({
 	tooltipTakesFocus: !1,
 	outsideClickClosesTooltipOnly: !1,
 	fullScreenCenteredOnOpen: !1,
+	tooltipUiScale: 100,
+	lockTooltipToBrowserZoom: !1,
 	socialEnabled: !0,
 	socialRemindersMasterEnabled: !0,
 	profileRemindersEnabled: !0,
@@ -874,7 +877,7 @@ function Oe(e) {
 		t.familyBlacklist = Te(n.familyBlacklist, "in the family blacklist");
 	} catch {}
 	typeof n.enabled == "boolean" && (t.enabled = n.enabled);
-	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.tooltipTakesFocus.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.socialEnabled.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.fusionSettingsEnabled.fusionShowPriceWarning.fusionReviewOverlayButton.fusionReviewOutsideClickOnly.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.hotkeysEnabled.navigationHotkeysEnabled.hoverTooltipHotkeysEnabled.packOpeningsEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.cardOverlaysEnabled.showAuctionBidCounts.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesMedian.salesMedianSetsPrice.useMedianOverlayPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.salesDiscountEnabled.salesCustomMinimumsEnabled.salesQuickPricesEnabled.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
+	for (let e of /* @__PURE__ */ "disableHoverTooltipInPulsar.disableCardOverlaysInPulsar.disableHoverTooltipInVortex.disableCardOverlaysInVortex.useOverlayButtonInsteadOfHover.tooltipTakesFocus.outsideClickClosesTooltipOnly.fullScreenCenteredOnOpen.lockTooltipToBrowserZoom.socialEnabled.socialRemindersMasterEnabled.profileRemindersEnabled.profileRemindersPinned.socialRemindersEnabled.socialRemindersPinned.tradeRemindersEnabled.showTradeFamilyBadges.showTradePossibleInterest.tradeRaritySymbols.showTradeNotes.tradeNotesPinned.showTradeFamilyOverlay.showVortexFamilyOverlay.fusionSettingsEnabled.fusionShowPriceWarning.fusionReviewOverlayButton.fusionReviewOutsideClickOnly.familyImpactOverlaysEnabled.useFamilyBlacklist.showSalesFamilyOverlay.friendTooltipEnabled.hotkeysEnabled.navigationHotkeysEnabled.hoverTooltipHotkeysEnabled.packOpeningsEnabled.packOpeningHotkeysEnabled.anyKeyDismissesFoundPack.autoSkipOpening.autoDismissFoundPack.showRemainingPackCount.cardOverlaysEnabled.showAuctionBidCounts.salesOverlaysEnabled.showSalesLastSale.salesLastSaleSetsPrice.showSalesMedian.salesMedianSetsPrice.useMedianOverlayPrice.showSalesLowestListing.salesLowestListingSetsPrice.showSalesMyLastListing.salesMyLastListingSetsPrice.salesDiscountEnabled.salesCustomMinimumsEnabled.salesQuickPricesEnabled.statBoxesEnabled.pinnedAlbumsEnabled".split(".")) typeof n[e] == "boolean" && (t[e] = n[e]);
 	for (let e of [
 		"salesLastSaleAdjustment",
 		"salesMedianAdjustment",
@@ -937,6 +940,11 @@ function Oe(e) {
 			"popupWidth",
 			320,
 			1200
+		],
+		[
+			"tooltipUiScale",
+			20,
+			200
 		],
 		[
 			"popupHeight",
@@ -2258,13 +2266,27 @@ function qe() {
 // src/background.ts
 Le(qe());
 var Je = Promise.resolve();
-chrome.tabs.onRemoved.addListener((e) => {
+chrome.tabs.onZoomChange.addListener(({ tabId: e, newZoomFactor: t }) => {
+	chrome.tabs.sendMessage(e, {
+		op: "browserZoomChanged",
+		zoom: t
+	}).catch(() => {});
+}), chrome.tabs.onRemoved.addListener((e) => {
 	chrome.storage.session.remove([`${O}${e}`, `${te}${e}`]);
 }), chrome.action.onClicked.addListener(() => {
 	chrome.runtime.openOptionsPage();
 }), chrome.runtime.onMessage.addListener((e, t, n) => {
 	if (t.id !== chrome.runtime.id || !ce(e)) return !1;
 	let r = t.url?.split(/[?#]/, 1)[0] === chrome.runtime.getURL("options.html"), i = !!t.tab && t.url?.startsWith("https://kosmora.io/");
+	if (e.op === "browserZoom" && i && t.tab?.id !== void 0) return chrome.tabs.getZoom(t.tab.id).then((t) => n({
+		requestId: e.requestId,
+		ok: !0,
+		data: t
+	}), (t) => n({
+		requestId: e.requestId,
+		ok: !1,
+		error: l(t)
+	})), !0;
 	if ((e.op === "popupState" || e.op === "popupLayout" || e.op === "friendPopupState" || e.op === "friendPopupLayout") && i && t.tab?.id !== void 0 && t.frameId === 0) {
 		let r = e.op === "friendPopupState" || e.op === "friendPopupLayout", i = `${r ? te : O}${t.tab.id}`, a = Je.then(async () => {
 			let t = j((await chrome.storage.session.get(i))[i]), n = r ? t : {

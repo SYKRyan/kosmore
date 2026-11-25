@@ -5,6 +5,7 @@ import { StatSettings } from "./stat-settings";
 import { HotkeySettings, shortcutControls } from "./hotkey-settings";
 import { settingsNavigation } from "./settings-navigation";
 import { settingsTabs } from "./settings-tabs";
+import { tooltipScaleControls } from "./tooltip-scale";
 import { segmentedControl } from "./segmented-control";
 import { SalesSettings, SALES_SETTINGS_KEYS } from "./sales-settings";
 import { BackupSettings } from "./backup-settings";
@@ -86,7 +87,9 @@ logo.src = "icons/128.png";
 logo.alt = "";
 title.prepend(logo);
 head.append(el("p", "brand", "KosMore"), title);
-header.append(head, el("span", "badge", "LOCAL BROWSER SETTINGS"));
+const accountBadge = button("Connect Account", () => location.assign("#connected-account"), "account-badge disconnected");
+accountBadge.setAttribute("aria-controls", "connected-account");
+header.append(head, accountBadge);
 app.append(header);
 const general = el("section", "panel");
 general.append(el("h2", "", "Hover Tooltip"));
@@ -243,9 +246,10 @@ closeAfterAlbumAdd.addEventListener("change", () => {
 applyCloseToPinned.addEventListener("change", () => {
   draft.applyCloseBehaviorToPinnedTooltips = applyCloseToPinned.checked;
 });
+const uiScale = tooltipScaleControls(general, () => draft);
 const delayRow = el("div", "row"),
   delayInfo = el("div");
-const delayLabel = el("label", "", "Hover delay");
+const delayLabel = el("label", "setting-name", "Hover delay");
 delayLabel.htmlFor = "hover-delay";
 delayInfo.append(
   delayLabel,
@@ -289,7 +293,7 @@ const popupInputs = (
 ).map(([field, title, hint, min, max, step]) => {
   const row = el("div", "row"),
     info = el("div"),
-    label = el("label", "", title),
+    label = el("label", "setting-name", title),
     input = el("input");
   input.type = "number";
   input.id = field;
@@ -892,7 +896,11 @@ delay.addEventListener("input", () => {
 const connection = el("section", "panel"),
   connectionContent = el("div", "settings-group-content");
 connection.append(el("h2", "", "Connected Account"), connectionContent);
-connectionContent.append(servicesConnection());
+connectionContent.append(servicesConnection(({ handle, blocked }) => {
+  const connected = !!handle && !blocked;
+  accountBadge.textContent = connected ? `Connected to ${handle}` : "Connect Account";
+  accountBadge.classList.toggle("disconnected", !connected);
+}));
 connection.setAttribute("aria-label", "connected account");
 const albumSettings = el("section", "panel");
 albumSettings.append(
@@ -1000,6 +1008,8 @@ groupControls({
     "fullScreenCenteredOnOpen",
     "closeTooltipWhenAddedToAlbum",
     "applyCloseBehaviorToPinnedTooltips",
+    "tooltipUiScale",
+    "lockTooltipToBrowserZoom",
     "hoverDelayMs",
     "dismissDelayMs",
     "popupWidth",
@@ -1007,6 +1017,10 @@ groupControls({
   ],
   render: renderSettings,
   validate: () => {
+    if (!Number.isInteger(draft.tooltipUiScale) || !uiScale.input.validity.valid) {
+      uiScale.input.focus();
+      return "Choose a whole-number UI Scale from 20% to 200%.";
+    }
     for (const { field, input, title, min, max } of popupInputs) {
       if (
         draft.fullScreenCenteredOnOpen &&
@@ -1163,12 +1177,6 @@ const backupSettings = new BackupSettings({
 });
 const settingsGroups = [
   {
-    id: "connected-account",
-    label: "Connected Account",
-    host: connection,
-    path: "M20 21v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2 M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
-  },
-  {
     id: "hover-tooltip",
     label: "Hover Tooltip",
     host: general,
@@ -1227,6 +1235,12 @@ const settingsGroups = [
     label: "Hotkeys",
     host: hotkeysPanel,
     path: "M3 5h18v14H3Z M7 9h.01 M11 9h.01 M15 9h.01 M7 12h.01 M11 12h.01 M15 12h.01 M7 15h10",
+  },
+  {
+    id: "connected-account",
+    label: "Connected Account",
+    host: connection,
+    path: "M20 21v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2 M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
   },
   {
     id: "backup-restore",
@@ -1290,6 +1304,7 @@ function renderSettings() {
   applyCloseToPinned.checked = draft.applyCloseBehaviorToPinnedTooltips;
   applyCloseToPinned.disabled = !draft.closeTooltipWhenAddedToAlbum;
   delay.value = String(draft.hoverDelayMs);
+  uiScale.render();
   for (const { field, input } of popupInputs)
     input.value = String(draft[field]);
   saleOverlay.checked = draft.showSaleHistoryOverlay;
@@ -1728,6 +1743,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
     fusionThreshold.value = String(next.fusionWarningThreshold);
   }
   saved.fusionWarningThreshold = next.fusionWarningThreshold;
+  if (saved.tooltipUiScale !== next.tooltipUiScale || saved.lockTooltipToBrowserZoom !== next.lockTooltipToBrowserZoom) {
+    for (const key of ["tooltipUiScale", "lockTooltipToBrowserZoom"] as const) {
+      if (draft[key] === saved[key]) Object.assign(draft, { [key]: next[key] });
+      Object.assign(saved, { [key]: next[key] });
+    }
+    uiScale.render();
+  }
   fusionThreshold.disabled = !draft.fusionShowPriceWarning;
   statSettings.render(draft.stats);
   for (const { field, input } of popupInputs) {

@@ -8,7 +8,7 @@ import {
 } from "../shared/services";
 import { messageOf } from "../shared/types";
 
-export function servicesConnection() {
+export function servicesConnection(showStatus: (status: ConnectionStatus) => void) {
   const section = el("div", "services-connection");
   const field = el("label", "field");
   field.append(el("span", "", "KosMore Services API base URL"));
@@ -106,6 +106,7 @@ export function servicesConnection() {
     }
   }
   function render(error?: string) {
+    showStatus(current);
     const url = parsed();
     const linked = current.handle && url === current.base;
     connect.textContent = linked ? "Reconnect" : "Connect";

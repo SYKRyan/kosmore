@@ -34,6 +34,7 @@ const LIMITS = { minWidth: 240, minHeight: 160 };
 export class FriendTooltip {
   private settings = defaults();
   private state: PopupState = { pinned: false, position: null };
+  private beforeFusionReview?: PopupState;
   private source?: Source;
   private pendingSource?: Source;
   private view?: FriendTooltipView;
@@ -108,7 +109,12 @@ export class FriendTooltip {
     this.ready = request<PopupState>({ op: "friendPopupState" })
       .then((raw) => {
         if (this.layoutChanged) return;
-        this.state = parsePopupState(raw);
+        const saved = parsePopupState(raw);
+        if (this.beforeFusionReview) {
+          this.beforeFusionReview = saved;
+          return;
+        }
+        this.state = saved;
         if (this.enabled() && this.state.pinned && !this.view)
           this.createView();
       })
@@ -123,6 +129,18 @@ export class FriendTooltip {
     }
     this.view?.setSettings(settings);
     if (this.state.pinned && !this.view) this.createView();
+  }
+  setFusionReview(active: boolean) {
+    if (active) {
+      this.beforeFusionReview = this.state;
+      this.state = { pinned: false, position: null };
+      this.hide();
+    } else if (this.beforeFusionReview) {
+      this.hide();
+      this.state = this.beforeFusionReview;
+      this.beforeFusionReview = undefined;
+      if (this.state.pinned && this.enabled()) this.createView();
+    }
   }
   bind(anchor: HTMLElement, subjectId: string, owner?: HTMLElement) {
     const source = { anchor, subjectId, owner };
@@ -294,11 +312,16 @@ export class FriendTooltip {
     return view;
   }
   private saveLayout(change: PopupLayoutChange) {
-    this.layoutChanged = true;
     this.state = {
       pinned: change.pinned ?? this.state.pinned,
       position: change.position ?? this.state.position,
     };
+    if (!this.beforeFusionReview) {
+      this.layoutChanged = true;
+      void request<PopupState>({ op: "friendPopupLayout", change }).catch(
+        (error) => this.view?.layoutFailed(error),
+      );
+    }
     this.settings = {
       ...this.settings,
       friendTooltipPosition:
@@ -306,9 +329,6 @@ export class FriendTooltip {
       friendTooltipWidth: change.width ?? this.settings.friendTooltipWidth,
       friendTooltipHeight: change.height ?? this.settings.friendTooltipHeight,
     };
-    void request<PopupState>({ op: "friendPopupLayout", change }).catch(
-      (error) => this.view?.layoutFailed(error),
-    );
     if (change.pinned === false && !this.source) this.hide();
     else if (!this.state.pinned) this.laterHide();
   }
@@ -333,11 +353,13 @@ export class FriendTooltip {
   private dismiss(focus: boolean) {
     const anchor = this.source?.anchor;
     this.state.pinned = false;
-    this.layoutChanged = true;
-    void request<PopupState>({
-      op: "friendPopupLayout",
-      change: { pinned: false },
-    }).catch(() => {});
+    if (!this.beforeFusionReview) {
+      this.layoutChanged = true;
+      void request<PopupState>({
+        op: "friendPopupLayout",
+        change: { pinned: false },
+      }).catch(() => {});
+    }
     this.hide();
     if (focus && anchor?.isConnected) {
       this.suppressFocus = true;

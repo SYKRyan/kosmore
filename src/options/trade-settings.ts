@@ -117,7 +117,7 @@ export class TradeSettings {
     for (const [field, title, help, min, max, step] of TRADE_NOTES_NUMBERS) {
       const row = el("div", "row settings-subsetting"),
         info = el("div"),
-        label = el("label", "", title),
+        label = el("label", "setting-name", title),
         input = el("input");
       input.id = field;
       input.type = "number";

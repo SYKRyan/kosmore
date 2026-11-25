@@ -219,6 +219,12 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await options.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(options.getByText("Linked to FixturePlayer.")).toBeVisible();
 
+    const accountBadge = options.locator("header").getByRole("button");
+    await expect(accountBadge).toHaveText("Connected to FixturePlayer");
+    await expect(accountBadge).toHaveCSS("background-color", "rgb(22, 62, 50)");
+    await accountBadge.press("Space");
+    await expect(options.locator("#connected-account h2")).toBeInViewport();
+
     const cards = await context.newPage();
     await cards.goto("https://kosmora.io/collection");
     await cards.evaluate(() =>
@@ -542,6 +548,7 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     const blockedCalls = await worker.evaluate(
       () => (globalThis as any).servicesFixture.batches.length,
     );
+    await expect(accountBadge).toHaveText("Connect Account");
     await cards.goto("https://kosmora.io/collection?card=78");
     await cards.locator('main a[href="/card/78"]').hover();
     await expect(
@@ -557,6 +564,7 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     });
     await options.getByRole("button", { name: "Retry access" }).click();
     await expect(options.getByText("Linked to FixturePlayer.")).toBeVisible();
+    await expect(accountBadge).toHaveText("Connected to FixturePlayer");
 
     await worker.evaluate(async () => {
       const key = "kosmore.settings";

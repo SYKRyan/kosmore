@@ -47,6 +47,8 @@ function values(): StoredValues {
     [SETTINGS_KEY]: {
       ...defaults(),
       popupWidth: 560,
+      tooltipUiScale: 33,
+      lockTooltipToBrowserZoom: true,
       disableHoverTooltipInPulsar: true,
       disableCardOverlaysInPulsar: true,
       disableHoverTooltipInVortex: true,
@@ -248,6 +250,8 @@ it("imports older family settings and round-trips independent family impact choi
     delete old.settings.packOpeningHotkeys;
     delete old.settings.hoverTooltipHotkeys;
     delete old.settings.packOpeningsEnabled;
+    delete old.settings.tooltipUiScale;
+    delete old.settings.lockTooltipToBrowserZoom;
     delete old.settings.packOpeningHotkeysEnabled;
     delete old.settings.anyKeyDismissesFoundPack;
     delete old.settings.autoSkipOpening;
@@ -271,6 +275,8 @@ it("imports older family settings and round-trips independent family impact choi
       packOpeningHotkeys: {},
       hoverTooltipHotkeys: {},
       packOpeningsEnabled: true,
+      tooltipUiScale: 100,
+      lockTooltipToBrowserZoom: false,
       packOpeningHotkeysEnabled: false,
       anyKeyDismissesFoundPack: true,
       autoSkipOpening: false,

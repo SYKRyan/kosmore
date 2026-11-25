@@ -93,6 +93,7 @@ export type Request =
     }
   | { requestId: string; op: "listingCancel"; target: string }
   | { requestId: string; op: "popupState" }
+  | { requestId: string; op: "browserZoom" }
   | { requestId: string; op: "popupLayout"; change: PopupLayoutChange }
   | { requestId: string; op: "friendPopupState" }
   | { requestId: string; op: "friendPopupLayout"; change: PopupLayoutChange }
@@ -194,7 +195,7 @@ export function isRequest(x: unknown): x is Request {
       (r.op === "listingCancel" && validId(r.target)) ||
       (r.op === "openOptions" &&
         (r.section === undefined || r.section === "stat-boxes")) ||
-      ["sessions", "popupState", "friendPopupState"].includes(r.op) ||
+      ["sessions", "popupState", "friendPopupState", "browserZoom"].includes(r.op) ||
       (r.op === "popupLayout" && isPopupLayoutChange(r.change)) ||
       (r.op === "friendPopupLayout" &&
         isPopupLayoutChange(r.change, { minWidth: 240, minHeight: 160 })) ||

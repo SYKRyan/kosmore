@@ -132,7 +132,7 @@ export class SalesSettings {
     }
     const discount = this.subgroup(
       "salesDiscountEnabled",
-      "Enable Discount button",
+      "Show Discount button",
       "Fill the starting price at a discount after repeated unsold listings for the same copy.",
     );
     this.discountAmount = this.numberSetting(
@@ -180,7 +180,7 @@ export class SalesSettings {
 
     const quick = this.subgroup(
       "salesQuickPricesEnabled",
-      "Quick Prices",
+      "Show Custom Quick Prices",
       "Show your preset starting prices in this order on the sale screens.",
     );
     this.quickInput.id = "salesQuickPrice";

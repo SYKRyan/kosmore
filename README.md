@@ -7,7 +7,7 @@ Connect your Kosmora account in **Settings → Connected Account** to load share
 - **Card tooltips:** view market analytics, your listing history, matching friends, and private notes while browsing, including pack reveals, trade pickers, and Market Activity.
 - **Mobile-friendly controls:** open tooltips with a Kosmora overlay button, optionally center them at full size, and dismiss them without activating the control underneath.
 - **Pinned albums:** add owned copies to your favourite albums or remove cards from them through ordered tooltip shortcuts.
-  In a pack tooltip, KosMore uses the pack slot and your owned copies to select the exact copy. If the opening cannot identify it, choose a copy in the tooltip before clicking an album.
+  The tooltip selects the first owned copy in the list. If the hovered card identifies an exact copy, KosMore lists it first. You can choose another copy before using an album shortcut or a card action.
 - **Customizable statistics:** choose and reorder price, auction, sales, and local sale-rate boxes.
 - **Card overlays:** spot active auctions, recent sales, your listed cards, quest cards, and matches for friends' saved family preferences.
 - **Friend tooltip:** expand matching friends' saved families and notes in a separate popup with Social and Profile links.
@@ -79,6 +79,8 @@ To configure pinned albums, keep a Kosmora tab signed in as the linked player. *
 Features on Kosmora pages use the account signed in on that page. Pinned shortcuts, friend reminders, and card notes retain their account associations, including when transferred in a backup. Market finish filters are shared across accounts in this browser.
 
 ### Hover tooltip
+
+**UI Scale** adjusts the tooltip content, dimensions, and resize limits together. It starts at 100%. **Lock to browser zoom** keeps the tooltip at your chosen visual size as you zoom each game tab. You can edit the base percentage while locked. For example, a 75% base at 300% browser zoom uses a 25% effective scale.
 
 Hover a supported card, or press its overlay button when enabled, to open KosMore's card popup. It includes rarity, finish, family links, market indicators, album shortcuts, stat boxes, and four icon tabs. The last selected tab is remembered for the next tooltip in that browser tab.
 
@@ -170,8 +172,8 @@ Show price helpers beneath the starting-price field on both the single sell scre
 - **Show My Last Listing price:** display your newest confirmed original starting price for the card, across finishes, labeled **My Last Listing:**. This uses your listing history rather than a winning bid or final sale price.
 - **Set price when clicked:** each price has its own subsetting to fill that card's starting-price field when clicked.
 - **Price adjustment:** add or subtract a fixed amount of Kosmo from the clicked price. For example, `-1` prices one Kosmo lower. The default is `0`, and adjustments support up to six decimal places.
-- **Enable Discount button:** set a flat Kosmo amount or a percentage and choose how many consecutive unsold listings qualify. When saved history confirms that streak for the selected copy, **Discount** offers a lower starting price based on that copy’s most recent unsold listing. Refresh listing history if the relevant auctions are missing.
-- **Quick Prices:** add, reorder, or remove presets in settings. Click a preset on either sell screen to fill that card’s starting price.
+- **Show Discount button** lets you set a flat Kosmo amount or a percentage and choose how many consecutive unsold listings qualify. When saved history confirms that streak for the selected copy, **Discount** offers a lower starting price based on that copy’s most recent unsold listing. Refresh listing history if the relevant auctions are missing.
+- **Show Custom Quick Prices** lets you add, reorder, or remove presets in settings. Click a preset on either sell screen to fill that card’s starting price.
 - **Use Custom Rarity Minimums:** set your own minimum for each rarity at or above Kosmora’s minimum. KosMore warns beside the affected price and near the submit button. You can still submit a price that meets Kosmora’s minimum.
 
 Discount, Quick Prices, and Custom Rarity Minimums are off by default. Price buttons fill only that card’s starting price and respect Kosmora’s minimum for its rarity. Review and submit listings using Kosmora’s usual sale controls.
