@@ -176,6 +176,7 @@ window.addEventListener("message", (event) => {
       void client
         .captureListings(event.data.listings, {
           savePrices: trackPrices,
+          resolveMissingSubjects: tracksSaleStatus(),
           confirmedAt: event.data.confirmedAt,
         })
         .catch(() => {});

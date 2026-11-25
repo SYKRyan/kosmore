@@ -1,6 +1,10 @@
 import { validCardId } from "./shared/services";
 import { parseOpening } from "./kosmora/contracts";
-import { listingConfirmations, saleSubjects } from "./kosmora/listing-capture";
+import {
+  listingConfirmations,
+  listingSubjectId,
+  saleSubjects,
+} from "./kosmora/listing-capture";
 /**
  * KosMore page-world relay, installed by src/page-hook.ts (MAIN world, document_start).
  *
@@ -185,13 +189,15 @@ export function installPageRelay(win: Window = window) {
               const rows = Array.isArray(data?.items)
                 ? data.items
                 : [data?.auction];
-              for (const row of rows)
+              for (const row of rows) {
+                const subject = listingSubjectId(row?.card?.subjectId);
                 if (
                   row?.yours === true &&
                   typeof row.id === "string" &&
-                  validCardId(row.card?.subjectId)
+                  subject
                 )
-                  auctionSubjects.set(row.id.toLowerCase(), row.card.subjectId);
+                  auctionSubjects.set(row.id.toLowerCase(), subject);
+              }
               if (Array.isArray(data?.relistAll?.items))
                 rememberSubjects({
                   items: data.relistAll.items.map(
@@ -352,18 +358,19 @@ export function installPageRelay(win: Window = window) {
       // the game's own batch reads and draft writes; never request or save one.
       if (
         url.origin === win.location.origin &&
-        win.location.pathname === "/market/sell/batch" &&
         ((method === "GET" &&
           url.pathname === "/api/market/listings/batch" &&
           (preferences?.saleFamily !== false ||
             preferences?.listingPrices !== false)) ||
           (method === "PUT" &&
+            win.location.pathname === "/market/sell/batch" &&
             url.pathname === "/api/market/sell-draft" &&
             (preferences?.saleFamily !== false ||
               preferences?.listingPrices !== false)))
       ) {
         const page = win.location.href,
           nextRevision = ++revision;
+        const onBatchPage = win.location.pathname === "/market/sell/batch";
         const source = method === "GET" ? "batch" : "draft";
         const data =
           source === "batch"
@@ -375,12 +382,9 @@ export function installPageRelay(win: Window = window) {
                 : Promise.resolve(undefined);
         void data
           .then((value: unknown) => {
-            if (
-              source === "batch" &&
-              value &&
-              preferences?.listingPrices !== false
-            )
+            if (value && preferences?.listingPrices !== false)
               rememberSubjects(value);
+            if (!onBatchPage) return;
             const selection = saleSelection(value, source);
             if (!selection) return;
             const { keys, copies } = selection;
@@ -434,6 +438,12 @@ export function installPageRelay(win: Window = window) {
         preferences?.listingChanges !== false
       ) {
         const trackPrices = preferences?.listingPrices !== false;
+        const sellPage = new URL(win.location.href);
+        if (trackPrices && sellPage.pathname === "/market/sell")
+          rememberSubjects({
+            instanceId: sellPage.searchParams.get("instance"),
+            subjectId: sellPage.searchParams.get("subject"),
+          });
 
         const body = !trackPrices
           ? undefined
@@ -455,6 +465,7 @@ export function installPageRelay(win: Window = window) {
               result,
               submittedAt,
               subjects,
+              auctionSubjects,
             );
             if (url.pathname.endsWith("/relist")) {
               const subject = auctionSubjects.get(

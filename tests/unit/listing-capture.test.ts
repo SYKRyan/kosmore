@@ -67,3 +67,31 @@ it("leaves relist details for verification against the new auction ID", () => {
     ),
   ).toMatchObject([{ auctionId, submittedAt: 100 }]);
 });
+
+it("matches a successful Relist All row to its previous auction by the submitted copy", () => {
+  const copy = auction(1).id;
+  const oldAuction = auction(2).id;
+  const newAuction = auction(3).id;
+  expect(
+    listingConfirmations(
+      "/api/market/listings/batch",
+      {
+        items: [
+          { instanceId: copy, relistOf: oldAuction, startPrice: "1500000" },
+        ],
+      },
+      { results: [{ ok: true, instanceId: copy, auctionId: newAuction }] },
+      100,
+      new Map(),
+      new Map([[oldAuction, "42"]]),
+    ),
+  ).toEqual([
+    {
+      auctionId: newAuction,
+      copyId: copy,
+      subjectId: "42",
+      startPrice: "1500000",
+      submittedAt: 100,
+    },
+  ]);
+});

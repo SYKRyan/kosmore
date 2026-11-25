@@ -247,7 +247,7 @@ it("keeps card-heavy consumers off signed-in game card routes when Services is u
   expect(game).toHaveBeenCalledTimes(1);
 });
 
-it("keeps a confirmed listing over an older private read and accepts a later Services correction", async () => {
+it("keeps a confirmed listing across reads of a cached private snapshot and reconciles after the cache window", async () => {
   const id = "42",
     now = Date.now();
   let listingsAsOf = now - 1;
@@ -279,6 +279,8 @@ it("keeps a confirmed listing over an older private read and accepts a later Ser
   });
   expect((await client.insights(id, undefined, false, true)).onSale).toBe(true);
   listingsAsOf = now + 1;
+  expect((await client.insights(id, undefined, false, true)).onSale).toBe(true);
+  listingsAsOf = now + 300_001;
   expect((await client.insights(id, undefined, false, true)).onSale).toBe(
     false,
   );

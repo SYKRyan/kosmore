@@ -1,7 +1,8 @@
 import type { Settings } from "./types";
 
 // Pulsar exclusions omit Vortex, which has separate controls, and the hub.
-const PULSAR_GAME = /^\/(?:constellation|aion|photon|horizon|umbra)(?:\/|$)/;
+const PULSAR_GAME =
+  /^\/(?:constellation|aion|photon|horizon|umbra|parallax|nadir|kepler)(?:\/|$)/;
 const VORTEX = /^\/vortex(?:\/|$)/;
 
 /** Apply page exclusions without changing the user's saved feature switches. */

@@ -36,6 +36,7 @@ import {
   listingCopyId,
   auctionListingOutcome,
   initialListingLimits,
+  listingPath,
   parseListingBatch,
   type PersonalListing,
   type TrackedListing,
@@ -85,6 +86,7 @@ export class GameClient implements KosmoraClient {
   private observedCards = new Map<string, CardInsights>();
   private saleChanges = new Map<string, SaleChanges>();
   private saleBaselines = new Map<string, SaleBaseline>();
+  private nativeSaleBaselines = new Map<string, SaleBaseline>();
 
   setSaleCache(cache?: SaleStatusCache) {
     this.saleChanges.clear();
@@ -100,26 +102,39 @@ export class GameClient implements KosmoraClient {
       this.shareListedCopies(id, cache?.copies[id]?.at);
   }
   private shareListedCopies(id: string, savedAt = 0) {
-    const baseline = this.saleBaselines.get(id);
-    if (!this.lastAccount || !baseline?.auctionIds || baseline.at <= savedAt) return;
-    void this.listingRequest("listingCopiesObserved", this.lastAccount.key, id, undefined, {
-      copies: { at: baseline.at, auctionIds: [...baseline.auctionIds] },
-    }).catch(() => {});
+    const baseline = this.nativeSaleBaselines.get(id);
+    if (!this.lastAccount || !baseline?.auctionIds || baseline.at <= savedAt)
+      return;
+    void this.listingRequest(
+      "listingCopiesObserved",
+      this.lastAccount.key,
+      id,
+      undefined,
+      {
+        copies: { at: baseline.at, auctionIds: [...baseline.auctionIds] },
+      },
+    ).catch(() => {});
   }
   saleStatus(id: string) {
     if (!this.lastAccount) return;
-    const baseline = this.saleBaselines.get(id);
+    const service = this.saleBaselines.get(id);
+    const native = this.nativeSaleBaselines.get(id);
+    const baseline =
+      native && native.at >= (service?.at ?? 0) ? native : service;
     const changes = this.saleChanges.get(id);
     return (
-      (changes && localSaleStatus(changes, id, baseline)) ??
+      (changes && localSaleStatus(changes, id, baseline, Date.now(), native)) ??
       (baseline && (baseline.until ?? Infinity) > Date.now()
         ? baseline.count > 0
         : undefined)
     );
   }
   private observeSaleBaseline(id: string, baseline: SaleBaseline) {
-    if (baseline.at >= (this.saleBaselines.get(id)?.at ?? 0))
-      this.remember(this.saleBaselines, id, baseline);
+    const baselines = baseline.auctionIds
+      ? this.nativeSaleBaselines
+      : this.saleBaselines;
+    if (baseline.at >= (baselines.get(id)?.at ?? 0))
+      this.remember(baselines, id, baseline);
   }
   private observedHistory = new Map<string, MarketHistory>();
   private observedInterest = new Map<string, InterestEntry[]>();
@@ -394,6 +409,7 @@ export class GameClient implements KosmoraClient {
     this.cardViews.clear();
     this.pendingViews.clear();
     this.saleBaselines.clear();
+    this.nativeSaleBaselines.clear();
   }
   serviceCardChanged(id: string, fetchedAt?: number) {
     const view = this.cardViews.get(id);
@@ -713,16 +729,19 @@ export class GameClient implements KosmoraClient {
     {
       canceled = false,
       savePrices = true,
+      resolveMissingSubjects = false,
       confirmedAt,
     }: {
       canceled?: boolean;
       savePrices?: boolean;
+      resolveMissingSubjects?: boolean;
       confirmedAt?: number;
     } = {},
   ) {
     const previous = this.lastAccount;
     const account = await this.account();
     if (previous && previous.key !== account.key) return;
+    const version = this.accountVersion;
     const seen = new Set<string>();
     const records: RecordedListing[] = [];
     const changes: SaleChange[] = [];
@@ -773,6 +792,43 @@ export class GameClient implements KosmoraClient {
         records,
         changes,
         ...(receipts.length && { receipts }),
+      });
+    // A cached game screen may submit just copy IDs (or just a relist fee).
+    // Resolve only unmatched successes, in one native read for the whole POST.
+    const missing = new Map(
+      changes
+        .filter((row) => !row.subjectId)
+        .map((row) => [row.auctionId, row]),
+    );
+    if (
+      !resolveMissingSubjects ||
+      canceled ||
+      !missing.size ||
+      version !== this.accountVersion
+    )
+      return;
+    const limits = { selling: Math.max(50, missing.size), sold: 1, unsold: 1 };
+    const raw = await this.read(listingPath(limits));
+    if (version !== this.accountVersion) return;
+    const rows = parseListingBatch(raw, account.key, limits).listings.filter(
+      (row) => row.group === "selling" && missing.has(row.id.toLowerCase()),
+    );
+    if (!rows.length) return;
+    if (savePrices)
+      await this.listingRequest(
+        "listingObserved",
+        account.key,
+        "0",
+        undefined,
+        { rows },
+      );
+    else
+      await this.listingRequest("listingRecord", account.key, "0", undefined, {
+        records: [],
+        changes: rows.map((row) => ({
+          ...missing.get(row.id.toLowerCase())!,
+          subjectId: row.subjectId,
+        })),
       });
   }
 

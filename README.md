@@ -59,7 +59,7 @@ The sections below follow the order shown in settings. Each feature group's top-
 
 Card overlays, Sales Overlay, profile reminders, trade reminders, and navigation hotkeys can work with card hover tooltips turned off. Features displayed inside the card tooltip need that tooltip enabled.
 
-**Disable in Pulsar**, available separately under Hover tooltip and Card overlays, applies to Constellation, Aion, Photon, Horizon, and Umbra. Vortex and the Pulsar hub keep their normal settings.
+**Disable in Pulsar**, available separately under Hover tooltip and Card overlays, applies to Constellation, Aion, Photon, Horizon, Umbra, Parallax, Nadir, and Kepler. Vortex and the Pulsar hub keep their normal settings.
 
 **Disable in Vortex** sits directly below each Pulsar control in Hover Tooltip and Card Overlays. Each option independently hides its feature throughout Vortex, including subpages, while preserving the main enabled switch. Both default to off. The hover option also hides tooltip open buttons; the overlay option also hides tooltip header indicators.
 
@@ -123,7 +123,7 @@ Sale observations stay in this browser, are limited to 20,000 listings with 35-d
 Add indicators to visible cards and tooltip headers. Each indicator can be configured independently:
 
 - **Active auctions:** a red sale tag for current listings, with an optional lowest listed price. The price uses the highest bid, or the starting price when a listing has no bids, for this finish. When that listing has bids, the price includes the count on the same line (for example, $1,234 - 1 bid). Turn off **Show bid counts** under **Show active auctions icon on cards** to hide the count on cards, in tooltips, and on sell buttons. The badge links to the card's Market search.
-- **For Sale:** a black-and-white label when you have a copy listed on the Market. In albums, the label is larger and centered on the card art.
+- **For Sale:** a black-and-white label when you have a copy listed on the Market. Confirmed Sell Single, Sell Many, and relist actions update the label across open tabs for the same account. If only part of a batch succeeds, only the accepted listings count. In albums, the label is larger and centered on the card art.
 - **Sale history:** a gavel for final sale prices in the last 30 days, with an optional last sale price for this finish.
 - **Interested friends:** a purple friend indicator when the card's families match preferences you saved for current friends.
 - **Quest:** a gold Quest badge when the card belongs to any quest, whether you follow it or not.

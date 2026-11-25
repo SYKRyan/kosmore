@@ -49,3 +49,18 @@ it("matches a late auction identity and respects the exact copies in a native re
     }),
   ).toBe(false);
 });
+
+it("respects a native correction even if an empty Services cache is read afterward", () => {
+  const now = Date.now(),
+    id = auction(3).id;
+  const changes = { [id]: { listed: now - 10, subjectId: "42" } };
+  const service = { at: now, count: 0 };
+  expect(localSaleStatus(changes, "42", service, now)).toBe(true);
+  expect(
+    localSaleStatus(changes, "42", service, now, {
+      at: now - 5,
+      count: 0,
+      auctionIds: new Set(),
+    }),
+  ).toBeUndefined();
+});

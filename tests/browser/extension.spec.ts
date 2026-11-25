@@ -1,5 +1,7 @@
 import { FAMILY_IMPACT_AVAILABLE } from "../../src/shared/feature-availability";
 import { questCatalog } from "../fixtures/quests";
+import { serviceDetails } from "../fixtures/services";
+import { parseServicesCard } from "../../src/shared/services";
 import {
   test,
   expect,
@@ -616,52 +618,84 @@ test("Pulsar: tooltip buttons follow only the hover exclusion and return on exit
 });
 
 test("Pulsar: exclusions leave Vortex and the hub enabled while disabling the other game routes", async () => {
-  await pulsarSettings({
-    disableHoverTooltipInPulsar: true,
-    disableCardOverlaysInPulsar: true,
-    showQuestOverlay: true,
-  });
-  await page.goto("https://kosmora.io/collection");
-  const popup = page.locator("#kosmore-root");
-  const overlay = page.locator("[data-kosmore-card-overlays] .quest");
-  for (const path of ["/games", "/vortex"]) {
-    await navigatePulsar(path);
-    await expect(overlay).toBeVisible();
-    await page.mouse.move(0, 0);
-    await page.locator(".kc-article").hover();
-    await expect(popup).toBeVisible();
-    await expect(popup.locator(".quest")).toBeVisible();
-  }
-  await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
-  await navigatePulsar("/aion");
-  await expect(popup).toHaveCount(0);
-  await expect(overlay).toHaveCount(0);
-  await navigatePulsar("/vortex");
-  await expect(popup).toHaveAttribute("data-pinned", "");
-  await popup
-    .getByRole("button", { name: "Close KosMore popup", exact: true })
-    .click();
-  await pulsarSettings({ useOverlayButtonInsteadOfHover: true });
-  await expect(tooltipButton()).toBeVisible();
-  await tooltipButton().click();
-  await expect(popup).toBeVisible();
-  for (const path of [
-    "/constellation",
-    "/aion/challenge/test",
-    "/photon",
-    "/horizon",
-    "/umbra",
-  ]) {
-    await navigatePulsar(path);
+  // Quest membership on a card comes from its Services view.
+  const details = serviceDetails("42");
+  const card = parseServicesCard(
+    {
+      ...details,
+      card: { ...details.card, quests: [{ id: "wanderers" }] },
+    },
+    "42",
+  );
+  const fixture = await worker.evaluateHandle((card) => {
+    const listener: Parameters<
+      typeof chrome.runtime.onMessage.addListener
+    >[0] = (message, _sender, reply) => {
+      if (message.op !== "servicesRead" || !message.ids.includes("42")) return;
+      reply({
+        requestId: message.requestId,
+        ok: true,
+        data: {
+          "42": { card, until: Date.now() + 300_000, stale: false },
+        },
+      });
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    return () => chrome.runtime.onMessage.removeListener(listener);
+  }, card);
+  try {
+    await pulsarSettings({
+      disableHoverTooltipInPulsar: true,
+      disableCardOverlaysInPulsar: true,
+      showQuestOverlay: true,
+    });
+    await page.goto("https://kosmora.io/collection");
+    const popup = page.locator("#kosmore-root");
+    const overlay = page.locator("[data-kosmore-card-overlays] .quest");
+    for (const path of ["/games", "/vortex"]) {
+      await navigatePulsar(path);
+      await expect(overlay).toBeVisible();
+      await page.mouse.move(0, 0);
+      await page.locator(".kc-article").hover();
+      await expect(popup).toBeVisible();
+      await expect(popup.locator(".quest")).toBeVisible();
+    }
+    await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
+    await navigatePulsar("/aion");
     await expect(popup).toHaveCount(0);
-    await expect(tooltipButtonLayer()).toHaveCount(0);
     await expect(overlay).toHaveCount(0);
+    await navigatePulsar("/vortex");
+    await expect(popup).toHaveAttribute("data-pinned", "");
+    await popup
+      .getByRole("button", { name: "Close KosMore popup", exact: true })
+      .click();
+    await pulsarSettings({ useOverlayButtonInsteadOfHover: true });
+    await expect(tooltipButton()).toBeVisible();
+    await tooltipButton().click();
+    await expect(popup).toBeVisible();
+    for (const path of [
+      "/constellation",
+      "/aion/challenge/test",
+      "/photon",
+      "/horizon",
+      "/umbra",
+      "/parallax",
+      "/nadir/challenge/test",
+      "/kepler",
+    ]) {
+      await navigatePulsar(path);
+      await expect(popup).toHaveCount(0);
+      await expect(tooltipButtonLayer()).toHaveCount(0);
+      await expect(overlay).toHaveCount(0);
+    }
+    await navigatePulsar("/vortex");
+    await expect(tooltipButton()).toBeVisible();
+    await expect(overlay).toBeVisible();
+    await tooltipButton().click();
+    await expect(popup).toBeVisible();
+  } finally {
+    await fixture.evaluate((remove) => remove());
   }
-  await navigatePulsar("/vortex");
-  await expect(tooltipButton()).toBeVisible();
-  await expect(overlay).toBeVisible();
-  await tooltipButton().click();
-  await expect(popup).toBeVisible();
 });
 
 test("tooltip icon tabs remember the last selection across cards, dismissal, refresh and navigation", async () => {

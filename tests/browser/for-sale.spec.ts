@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { launchTestBrowser } from "./browser";
 import { card, COPY_A, COPY_B, face, me } from "../fixtures/data";
 import { auction } from "../fixtures/auctions";
+import { myListing, myListingPage } from "../fixtures/my-listings";
 
 test("confirmed changes update album and collection labels across tabs", async () => {
   const profile = await mkdtemp(resolve(tmpdir(), "kosmore-for-sale-"));
@@ -38,11 +39,55 @@ test("confirmed changes update album and collection labels across tabs", async (
     );
     const first = auction(1).id,
       second = auction(2).id;
+    const chosenCopy = auction(10).id,
+      failedCopy = auction(11).id;
+    const batchListing = auction(12).id,
+      relisted = auction(13).id;
+    let listingReads = 0;
     let rejectCancel = false;
     let nativeListing: string | undefined;
     await context.route("https://kosmora.io/**", (route) => {
       const path = new URL(route.request().url()).pathname;
       if (path === "/api/me") return route.fulfill({ json: me });
+      if (path === "/api/me/auctions") {
+        listingReads++;
+        return route.fulfill({
+          json: myListingPage([
+            myListing(13, "42", {
+              group: "selling",
+              state: "open",
+              endsAt: "2099-01-01",
+            }),
+          ]),
+        });
+      }
+      if (path === "/api/market/listings/batch")
+        return route.fulfill({
+          json:
+            route.request().method() === "GET"
+              ? {
+                  items: [
+                    {
+                      subjectId: "42",
+                      instanceId: COPY_A,
+                      copies: [{ id: chosenCopy }],
+                    },
+                    { subjectId: "43", instanceId: failedCopy },
+                  ],
+                }
+              : {
+                  results: [
+                    { ok: false, instanceId: failedCopy },
+                    {
+                      ok: true,
+                      instanceId: chosenCopy,
+                      auctionId: batchListing,
+                    },
+                  ],
+                },
+        });
+      if (path.endsWith("/relist"))
+        return route.fulfill({ json: { auctionId: relisted } });
       if (path === "/api/collection/42") {
         const detail = card();
         return route.fulfill({
@@ -127,6 +172,41 @@ test("confirmed changes update album and collection labels across tabs", async (
     );
     await expect(albumLabel).toHaveCount(0);
     await expect(collectionLabel).toHaveCount(0);
+    const sell = await context.newPage();
+    await sell.goto("https://kosmora.io/market/sell/batch");
+    await sell.evaluate(
+      async ([chosen, failed]) => {
+        await fetch("/api/market/listings/batch?subjects=42,43").then((r) =>
+          r.json(),
+        );
+        await fetch("/api/market/listings/batch", {
+          method: "POST",
+          body: JSON.stringify({
+            items: [chosen, failed].map((instanceId) => ({
+              instanceId,
+              startPrice: "1000000",
+            })),
+          }),
+        });
+      },
+      [chosenCopy, failedCopy],
+    );
+    await expect(albumLabel).toBeVisible();
+    await expect(collectionLabel).toBeVisible();
+    expect(listingReads).toBe(0);
+    await cancel(batchListing);
+    await expect(albumLabel).toHaveCount(0);
+    await sell.evaluate(
+      (previous) =>
+        fetch("/api/auctions/" + previous + "/relist", {
+          method: "POST",
+          body: JSON.stringify({ expectedFee: "123" }),
+        }).then((r) => r.ok),
+      auction(99).id,
+    );
+    await expect(albumLabel).toBeVisible();
+    await expect(collectionLabel).toBeVisible();
+    expect(listingReads).toBe(1);
   } finally {
     await context.close();
     await rm(profile, { recursive: true, force: true });

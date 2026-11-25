@@ -1,4 +1,4 @@
-import { listingCopyId } from "../kosmora/my-listings";
+import { LISTING_FRESH_MS, listingCopyId } from "../kosmora/my-listings";
 import { validCardId } from "./services";
 
 export const saleStatusKey = (account: string) =>
@@ -86,6 +86,7 @@ export function localSaleStatus(
   subject: string,
   baseline?: SaleBaseline,
   now = Date.now(),
+  native?: SaleBaseline,
 ) {
   const since = Math.max(baseline?.at ?? 0, now - retention);
   let count = baseline?.count ?? 0;
@@ -94,6 +95,18 @@ export function localSaleStatus(
     if (row.subjectId !== subject) continue;
     const listed = (row.listed ?? 0) > since;
     const canceled = (row.canceled ?? 0) > since;
+    // Services dates its cache read, which can return a pre-POST empty snapshot.
+    // An exact native copy observation can settle the change within that window.
+    if (
+      row.listed !== undefined &&
+      row.canceled === undefined &&
+      baseline?.count === 0 &&
+      !baseline.auctionIds &&
+      row.listed >= baseline.at - LISTING_FRESH_MS &&
+      row.listed > now - retention &&
+      (!native || row.listed >= native.at || native.auctionIds?.has(id))
+    )
+      return true;
     if (!listed && !canceled) continue;
     changed = true;
     if (listed && row.canceled === undefined) return true;

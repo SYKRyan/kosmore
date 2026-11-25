@@ -52,6 +52,14 @@ export function validRecordedListing(value: unknown): value is RecordedListing {
   }
 }
 
+export function listingSubjectId(value: unknown): string | undefined {
+  try {
+    return subjectId(Number.isSafeInteger(value) ? String(value) : value);
+  } catch {
+    return undefined;
+  }
+}
+
 export function saleSubjects(value: unknown): Map<string, string> {
   const data = object(value);
   const items = Array.isArray(data.items) ? data.items : [data];
@@ -60,10 +68,21 @@ export function saleSubjects(value: unknown): Map<string, string> {
   for (const raw of items) {
     try {
       const item = object(raw);
-      const id = uuid(item.instanceId).toLowerCase();
-      const subject = subjectId(item.subjectId ?? object(item.card).subjectId);
-      if (result.has(id) && result.get(id) !== subject) conflicts.add(id);
-      result.set(id, subject);
+      const subject = listingSubjectId(
+        item.subjectId ?? object(item.card).subjectId,
+      );
+      if (!subject) continue;
+      const copies = Array.isArray(item.copies) ? item.copies : [];
+      for (const value of [
+        item.instanceId,
+        item.copy,
+        ...copies.map((copy) => copy?.id),
+      ]) {
+        const id = listingCopyId(value);
+        if (!id) continue;
+        if (result.has(id) && result.get(id) !== subject) conflicts.add(id);
+        result.set(id, subject);
+      }
     } catch {
       // Missing mappings can be recovered from the confirmed auction itself.
     }
@@ -78,6 +97,7 @@ export function listingConfirmations(
   response: unknown,
   submittedAt: number,
   subjects: ReadonlyMap<string, string>,
+  auctionSubjects: ReadonlyMap<string, string> = new Map(),
 ): ListingConfirmation[] {
   const result = object(response);
   const batch = path === "/api/market/listings/batch";
@@ -91,10 +111,15 @@ export function listingConfirmations(
   const items = batch && Array.isArray(body.items) ? body.items : [body];
   const submittedSubjects = saleSubjects(body);
   const prices = new Map<string, string>();
+  const relistedSubjects = new Map<string, string>();
   for (const raw of items) {
     try {
       const item = object(raw);
-      prices.set(uuid(item.instanceId).toLowerCase(), amount(item.startPrice));
+      const copy = uuid(item.instanceId).toLowerCase();
+      const previous = listingCopyId(item.relistOf);
+      const subject = previous && auctionSubjects.get(previous);
+      if (subject) relistedSubjects.set(copy, subject);
+      prices.set(copy, amount(item.startPrice));
     } catch {
       // An auction detail can supply the price for a relist or unknown body.
     }
@@ -108,16 +133,21 @@ export function listingConfirmations(
       const reportedSubject =
         row.subjectId ?? (row.card && object(row.card).subjectId);
       const subject =
-        reportedSubject === undefined
-          ? copyId && (subjects.get(copyId) ?? submittedSubjects.get(copyId))
-          : subjectId(reportedSubject);
-      const price =
-        row.startPrice === undefined
-          ? ((copyId && prices.get(copyId)) ??
-            (!batch && body.startPrice !== undefined
-              ? amount(body.startPrice)
-              : undefined))
-          : amount(row.startPrice);
+        listingSubjectId(reportedSubject) ??
+        (copyId &&
+          (submittedSubjects.get(copyId) ??
+            subjects.get(copyId) ??
+            relistedSubjects.get(copyId)));
+      let price = copyId && prices.get(copyId);
+      const reportedPrice =
+        row.startPrice ?? (!batch ? body.startPrice : undefined);
+      if (reportedPrice !== undefined) {
+        try {
+          price = amount(reportedPrice);
+        } catch {
+          // A successful post still confirms the listing without a usable price.
+        }
+      }
       return [
         {
           auctionId,
