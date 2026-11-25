@@ -13,7 +13,7 @@ import {
   type SaleStatusCache,
 } from "../shared/sale-status";
 import { request } from "../shared/messages";
-import { validRecordedListing, type RecordedListing } from "./listing-capture";
+import { validRecordedListing, type ListingReceipt, type RecordedListing } from "./listing-capture";
 import { ReadCache } from "../shared/cache";
 import {
   RequestScheduler,
@@ -36,7 +36,6 @@ import {
   listingCopyId,
   auctionListingOutcome,
   initialListingLimits,
-  listingPath,
   parseListingBatch,
   type PersonalListing,
   type TrackedListing,
@@ -699,17 +698,20 @@ export class GameClient implements KosmoraClient {
       if (++failed >= threshold) return price;
     }
   }
-  async observeOwnAuction(id: string, raw: unknown) {
+  async observeOwnAuction(id: string, raw: unknown, saveHistory = true) {
     const row = object(object(raw).auction);
     if (row.id !== id || row.yours !== true || !this.displayAccount) return;
     const outcome = auctionListingOutcome(row);
     if (!outcome) return;
-    await this.observeOwnListings({
-      items: [{ ...row, group: outcome.group }],
-      groups: { selling: 0, sold: 0, unsold: 0, [outcome.group]: 1 },
-    });
+    await this.observeOwnListings(
+      {
+        items: [{ ...row, group: outcome.group }],
+        groups: { selling: 0, sold: 0, unsold: 0, [outcome.group]: 1 },
+      },
+      saveHistory,
+    );
   }
-  async observeOwnListings(raw: unknown) {
+  async observeOwnListings(raw: unknown, saveHistory = true) {
     const account = this.displayAccount;
     if (!account) return;
     const batch = parseListingBatch(raw, account.key, initialListingLimits());
@@ -721,7 +723,7 @@ export class GameClient implements KosmoraClient {
         account.key,
         "0",
         undefined,
-        { rows: batch.listings.slice(0, 500) },
+        { rows: batch.listings.slice(0, 500), saveHistory },
       );
   }
   async captureListings(
@@ -729,23 +731,20 @@ export class GameClient implements KosmoraClient {
     {
       canceled = false,
       savePrices = true,
-      resolveMissingSubjects = false,
       confirmedAt,
     }: {
       canceled?: boolean;
       savePrices?: boolean;
-      resolveMissingSubjects?: boolean;
       confirmedAt?: number;
     } = {},
   ) {
     const previous = this.lastAccount;
     const account = await this.account();
     if (previous && previous.key !== account.key) return;
-    const version = this.accountVersion;
     const seen = new Set<string>();
     const records: RecordedListing[] = [];
     const changes: SaleChange[] = [];
-    const receipts: { auctionId: string; submittedAt: number }[] = [];
+    const receipts: ListingReceipt[] = [];
     for (const raw of Array.isArray(confirmations)
       ? confirmations.slice(0, 500)
       : []) {
@@ -762,9 +761,16 @@ export class GameClient implements KosmoraClient {
           continue;
         seen.add(id);
         const observed = this.observedAuctions.get(id);
-        const subject = observed?.subjectId ?? row.subjectId;
+        const copyId = listingCopyId(row.copyId) ?? observed?.copyId;
+        const relistOf = listingCopyId(row.relistOf);
+        const subject =
+          observed?.subjectId ??
+          row.subjectId ??
+          (relistOf && this.observedAuctions.get(relistOf)?.subjectId);
         changes.push({
           auctionId: id,
+          copyId,
+          relistOf,
           subjectId: validCardId(subject) ? subject : undefined,
           at:
             typeof confirmedAt === "number" &&
@@ -778,13 +784,23 @@ export class GameClient implements KosmoraClient {
         if (canceled || !savePrices) continue;
         const record = {
           id,
-          subjectId: observed?.subjectId ?? row.subjectId,
+          subjectId: subject,
           startPrice: observed?.startPrice ?? row.startPrice,
           submittedAt: row.submittedAt,
-          copyId: listingCopyId(row.copyId),
+          copyId,
         };
         if (validRecordedListing(record)) records.push(record);
-        else receipts.push({ auctionId: id, submittedAt: row.submittedAt });
+        else
+          receipts.push({
+            auctionId: id,
+            submittedAt: row.submittedAt,
+            copyId,
+            startPrice:
+              typeof record.startPrice === "string" &&
+              /^\d+$/.test(record.startPrice)
+                ? record.startPrice
+                : undefined,
+          });
       } catch {}
     }
     if (changes.length)
@@ -792,43 +808,6 @@ export class GameClient implements KosmoraClient {
         records,
         changes,
         ...(receipts.length && { receipts }),
-      });
-    // A cached game screen may submit just copy IDs (or just a relist fee).
-    // Resolve only unmatched successes, in one native read for the whole POST.
-    const missing = new Map(
-      changes
-        .filter((row) => !row.subjectId)
-        .map((row) => [row.auctionId, row]),
-    );
-    if (
-      !resolveMissingSubjects ||
-      canceled ||
-      !missing.size ||
-      version !== this.accountVersion
-    )
-      return;
-    const limits = { selling: Math.max(50, missing.size), sold: 1, unsold: 1 };
-    const raw = await this.read(listingPath(limits));
-    if (version !== this.accountVersion) return;
-    const rows = parseListingBatch(raw, account.key, limits).listings.filter(
-      (row) => row.group === "selling" && missing.has(row.id.toLowerCase()),
-    );
-    if (!rows.length) return;
-    if (savePrices)
-      await this.listingRequest(
-        "listingObserved",
-        account.key,
-        "0",
-        undefined,
-        { rows },
-      );
-    else
-      await this.listingRequest("listingRecord", account.key, "0", undefined, {
-        records: [],
-        changes: rows.map((row) => ({
-          ...missing.get(row.id.toLowerCase())!,
-          subjectId: row.subjectId,
-        })),
       });
   }
 

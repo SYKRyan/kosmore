@@ -5,13 +5,14 @@ export interface ListingConfirmation {
   auctionId: string;
   submittedAt: number;
   copyId?: string;
+  relistOf?: string;
   subjectId?: string;
   startPrice?: string;
 }
 
 export type ListingReceipt = Pick<
   ListingConfirmation,
-  "auctionId" | "submittedAt"
+  "auctionId" | "submittedAt" | "startPrice" | "copyId"
 >;
 export function validReceipt(value: unknown): value is ListingReceipt {
   try {
@@ -20,7 +21,10 @@ export function validReceipt(value: unknown): value is ListingReceipt {
     return (
       typeof row.submittedAt === "number" &&
       Number.isSafeInteger(row.submittedAt) &&
-      row.submittedAt > 0
+      row.submittedAt > 0 &&
+      (row.startPrice === undefined ||
+        amount(row.startPrice) === row.startPrice) &&
+      (row.copyId === undefined || listingCopyId(row.copyId) === row.copyId)
     );
   } catch {
     return false;
@@ -91,56 +95,93 @@ export function saleSubjects(value: unknown): Map<string, string> {
   return result;
 }
 
-export function listingConfirmations(
+type SubmittedItem = Pick<
+  ListingConfirmation,
+  "subjectId" | "copyId" | "relistOf" | "startPrice"
+>;
+
+export function listingSubmission(
   path: string,
   request: unknown,
+  subjects: ReadonlyMap<string, string>,
+  auctionSubjects: ReadonlyMap<string, string> = new Map(),
+) {
+  const batch = path === "/api/market/listings/batch";
+  const body =
+    request && typeof request === "object" && !Array.isArray(request)
+      ? object(request)
+      : {};
+  const items = new Map<string, SubmittedItem>();
+  const previous = path.endsWith("/relist")
+    ? listingCopyId(path.split("/")[3])
+    : undefined;
+  function capture(raw: unknown): SubmittedItem {
+    const item =
+      raw && typeof raw === "object" && !Array.isArray(raw) ? object(raw) : {};
+    const copyId = listingCopyId(item.instanceId);
+    const relistOf = previous ?? listingCopyId(item.relistOf);
+    const card =
+      item.card && typeof item.card === "object" && !Array.isArray(item.card)
+        ? object(item.card)
+        : undefined;
+    const subject =
+      listingSubjectId(item.subjectId ?? card?.subjectId) ??
+      (copyId && subjects.get(copyId)) ??
+      (relistOf && auctionSubjects.get(relistOf));
+    const startPrice =
+      typeof item.startPrice === "string" && /^\d+$/.test(item.startPrice)
+        ? item.startPrice
+        : undefined;
+    return {
+      copyId,
+      subjectId: subject,
+      startPrice,
+      ...(relistOf && { relistOf }),
+    };
+  }
+  if (batch && Array.isArray(body.items))
+    for (const raw of body.items) {
+      const item = capture(raw);
+      if (item.copyId) items.set(item.copyId, item);
+    }
+  return { batch, items, single: batch ? undefined : capture(body) };
+}
+
+export function listingConfirmations(
+  submission: ReturnType<typeof listingSubmission>,
   response: unknown,
   submittedAt: number,
   subjects: ReadonlyMap<string, string>,
-  auctionSubjects: ReadonlyMap<string, string> = new Map(),
+  auctionSubjects: ReadonlyMap<string, string>,
 ): ListingConfirmation[] {
   const result = object(response);
-  const batch = path === "/api/market/listings/batch";
-  const rows =
-    batch && Array.isArray(result.results)
+  const { batch, items, single } = submission;
+  const rows = batch
+    ? Array.isArray(result.results)
       ? result.results
-      : batch
-        ? []
-        : [result];
-  const body = request && typeof request === "object" ? object(request) : {};
-  const items = batch && Array.isArray(body.items) ? body.items : [body];
-  const submittedSubjects = saleSubjects(body);
-  const prices = new Map<string, string>();
-  const relistedSubjects = new Map<string, string>();
-  for (const raw of items) {
-    try {
-      const item = object(raw);
-      const copy = uuid(item.instanceId).toLowerCase();
-      const previous = listingCopyId(item.relistOf);
-      const subject = previous && auctionSubjects.get(previous);
-      if (subject) relistedSubjects.set(copy, subject);
-      prices.set(copy, amount(item.startPrice));
-    } catch {
-      // An auction detail can supply the price for a relist or unknown body.
-    }
-  }
+      : []
+    : [result];
   return rows.flatMap((raw) => {
     try {
       const row = object(raw);
       if (row.ok === false || (batch && row.ok !== true)) return [];
       const auctionId = uuid(row.auctionId).toLowerCase();
-      const copyId = listingCopyId(row.instanceId ?? body.instanceId);
+      const copyId = listingCopyId(row.instanceId) ?? single?.copyId;
+      const item =
+        single && (!single.copyId || single.copyId === copyId)
+          ? single
+          : copyId
+            ? items.get(copyId)
+            : undefined;
       const reportedSubject =
         row.subjectId ?? (row.card && object(row.card).subjectId);
       const subject =
         listingSubjectId(reportedSubject) ??
-        (copyId &&
-          (submittedSubjects.get(copyId) ??
-            subjects.get(copyId) ??
-            relistedSubjects.get(copyId)));
-      let price = copyId && prices.get(copyId);
-      const reportedPrice =
-        row.startPrice ?? (!batch ? body.startPrice : undefined);
+        item?.subjectId ??
+        (copyId && subjects.get(copyId)) ??
+        (item?.relistOf && auctionSubjects.get(item.relistOf));
+      let price = item?.startPrice;
+      const reportedPrice = row.startPrice;
       if (reportedPrice !== undefined) {
         try {
           price = amount(reportedPrice);
@@ -153,6 +194,7 @@ export function listingConfirmations(
           auctionId,
           submittedAt,
           copyId,
+          ...(item?.relistOf && { relistOf: item.relistOf }),
           subjectId: subject,
           startPrice: price,
         },

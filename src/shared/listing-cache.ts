@@ -125,7 +125,7 @@ export class ListingCacheService {
   updateSaleStatus(
     account: string,
     changes: SaleChange[],
-    identities: PersonalListing[] = [],
+    identities: Pick<PersonalListing, "id" | "subjectId" | "copyId">[] = [],
     observed?: ListedCopies & { subjectId: string },
   ) {
     return this.write(async () => {
@@ -156,6 +156,7 @@ export class ListingCacheService {
       const next = { changes: auctions, copies };
       if (JSON.stringify(previous) !== JSON.stringify(next))
         await this.local.set({ [key]: next });
+      return auctions;
     });
   }
   private decode(raw: unknown, legacy: unknown, subject: string): Tracked {

@@ -1,3 +1,4 @@
+import type { SaleChange } from "./shared/sale-status";
 import {
   validRecordedListing,
   type RecordedListing,
@@ -88,6 +89,22 @@ export class ListingHistorySync {
 
   importVerified(handle: string) {
     return this.store.importVerified(handle);
+  }
+
+  async knownSubjects(handle: string, changes: SaleChange[]) {
+    const missing = changes.filter(
+      (row) => !row.subjectId && (row.copyId || row.relistOf),
+    );
+    if (!missing.length) return [];
+    const link = await this.link();
+    const matches = link?.handle === handle;
+    const identities = await this.store.knownSubjects(
+      handle,
+      matches ? link.scope : undefined,
+      missing,
+    );
+    if (matches) link.signal.throwIfAborted();
+    return identities;
   }
 
   async latest(handle: string, subject: string) {

@@ -2,6 +2,10 @@ import type { ListingHistorySync } from "./listing-history-sync";
 import { isRequest } from "./shared/messages";
 import { ListingCacheService } from "./shared/listing-cache";
 import { messageOf } from "./shared/types";
+import {
+  validRecordedListing,
+  type ListingReceipt,
+} from "./kosmora/listing-capture";
 
 export function installListingBackground(history: ListingHistorySync) {
   const service = new ListingCacheService(
@@ -27,11 +31,13 @@ export function installListingBackground(history: ListingHistorySync) {
       return false;
     void (async () => {
       const { accountKey, subjectId } = message;
-      if (message.op === "listingCopiesObserved")
-        return service.updateSaleStatus(accountKey, [], [], {
+      if (message.op === "listingCopiesObserved") {
+        await service.updateSaleStatus(accountKey, [], [], {
           subjectId,
           ...message.copies,
         });
+        return null;
+      }
       if (message.op === "listingAccountVerified")
         return history.importVerified(accountKey);
       if (message.op === "listingSavedPrice")
@@ -39,13 +45,37 @@ export function installListingBackground(history: ListingHistorySync) {
       if (message.op === "listingCache")
         return service.tracked(accountKey, subjectId);
       if (message.op === "listingRecord") {
-        if (message.changes?.length)
-          await service.updateSaleStatus(accountKey, message.changes);
-        if (!message.records.length && !message.receipts?.length) return null;
-        await history.record(accountKey, message.records, message.receipts);
-        await service.record(accountKey, message.records);
+        const changes = message.changes ?? [];
+        const identities = await history
+          .knownSubjects(accountKey, changes)
+          .catch(() => []);
+        const auctions = changes.length
+          ? await service.updateSaleStatus(accountKey, changes, identities)
+          : undefined;
+        const records = [...message.records];
+        const receipts: ListingReceipt[] = [];
+        for (const {
+          auctionId,
+          submittedAt,
+          copyId,
+          startPrice,
+        } of message.receipts ?? []) {
+          const row = {
+            id: auctionId,
+            subjectId: auctions?.[auctionId]?.subjectId,
+            submittedAt,
+            copyId: copyId ?? auctions?.[auctionId]?.copyId,
+            startPrice,
+          };
+          if (validRecordedListing(row)) records.push(row);
+          else receipts.push({ auctionId, submittedAt });
+        }
+        if (!records.length && !receipts.length) return null;
+        await history.record(accountKey, records, receipts);
+        await service.record(accountKey, records);
       } else if (message.op === "listingObserved") {
         await service.updateSaleStatus(accountKey, [], message.rows);
+        if (message.saveHistory === false) return null;
         const resolved = await history.observe(accountKey, message.rows);
         if (resolved.length) await service.record(accountKey, resolved);
         await service.observe(accountKey, message.rows);

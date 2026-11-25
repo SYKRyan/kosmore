@@ -55,6 +55,7 @@ export type Request =
       accountKey: string;
       subjectId: string;
       rows: PersonalListing[];
+      saveHistory?: boolean;
     }
   | {
       requestId: string;
@@ -147,6 +148,7 @@ export function isRequest(x: unknown): x is Request {
         /^[a-z0-9_]{1,24}$/.test(r.accountKey) &&
         r.subjectId === "0" &&
         Array.isArray(r.rows) &&
+        (r.saveHistory === undefined || typeof r.saveHistory === "boolean") &&
         r.rows.length <= 500 &&
         r.rows.every(validPersonalListing)) ||
       ([

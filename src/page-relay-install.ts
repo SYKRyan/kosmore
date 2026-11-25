@@ -1,7 +1,9 @@
 import { validCardId } from "./shared/services";
 import { parseOpening } from "./kosmora/contracts";
+import { salesTargets } from "./kosmora/sales";
 import {
   listingConfirmations,
+  listingSubmission,
   listingSubjectId,
   saleSubjects,
 } from "./kosmora/listing-capture";
@@ -452,6 +454,47 @@ export function installPageRelay(win: Window = window) {
                 .then(() => JSON.parse(init.body as string))
                 .catch(() => undefined)
             : listingRequest?.json().catch(() => undefined);
+        const submission = Promise.resolve(body).then((request) => {
+          const submitted = listingSubmission(
+            url.pathname,
+            request,
+            subjects,
+            auctionSubjects,
+          );
+          const matchingForm = submitted.batch
+            ? "/market/sell/batch"
+            : "/market/sell";
+          if (
+            trackPrices &&
+            win.document &&
+            sellPage.pathname === matchingForm &&
+            win.location.href === sellPage.href &&
+            (submitted.batch
+              ? Array.from(submitted.items.values()).some(
+                  (item) => !item.subjectId,
+                )
+              : submitted.single?.copyId &&
+                !submitted.single.subjectId &&
+                !submitted.single.relistOf)
+          ) {
+            try {
+              const targets = salesTargets(win.document);
+              for (const target of targets.values()) {
+                const item =
+                  submitted.single && targets.size === 1
+                    ? submitted.single
+                    : target.copyId
+                      ? submitted.items.get(target.copyId)
+                      : undefined;
+                if (item && (!target.copyId || target.copyId === item.copyId))
+                  item.subjectId ??= target.context.subjectId;
+              }
+            } catch {
+              // The game may already have replaced the form.
+            }
+          }
+          return submitted;
+        });
         void response
           .then(async (res) => {
             if (!res.ok) return;
@@ -460,19 +503,12 @@ export function installPageRelay(win: Window = window) {
             // A native sale may follow a collection read before its cloned body finishes decoding.
             if (trackPrices) await Promise.allSettled(decodingSubjects);
             const listings = listingConfirmations(
-              url.pathname,
-              await body,
+              await submission,
               result,
               submittedAt,
               subjects,
               auctionSubjects,
             );
-            if (url.pathname.endsWith("/relist")) {
-              const subject = auctionSubjects.get(
-                url.pathname.split("/")[3].toLowerCase(),
-              );
-              for (const row of listings) row.subjectId ??= subject;
-            }
             if (
               listings.length ||
               (url.pathname.endsWith("/batch") && result?.listed > 0)

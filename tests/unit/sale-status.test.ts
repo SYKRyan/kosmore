@@ -64,3 +64,20 @@ it("respects a native correction even if an empty Services cache is read afterwa
     }),
   ).toBeUndefined();
 });
+
+it("carries the copy and card identity from the previous auction to a confirmed relist", () => {
+  const at = Date.now();
+  const prior = auction(1).id,
+    relisted = auction(2).id,
+    copyId = auction(3).id;
+  const changes = updateSaleChanges(
+    { [prior]: { listed: at - 10, subjectId: "42", copyId } },
+    [{ kind: "listed", at, auctionId: relisted, relistOf: prior }],
+    [],
+  );
+  expect(changes[relisted]).toMatchObject({
+    listed: at,
+    subjectId: "42",
+    copyId,
+  });
+});

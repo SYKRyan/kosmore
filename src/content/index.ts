@@ -144,12 +144,14 @@ window.addEventListener("message", (event) => {
           event.data.data,
         );
       const ownAuction = AUCTION_DETAILS_PATH.exec(url.pathname);
-      if (ownAuction && event.data.data && tracksListingPrices())
+      const saveHistory = tracksListingPrices();
+      const trackListings = saveHistory || tracksSaleStatus();
+      if (ownAuction && event.data.data && trackListings)
         void client
-          .observeOwnAuction(ownAuction[1], event.data.data)
+          .observeOwnAuction(ownAuction[1], event.data.data, saveHistory)
           .catch(() => {});
-      if (url.pathname === "/api/me/auctions" && tracksListingPrices())
-        void client.observeOwnListings(event.data.data).catch(() => {});
+      if (url.pathname === "/api/me/auctions" && trackListings)
+        void client.observeOwnListings(event.data.data, saveHistory).catch(() => {});
       if (url.pathname === "/api/collection")
         client.observeCollection(url.href, event.data.data);
       return;
@@ -176,7 +178,6 @@ window.addEventListener("message", (event) => {
       void client
         .captureListings(event.data.listings, {
           savePrices: trackPrices,
-          resolveMissingSubjects: tracksSaleStatus(),
           confirmedAt: event.data.confirmedAt,
         })
         .catch(() => {});

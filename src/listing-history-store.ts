@@ -5,6 +5,7 @@ import {
   type RecordedListing,
 } from "./kosmora/listing-capture";
 import { LISTING_PRICE_KEY } from "./shared/listing-cache";
+import type { SaleChange } from "./shared/sale-status";
 
 export interface HistoryState {
   generation?: number;
@@ -41,16 +42,26 @@ export class ListingHistoryStore {
 
   private open() {
     return (this.database ??= new Promise<IDBDatabase>((resolve, reject) => {
-      const open = indexedDB.open("kosmore.confirmed-listings", 1);
-      open.onupgradeneeded = () => {
-        const rows = open.result.createObjectStore("records", {
-          keyPath: "seq",
-          autoIncrement: true,
-        });
-        rows.createIndex("auction", ["owner", "id"], { unique: true });
-        rows.createIndex("latest", ["owner", "subjectId", "submittedAt", "id"]);
-        rows.createIndex("outbox", ["owner", "seq"]);
-        open.result.createObjectStore("state");
+      const open = indexedDB.open("kosmore.confirmed-listings", 2);
+      open.onupgradeneeded = (event) => {
+        if (event.oldVersion < 1) {
+          const rows = open.result.createObjectStore("records", {
+            keyPath: "seq",
+            autoIncrement: true,
+          });
+          rows.createIndex("auction", ["owner", "id"], { unique: true });
+          rows.createIndex("latest", [
+            "owner",
+            "subjectId",
+            "submittedAt",
+            "id",
+          ]);
+          rows.createIndex("outbox", ["owner", "seq"]);
+          open.result.createObjectStore("state");
+        }
+        open
+          .transaction!.objectStore("records")
+          .createIndex("copy", ["owner", "copyId", "submittedAt"]);
       };
       open.onsuccess = () => resolve(open.result);
       open.onerror = () => reject(open.error);
@@ -208,6 +219,44 @@ export class ListingHistoryStore {
       if (await value(state.get(marker))) return;
       await this.insert(rows, localOwner(handle), records, true);
       await value(state.put(true, marker));
+    });
+  }
+
+  async knownSubjects(
+    handle: string,
+    scope: string | undefined,
+    changes: SaleChange[],
+  ) {
+    await this.importVerified(handle);
+    return this.transaction("readonly", async (rows, state) => {
+      const cutoff: number = (await value(state.get("cutoff:" + handle))) ?? 0;
+      const owners = [localOwner(handle), ...(scope ? [scope] : [])];
+      const identities: { id: string; subjectId: string; copyId?: string }[] =
+        [];
+      for (const { auctionId, relistOf, copyId } of changes) {
+        for (const owner of owners) {
+          let record: Stored | undefined;
+          if (relistOf)
+            record = await value(rows.index("auction").get([owner, relistOf]));
+          if ((!record || record.submittedAt <= cutoff) && copyId) {
+            const range = IDBKeyRange.bound(
+              [owner, copyId, cutoff + 1],
+              [owner, copyId, max],
+            );
+            record = (await value(rows.index("copy").openCursor(range, "prev")))
+              ?.value;
+          }
+          if (record && record.submittedAt > cutoff) {
+            identities.push({
+              id: auctionId,
+              subjectId: record.subjectId,
+              copyId: copyId ?? record.copyId,
+            });
+            break;
+          }
+        }
+      }
+      return identities;
     });
   }
 

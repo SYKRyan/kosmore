@@ -43,17 +43,59 @@ test("confirmed changes update album and collection labels across tabs", async (
       failedCopy = auction(11).id;
     const batchListing = auction(12).id,
       relisted = auction(13).id;
+    const unknownRelist = auction(14).id;
+    const historicalCopy = auction(15).id,
+      historicalSale = auction(16).id;
+    // An existing profile has an auction index but no copy index yet.
+    await worker.evaluate(
+      ({ copyId, id }) =>
+        new Promise<void>((resolve, reject) => {
+          const open = indexedDB.open("kosmore.confirmed-listings", 1);
+          open.onupgradeneeded = () => {
+            const rows = open.result.createObjectStore("records", {
+              keyPath: "seq",
+              autoIncrement: true,
+            });
+            rows.createIndex("auction", ["owner", "id"], { unique: true });
+            rows.createIndex("latest", [
+              "owner",
+              "subjectId",
+              "submittedAt",
+              "id",
+            ]);
+            rows.createIndex("outbox", ["owner", "seq"]);
+            open.result.createObjectStore("state");
+            rows.add({
+              owner: "local:fixtureplayer",
+              copyId,
+              id,
+              subjectId: "42",
+              startPrice: "123",
+              submittedAt: Date.now() - 86400000,
+            });
+          };
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            open.result.close();
+            resolve();
+          };
+        }),
+      { copyId: historicalCopy, id: auction(17).id },
+    );
     let listingReads = 0;
     let rejectCancel = false;
     let nativeListing: string | undefined;
     await context.route("https://kosmora.io/**", (route) => {
       const path = new URL(route.request().url()).pathname;
       if (path === "/api/me") return route.fulfill({ json: me });
-      if (path === "/api/me/auctions") {
+      if (
+        route.request().method() === "GET" &&
+        (path === "/api/me/auctions" || path.startsWith("/api/auctions/"))
+      ) {
         listingReads++;
         return route.fulfill({
           json: myListingPage([
-            myListing(13, "42", {
+            myListing(14, "42", {
               group: "selling",
               state: "open",
               endsAt: "2099-01-01",
@@ -87,7 +129,11 @@ test("confirmed changes update album and collection labels across tabs", async (
                 },
         });
       if (path.endsWith("/relist"))
-        return route.fulfill({ json: { auctionId: relisted } });
+        return route.fulfill({
+          json: {
+            auctionId: path.includes(batchListing) ? relisted : unknownRelist,
+          },
+        });
       if (path === "/api/collection/42") {
         const detail = card();
         return route.fulfill({
@@ -105,9 +151,11 @@ test("confirmed changes update album and collection labels across tabs", async (
         return route.fulfill({
           json: {
             auctionId:
-              route.request().postDataJSON().instanceId === COPY_A
-                ? first
-                : second,
+              route.request().postDataJSON().instanceId === historicalCopy
+                ? historicalSale
+                : route.request().postDataJSON().instanceId === COPY_A
+                  ? first
+                  : second,
           },
         });
       if (route.request().method() === "DELETE")
@@ -172,6 +220,18 @@ test("confirmed changes update album and collection labels across tabs", async (
     );
     await expect(albumLabel).toHaveCount(0);
     await expect(collectionLabel).toHaveCount(0);
+    // Enable price capture for the batch so a later tab can resolve its auction from history.
+    await worker.evaluate(async () => {
+      const key = "kosmore.settings";
+      const settings = (await chrome.storage.local.get(key))[key] as object;
+      await chrome.storage.local.set({
+        [key]: {
+          ...settings,
+          salesOverlaysEnabled: true,
+          showSalesMyLastListing: true,
+        },
+      });
+    });
     const sell = await context.newPage();
     await sell.goto("https://kosmora.io/market/sell/batch");
     await sell.evaluate(
@@ -196,16 +256,69 @@ test("confirmed changes update album and collection labels across tabs", async (
     expect(listingReads).toBe(0);
     await cancel(batchListing);
     await expect(albumLabel).toHaveCount(0);
+    await expect
+      .poll(() =>
+        worker.evaluate(async (id) => {
+          const key = "kosmore.listingRecord.fixtureplayer.42";
+          const record = (await chrome.storage.local.get(key))[key] as
+            { listings: { id: string }[] } | undefined;
+          return record?.listings.some((row) => row.id === id);
+        }, batchListing),
+      )
+      .toBe(true);
+    // Age this auction out of the short-lived overlay cache, retaining the
+    // other copies' cancellations and the longer-lived saved price history.
+    await worker.evaluate(async (id) => {
+      const key = "kosmore.saleStatus.fixtureplayer";
+      const cache = (await chrome.storage.local.get(key))[key] as {
+        changes: Record<string, unknown>;
+      };
+      delete cache.changes[id];
+      await chrome.storage.local.set({ [key]: cache });
+    }, batchListing);
+    await sell.reload();
     await sell.evaluate(
       (previous) =>
         fetch("/api/auctions/" + previous + "/relist", {
           method: "POST",
           body: JSON.stringify({ expectedFee: "123" }),
         }).then((r) => r.ok),
-      auction(99).id,
+      batchListing,
     );
     await expect(albumLabel).toBeVisible();
     await expect(collectionLabel).toBeVisible();
+    expect(listingReads).toBe(0);
+    await cancel(relisted);
+    await expect(albumLabel).toHaveCount(0);
+    await sell.evaluate(
+      (old) =>
+        fetch("/api/auctions/" + old + "/relist", {
+          method: "POST",
+          body: JSON.stringify({ expectedFee: "123" }),
+        }).then((r) => r.ok),
+      auction(99).id,
+    );
+    await expect
+      .poll(() =>
+        worker.evaluate(async (id) => {
+          const key = "kosmore.saleStatus.fixtureplayer";
+          const cache = (await chrome.storage.local.get(key))[key] as {
+            changes: Record<string, { listed?: number }>;
+          };
+          return !!cache?.changes[id]?.listed;
+        }, unknownRelist),
+      )
+      .toBe(true);
+    expect(listingReads).toBe(0);
+    await expect(albumLabel).toHaveCount(0);
+    // The game itself subsequently opens My Auctions.
+    await sell.evaluate(() => fetch("/api/me/auctions").then((r) => r.json()));
+    await expect(albumLabel).toBeVisible();
+    expect(listingReads).toBe(1);
+    await cancel(unknownRelist);
+    await expect(albumLabel).toHaveCount(0);
+    await listed(historicalCopy);
+    await expect(albumLabel).toBeVisible();
     expect(listingReads).toBe(1);
   } finally {
     await context.close();

@@ -8,11 +8,15 @@ const retention = 24 * 60 * 60_000;
 export interface SaleChange {
   auctionId: string;
   subjectId?: string;
+  copyId?: string;
+  relistOf?: string;
   at: number;
   kind: "listed" | "canceled";
 }
 interface AuctionChange {
   subjectId?: string;
+  copyId?: string;
+  relistOf?: string;
   listed?: number;
   canceled?: number;
 }
@@ -31,6 +35,10 @@ export function validSaleChange(change: SaleChange) {
     typeof change.auctionId === "string" &&
     listingCopyId(change.auctionId) === change.auctionId &&
     (change.subjectId === undefined || validCardId(change.subjectId)) &&
+    (change.copyId === undefined ||
+      listingCopyId(change.copyId) === change.copyId) &&
+    (change.relistOf === undefined ||
+      listingCopyId(change.relistOf) === change.relistOf) &&
     (change.kind === "listed" || change.kind === "canceled") &&
     Number.isSafeInteger(change.at) &&
     change.at > 0 &&
@@ -41,22 +49,38 @@ export function validSaleChange(change: SaleChange) {
 export function updateSaleChanges(
   previous: SaleChanges,
   changes: SaleChange[],
-  identities: { id: string; subjectId: string }[],
+  identities: { id: string; subjectId: string; copyId?: string }[],
   now = Date.now(),
 ) {
   const next = { ...previous };
-  for (const { auctionId, subjectId, kind, at } of changes) {
+  for (const { auctionId, subjectId, copyId, relistOf, kind, at } of changes) {
     const row = next[auctionId];
     next[auctionId] = {
       ...row,
       subjectId: row?.subjectId ?? subjectId,
+      ...(copyId && { copyId }),
+      ...(relistOf && { relistOf }),
       [kind]: Math.min(row?.[kind] ?? at, at),
     };
   }
-  for (const { id, subjectId } of identities) {
-    const auction = id.toLowerCase();
-    if (next[auction] && !next[auction].subjectId)
-      next[auction] = { ...next[auction], subjectId };
+  const byAuction = new Map(Object.entries(next));
+  for (const item of identities) byAuction.set(item.id.toLowerCase(), item);
+  const byCopy = new Map<string, string>();
+  for (const { copyId, subjectId } of byAuction.values())
+    if (copyId && subjectId) byCopy.set(copyId, subjectId);
+  for (const [id, row] of Object.entries(next)) {
+    const observed = byAuction.get(id);
+    const previous = row.relistOf ? byAuction.get(row.relistOf) : undefined;
+    const copyId = row.copyId ?? observed?.copyId ?? previous?.copyId;
+    const subjectId =
+      row.subjectId ??
+      observed?.subjectId ??
+      previous?.subjectId ??
+      (copyId && byCopy.get(copyId));
+    if (subjectId === row.subjectId && copyId === row.copyId) continue;
+    next[id] = { ...row, subjectId, copyId };
+    byAuction.set(id, next[id]);
+    if (subjectId && copyId) byCopy.set(copyId, subjectId);
   }
   for (const [id, row] of Object.entries(next))
     if (Math.max(row.listed ?? 0, row.canceled ?? 0) <= now - retention)

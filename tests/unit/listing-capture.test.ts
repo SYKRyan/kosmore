@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import {
   listingConfirmations,
+  listingSubmission,
   saleSubjects,
 } from "../../src/kosmora/listing-capture";
 import { auction } from "../fixtures/auctions";
@@ -23,10 +24,15 @@ it("matches successful batch results by instance ID even when the response chang
       { instanceId: failed, startPrice: "3000000" },
     ],
   };
+  const submission = listingSubmission(
+    "/api/market/listings/batch",
+    body,
+    subjects,
+  );
+  subjects.clear(); // The selection can change while the POST is in flight.
   expect(
     listingConfirmations(
-      "/api/market/listings/batch",
-      body,
+      submission,
       {
         results: [
           { instanceId: second, ok: true, auctionId: auction(12).id },
@@ -36,6 +42,7 @@ it("matches successful batch results by instance ID even when the response chang
       },
       100,
       subjects,
+      new Map(),
     ),
   ).toEqual([
     {
@@ -59,13 +66,17 @@ it("leaves relist details for verification against the new auction ID", () => {
   const auctionId = auction(2).id;
   expect(
     listingConfirmations(
-      `/api/auctions/${auction(1).id}/relist`,
-      { expectedFee: "1" },
+      listingSubmission(
+        `/api/auctions/${auction(1).id}/relist`,
+        { expectedFee: "1" },
+        new Map(),
+      ),
       { auctionId },
       100,
       new Map(),
+      new Map(),
     ),
-  ).toMatchObject([{ auctionId, submittedAt: 100 }]);
+  ).toMatchObject([{ auctionId, submittedAt: 100, relistOf: auction(1).id }]);
 });
 
 it("matches a successful Relist All row to its previous auction by the submitted copy", () => {
@@ -74,20 +85,25 @@ it("matches a successful Relist All row to its previous auction by the submitted
   const newAuction = auction(3).id;
   expect(
     listingConfirmations(
-      "/api/market/listings/batch",
-      {
-        items: [
-          { instanceId: copy, relistOf: oldAuction, startPrice: "1500000" },
-        ],
-      },
+      listingSubmission(
+        "/api/market/listings/batch",
+        {
+          items: [
+            { instanceId: copy, relistOf: oldAuction, startPrice: "1500000" },
+          ],
+        },
+        new Map(),
+        new Map([[oldAuction, "42"]]),
+      ),
       { results: [{ ok: true, instanceId: copy, auctionId: newAuction }] },
       100,
       new Map(),
-      new Map([[oldAuction, "42"]]),
+      new Map(),
     ),
   ).toEqual([
     {
       auctionId: newAuction,
+      relistOf: oldAuction,
       copyId: copy,
       subjectId: "42",
       startPrice: "1500000",

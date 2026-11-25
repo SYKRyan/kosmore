@@ -142,7 +142,7 @@ function w(e, t = f) {
 function T(t) {
 	try {
 		let n = e(t);
-		return i(n.auctionId), typeof n.submittedAt == "number" && Number.isSafeInteger(n.submittedAt) && n.submittedAt > 0;
+		return i(n.auctionId), typeof n.submittedAt == "number" && Number.isSafeInteger(n.submittedAt) && n.submittedAt > 0 && (n.startPrice === void 0 || a(n.startPrice) === n.startPrice) && (n.copyId === void 0 || m(n.copyId) === n.copyId);
 	} catch {
 		return !1;
 	}
@@ -296,24 +296,31 @@ function oe(t, n) {
 // src/shared/sale-status.ts
 var F = (e) => "kosmore.saleStatus." + e, I = 864e5;
 function L(e) {
-	return !!e && typeof e.auctionId == "string" && m(e.auctionId) === e.auctionId && (e.subjectId === void 0 || N(e.subjectId)) && (e.kind === "listed" || e.kind === "canceled") && Number.isSafeInteger(e.at) && e.at > 0 && e.at <= Date.now();
+	return !!e && typeof e.auctionId == "string" && m(e.auctionId) === e.auctionId && (e.subjectId === void 0 || N(e.subjectId)) && (e.copyId === void 0 || m(e.copyId) === e.copyId) && (e.relistOf === void 0 || m(e.relistOf) === e.relistOf) && (e.kind === "listed" || e.kind === "canceled") && Number.isSafeInteger(e.at) && e.at > 0 && e.at <= Date.now();
 }
 function se(e, t, n, r = Date.now()) {
 	let i = { ...e };
-	for (let { auctionId: e, subjectId: n, kind: r, at: a } of t) {
+	for (let { auctionId: e, subjectId: n, copyId: r, relistOf: a, kind: o, at: s } of t) {
 		let t = i[e];
 		i[e] = {
 			...t,
 			subjectId: t?.subjectId ?? n,
-			[r]: Math.min(t?.[r] ?? a, a)
+			...r && { copyId: r },
+			...a && { relistOf: a },
+			[o]: Math.min(t?.[o] ?? s, s)
 		};
 	}
-	for (let { id: e, subjectId: t } of n) {
-		let n = e.toLowerCase();
-		i[n] && !i[n].subjectId && (i[n] = {
-			...i[n],
-			subjectId: t
-		});
+	let a = new Map(Object.entries(i));
+	for (let e of n) a.set(e.id.toLowerCase(), e);
+	let o = /* @__PURE__ */ new Map();
+	for (let { copyId: e, subjectId: t } of a.values()) e && t && o.set(e, t);
+	for (let [e, t] of Object.entries(i)) {
+		let n = a.get(e), r = t.relistOf ? a.get(t.relistOf) : void 0, s = t.copyId ?? n?.copyId ?? r?.copyId, c = t.subjectId ?? n?.subjectId ?? r?.subjectId ?? (s && o.get(s));
+		(c !== t.subjectId || s !== t.copyId) && (i[e] = {
+			...t,
+			subjectId: c,
+			copyId: s
+		}, a.set(e, i[e]), c && s && o.set(s, c));
 	}
 	for (let [e, t] of Object.entries(i)) Math.max(t.listed ?? 0, t.canceled ?? 0) <= r - I && delete i[e];
 	return i;
@@ -323,7 +330,7 @@ var R = (e) => typeof e == "string" && /^[a-zA-Z0-9_-]{1,80}$/.test(e);
 function ce(e) {
 	if (!e || typeof e != "object") return !1;
 	let t = e;
-	return R(t.requestId) && (t.op === "listingCopiesObserved" && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && /^[1-9]\d{0,17}$/.test(t.subjectId) && t.copies && Number.isSafeInteger(t.copies.at) && t.copies.at > 0 && t.copies.at <= Date.now() && Array.isArray(t.copies.auctionIds) && t.copies.auctionIds.every((e) => typeof e == "string" && m(e) === e) || t.op === "listingObserved" && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && t.subjectId === "0" && Array.isArray(t.rows) && t.rows.length <= 500 && t.rows.every(b) || [
+	return R(t.requestId) && (t.op === "listingCopiesObserved" && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && /^[1-9]\d{0,17}$/.test(t.subjectId) && t.copies && Number.isSafeInteger(t.copies.at) && t.copies.at > 0 && t.copies.at <= Date.now() && Array.isArray(t.copies.auctionIds) && t.copies.auctionIds.every((e) => typeof e == "string" && m(e) === e) || t.op === "listingObserved" && /^[a-z0-9_]{1,24}$/.test(t.accountKey) && t.subjectId === "0" && Array.isArray(t.rows) && (t.saveHistory === void 0 || typeof t.saveHistory == "boolean") && t.rows.length <= 500 && t.rows.every(b) || [
 		"listingCache",
 		"listingSavedPrice",
 		"listingAccountVerified",
@@ -754,7 +761,7 @@ function Ce(e, t = "per friend") {
 	return n;
 }
 // src/shared/settings.ts
-var q = "kosmore.settings", we = () => ({
+var we = "kosmore.settings", Te = () => ({
 	schemaVersion: 1,
 	enabled: !0,
 	disableHoverTooltipInPulsar: !1,
@@ -844,8 +851,8 @@ var q = "kosmore.settings", we = () => ({
 	pinnedAlbums: {},
 	pinnedAlbumHotkeys: {}
 });
-function Te(e) {
-	let t = we();
+function Ee(e) {
+	let t = Te();
 	if (!e || typeof e != "object") return t;
 	let n = e;
 	if (n.schemaVersion !== 1) return t;
@@ -933,15 +940,15 @@ function Te(e) {
 	});
 	return t.pinnedAlbumHotkeys = pe(n.pinnedAlbumHotkeys, t.pinnedAlbums, t.hotkeys, t.packOpeningHotkeys, t.hoverTooltipHotkeys), t;
 }
-async function Ee() {
-	return Te((await chrome.storage.local.get(q))[q]);
+async function De() {
+	return Ee((await chrome.storage.local.get(we))[we]);
 }
-async function De(e) {
-	await chrome.storage.local.set({ [q]: Te(e) });
+async function Oe(e) {
+	await chrome.storage.local.set({ [we]: Ee(e) });
 }
 // src/shared/listing-cache.ts
-var Oe = "kosmore.myListingPrices", J = "kosmore.listingHistory.", ke = (e) => e > 0 && Date.now() - e < 3e5, Ae = (e, t) => f.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), je = () => new DOMException("Listing lookup canceled.", "AbortError");
-function Me(e, t) {
+var ke = "kosmore.myListingPrices", q = "kosmore.listingHistory.", Ae = (e) => e > 0 && Date.now() - e < 3e5, je = (e, t) => f.every((n) => e.counts[n] >= e.totals[n] || e.limits[n] >= t[n]), Me = () => new DOMException("Listing lookup canceled.", "AbortError");
+function Ne(e, t) {
 	let n = new Map(t.map((e) => [e.id, e])), r = new Map(e.map((e) => [e.id, e])), i = /* @__PURE__ */ new Map(), a = [];
 	for (let t of e) n.has(t.id) ? (i.set(t.id, a), a = []) : a.push(t);
 	if (!i.size) return [...e, ...t];
@@ -963,7 +970,7 @@ function Me(e, t) {
 	}
 	return o.concat(a);
 }
-var Ne = class {
+var Pe = class {
 	local;
 	session;
 	writes = Promise.resolve();
@@ -994,7 +1001,7 @@ var Ne = class {
 				changes: o,
 				copies: c
 			};
-			JSON.stringify(a) !== JSON.stringify(l) && await this.local.set({ [i]: l });
+			return JSON.stringify(a) !== JSON.stringify(l) && await this.local.set({ [i]: l }), o;
 		});
 	}
 	decode(e, t, n) {
@@ -1026,7 +1033,7 @@ var Ne = class {
 		return i;
 	}
 	async readTracked(e, t) {
-		let n = t.map((t) => this.key(e, t)), r = await this.local.get(n), i = n.some((e) => r[e] === void 0) ? await (this.legacyIndex ??= this.local.get(Oe).then((e) => e[Oe]).catch(() => {
+		let n = t.map((t) => this.key(e, t)), r = await this.local.get(n), i = n.some((e) => r[e] === void 0) ? await (this.legacyIndex ??= this.local.get(ke).then((e) => e[ke]).catch(() => {
 			this.legacyIndex = void 0;
 		})) : void 0;
 		return t.map((t, a) => this.decode(r[n[a]], i?.entries?.[`${e}:${t}`], t));
@@ -1120,7 +1127,7 @@ var Ne = class {
 			i.throwIfAborted();
 			let a = [...t.keys()], o = await this.readTracked(e, a), s = {};
 			for (let [i, c] of a.entries()) {
-				let a = o[i], l = t.get(c).map((e) => this.serverRow(e)), u = Me(a.listings, l), d = a.listings[0], f = !d || l.some((e) => e.id === d.id) && n >= (d.submittedAt ?? a.checkedAt), p = f ? l[0]?.id ?? d?.id : d.id, m = u.findIndex((e) => e.id === p);
+				let a = o[i], l = t.get(c).map((e) => this.serverRow(e)), u = Ne(a.listings, l), d = a.listings[0], f = !d || l.some((e) => e.id === d.id) && n >= (d.submittedAt ?? a.checkedAt), p = f ? l[0]?.id ?? d?.id : d.id, m = u.findIndex((e) => e.id === p);
 				m > 0 && u.unshift(...u.splice(m, 1)), s[this.key(e, c)] = this.saveState(a, u, r, f ? Math.max(n, a.checkedAt) : a.checkedAt);
 			}
 			i.throwIfAborted(), await this.local.set(s);
@@ -1129,7 +1136,7 @@ var Ne = class {
 	async history(e, t, n, r, i, a) {
 		let o = Date.now(), s = await this.batch(e);
 		i.throwIfAborted();
-		let c = n === "refresh", l = s && ke(s.fetchedAt) ? s : void 0, u = c ? {
+		let c = n === "refresh", l = s && Ae(s.fetchedAt) ? s : void 0, u = c ? {
 			selling: 180,
 			sold: 180,
 			unsold: 180
@@ -1150,7 +1157,7 @@ var Ne = class {
 	}
 	async invalidate(e) {
 		this.epochs.set(e, (this.epochs.get(e) ?? 0) + 1), await this.write(async () => {
-			let t = J + e, n = await this.session.get(t);
+			let t = q + e, n = await this.session.get(t);
 			x(n[t]) && await this.session.set({ [t]: {
 				...n[t],
 				fetchedAt: 0
@@ -1160,7 +1167,7 @@ var Ne = class {
 	async saveBatch(e, t, n) {
 		await this.write(async () => {
 			if (this.epochs.get(e) !== n) return;
-			let r = await this.session.get(null), i = J + e, a = Object.keys(r).filter((e) => e.startsWith(J)), o = JSON.stringify(t).length * 2;
+			let r = await this.session.get(null), i = q + e, a = Object.keys(r).filter((e) => e.startsWith(q)), o = JSON.stringify(t).length * 2;
 			if (o > 6e6) return;
 			let s = a.filter((e) => e !== i).sort((e, t) => Number(r[e]?.fetchedAt ?? 0) - Number(r[t]?.fetchedAt ?? 0));
 			o += s.reduce((e, t) => e + JSON.stringify(r[t]).length * 2, 0);
@@ -1174,7 +1181,7 @@ var Ne = class {
 	}
 	async batch(e) {
 		await this.writes;
-		let t = J + e, n = (await this.session.get(t))[t];
+		let t = q + e, n = (await this.session.get(t))[t];
 		return x(n) ? n : void 0;
 	}
 	async ensure(e, t, n, r, i = !1) {
@@ -1182,7 +1189,7 @@ var Ne = class {
 			let a = this.epochs.get(e);
 			if (!i) {
 				let n = await this.batch(e);
-				if (r.throwIfAborted(), n && ke(n.fetchedAt) && Ae(n, t)) return n;
+				if (r.throwIfAborted(), n && Ae(n.fetchedAt) && je(n, t)) return n;
 			}
 			let o = this.pending.get(e);
 			if (!o || o.controller.signal.aborted) {
@@ -1218,7 +1225,7 @@ var Ne = class {
 					if (o && i.fetchedAt <= o.fetchedAt && (i = {
 						...i,
 						fetchedAt: o.fetchedAt + 1
-					}), o && ke(o.fetchedAt)) {
+					}), o && Ae(o.fetchedAt)) {
 						for (let e of f) if (n.limits[e] > o.limits[e] && i.counts[e] <= o.counts[e] && i.counts[e] < i.totals[e]) throw Error("Your listing history stopped before all auctions were returned.");
 					}
 					return await this.saveBatch(e, i, a), i;
@@ -1229,7 +1236,7 @@ var Ne = class {
 				n.promise.then(r, r);
 			} else if (!o.started) for (let e of f) o.limits[e] = Math.max(o.limits[e], t[e]);
 			let s = await this.consume(o, n, r);
-			if (r.throwIfAborted(), Ae(s, t)) return s;
+			if (r.throwIfAborted(), je(s, t)) return s;
 			i = !1;
 		}
 	}
@@ -1241,7 +1248,7 @@ var Ne = class {
 				let r = e.readers.get(t) - 1;
 				return r ? e.readers.set(t, r) : e.readers.delete(t), e.users || e.controller.abort(), !0;
 			}, s = () => {
-				o() && i(je());
+				o() && i(Me());
 			};
 			n.addEventListener("abort", s, { once: !0 }), n.aborted ? s() : e.promise.then((e) => {
 				o() && r(e);
@@ -1252,22 +1259,36 @@ var Ne = class {
 	}
 };
 // src/listing-background.ts
-function Pe(e) {
-	let t = new Ne(chrome.storage.local, chrome.storage.session);
+function Fe(e) {
+	let t = new Pe(chrome.storage.local, chrome.storage.session);
 	chrome.runtime.onMessage.addListener((n, r, i) => r.id !== chrome.runtime.id || r.tab?.id === void 0 || r.frameId !== 0 || !r.url?.startsWith("https://kosmora.io/") || !ce(n) || n.op !== "listingCache" && n.op !== "listingSavedPrice" && n.op !== "listingAccountVerified" && n.op !== "listingRecord" && n.op !== "listingCopiesObserved" && n.op !== "listingObserved" ? !1 : ((async () => {
 		let { accountKey: r, subjectId: i } = n;
-		if (n.op === "listingCopiesObserved") return t.updateSaleStatus(r, [], [], {
+		if (n.op === "listingCopiesObserved") return await t.updateSaleStatus(r, [], [], {
 			subjectId: i,
 			...n.copies
-		});
+		}), null;
 		if (n.op === "listingAccountVerified") return e.importVerified(r);
 		if (n.op === "listingSavedPrice") return e.latest(r, i);
 		if (n.op === "listingCache") return t.tracked(r, i);
 		if (n.op === "listingRecord") {
-			if (n.changes?.length && await t.updateSaleStatus(r, n.changes), !n.records.length && !n.receipts?.length) return null;
-			await e.record(r, n.records, n.receipts), await t.record(r, n.records);
+			let i = n.changes ?? [], a = await e.knownSubjects(r, i).catch(() => []), o = i.length ? await t.updateSaleStatus(r, i, a) : void 0, s = [...n.records], c = [];
+			for (let { auctionId: e, submittedAt: t, copyId: r, startPrice: i } of n.receipts ?? []) {
+				let n = {
+					id: e,
+					subjectId: o?.[e]?.subjectId,
+					submittedAt: t,
+					copyId: r ?? o?.[e]?.copyId,
+					startPrice: i
+				};
+				E(n) ? s.push(n) : c.push({
+					auctionId: e,
+					submittedAt: t
+				});
+			}
+			if (!s.length && !c.length) return null;
+			await e.record(r, s, c), await t.record(r, s);
 		} else if (n.op === "listingObserved") {
-			await t.updateSaleStatus(r, [], n.rows);
+			if (await t.updateSaleStatus(r, [], n.rows), n.saveHistory === !1) return null;
 			let i = await e.observe(r, n.rows);
 			i.length && await t.record(r, i), await t.observe(r, n.rows);
 		}
@@ -1288,11 +1309,11 @@ function Pe(e) {
 	})), !0));
 }
 // src/listing-history-store.ts
-var Fe = () => ({
+var Ie = () => ({
 	cursor: 0,
 	uploaded: 0,
 	erasedAt: 0
-}), Ie = 2 ** 53 - 1, Y = (e) => "local:" + e;
+}), J = 2 ** 53 - 1, Y = (e) => "local:" + e;
 function X(e) {
 	return new Promise((t, n) => {
 		e.onsuccess = () => t(e.result), e.onerror = () => n(e.error);
@@ -1303,18 +1324,25 @@ var Le = class {
 	imports = /* @__PURE__ */ new Map();
 	open() {
 		return this.database ??= new Promise((e, t) => {
-			let n = indexedDB.open("kosmore.confirmed-listings", 1);
-			n.onupgradeneeded = () => {
-				let e = n.result.createObjectStore("records", {
-					keyPath: "seq",
-					autoIncrement: !0
-				});
-				e.createIndex("auction", ["owner", "id"], { unique: !0 }), e.createIndex("latest", [
+			let n = indexedDB.open("kosmore.confirmed-listings", 2);
+			n.onupgradeneeded = (e) => {
+				if (e.oldVersion < 1) {
+					let e = n.result.createObjectStore("records", {
+						keyPath: "seq",
+						autoIncrement: !0
+					});
+					e.createIndex("auction", ["owner", "id"], { unique: !0 }), e.createIndex("latest", [
+						"owner",
+						"subjectId",
+						"submittedAt",
+						"id"
+					]), e.createIndex("outbox", ["owner", "seq"]), n.result.createObjectStore("state");
+				}
+				n.transaction.objectStore("records").createIndex("copy", [
 					"owner",
-					"subjectId",
-					"submittedAt",
-					"id"
-				]), e.createIndex("outbox", ["owner", "seq"]), n.result.createObjectStore("state");
+					"copyId",
+					"submittedAt"
+				]);
 			}, n.onsuccess = () => e(n.result), n.onerror = () => t(n.error);
 		}).catch((e) => {
 			throw this.database = void 0, e;
@@ -1400,10 +1428,39 @@ var Le = class {
 			let n = e.slice(r.length);
 			if ("latest" in t && a(n, t.latest), "listings" in t && Array.isArray(t.listings)) for (let e of t.listings) a(n, e);
 		}
-		let o = n[Oe];
+		let o = n[ke];
 		for (let [t, n] of Object.entries(o?.entries ?? {})) t.startsWith(e + ":") && a(t.slice(e.length + 1), n?.listing);
 		await this.transaction("readwrite", async (n, r) => {
 			await X(r.get(t)) || (await this.insert(n, Y(e), i, !0), await X(r.put(!0, t)));
+		});
+	}
+	async knownSubjects(e, t, n) {
+		return await this.importVerified(e), this.transaction("readonly", async (r, i) => {
+			let a = await X(i.get("cutoff:" + e)) ?? 0, o = [Y(e), ...t ? [t] : []], s = [];
+			for (let { auctionId: e, relistOf: t, copyId: i } of n) for (let n of o) {
+				let o;
+				if (t && (o = await X(r.index("auction").get([n, t]))), (!o || o.submittedAt <= a) && i) {
+					let e = IDBKeyRange.bound([
+						n,
+						i,
+						a + 1
+					], [
+						n,
+						i,
+						J
+					]);
+					o = (await X(r.index("copy").openCursor(e, "prev")))?.value;
+				}
+				if (o && o.submittedAt > a) {
+					s.push({
+						id: e,
+						subjectId: o.subjectId,
+						copyId: i ?? o.copyId
+					});
+					break;
+				}
+			}
+			return s;
 		});
 	}
 	async latest(e, t, n) {
@@ -1417,7 +1474,7 @@ var Le = class {
 				], [
 					e,
 					n,
-					Ie,
+					J,
 					[]
 				]);
 				return (await X(r.index("latest").openCursor(t, "prev")))?.value;
@@ -1425,10 +1482,10 @@ var Le = class {
 		});
 	}
 	state(e) {
-		return this.transaction("readonly", async (t, n) => await X(n.get(e)) ?? Fe());
+		return this.transaction("readonly", async (t, n) => await X(n.get(e)) ?? Ie());
 	}
 	pending(e, t) {
-		return this.transaction("readonly", (n) => X(n.index("outbox").getAll(IDBKeyRange.bound([Y(e), t + 1], [Y(e), Ie]), 40)));
+		return this.transaction("readonly", (n) => X(n.index("outbox").getAll(IDBKeyRange.bound([Y(e), t + 1], [Y(e), J]), 40)));
 	}
 	acknowledge(e, t, n) {
 		return this.transaction("readwrite", async (r, i) => {
@@ -1441,14 +1498,14 @@ var Le = class {
 	}
 	apply(e, t, n) {
 		return this.transaction("readwrite", async (r, i) => {
-			let a = await X(i.get(e)) ?? Fe();
+			let a = await X(i.get(e)) ?? Ie();
 			if (a.generation !== void 0 && n.generation < a.generation) return !1;
 			let o = a.generation !== n.generation;
 			if (!o && a.cursor > n.cursor) return !1;
 			if (o && n.erasedAt) {
 				let o = r.index("outbox");
 				for (let r of [e, Y(t)]) {
-					let t = IDBKeyRange.bound([r, 0], [r, Ie]), i = o.openCursor(t);
+					let t = IDBKeyRange.bound([r, 0], [r, J]), i = o.openCursor(t);
 					await new Promise((t, o) => {
 						i.onerror = () => o(i.error), i.onsuccess = () => {
 							let o = i.result;
@@ -1525,6 +1582,12 @@ var Ve = class {
 	}
 	importVerified(e) {
 		return this.store.importVerified(e);
+	}
+	async knownSubjects(e, t) {
+		let n = t.filter((e) => !e.subjectId && (e.copyId || e.relistOf));
+		if (!n.length) return [];
+		let r = await this.link(), i = r?.handle === e, a = await this.store.knownSubjects(e, i ? r.scope : void 0, n);
+		return i && r.signal.throwIfAborted(), a;
 	}
 	async latest(e, t) {
 		let n = await this.link(), r = n?.handle === e, i = await this.store.latest(e, r ? n.scope : void 0, t);
@@ -2178,7 +2241,7 @@ function Ke() {
 	}), S;
 }
 // src/background.ts
-Pe(Ke());
+Fe(Ke());
 var qe = Promise.resolve();
 chrome.tabs.onRemoved.addListener((e) => {
 	chrome.storage.session.remove([`${O}${e}`, `${te}${e}`]);
@@ -2199,8 +2262,8 @@ chrome.tabs.onRemoved.addListener((e) => {
 				pinned: n.pinned,
 				position: n.position
 			} }), a.position || a.width !== void 0 || a.height !== void 0) {
-				let e = await Ee();
-				a.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = A(a.position)), a.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(a.width)), a.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(a.height)), await De(e);
+				let e = await De();
+				a.position && (e[r ? "friendTooltipPosition" : "popupPosition"] = A(a.position)), a.width !== void 0 && (e[r ? "friendTooltipWidth" : "popupWidth"] = Math.round(a.width)), a.height !== void 0 && (e[r ? "friendTooltipHeight" : "popupHeight"] = Math.round(a.height)), await Oe(e);
 			}
 			return n;
 		});
