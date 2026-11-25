@@ -1,4 +1,3 @@
-import { LISTING_REFRESH_LABEL } from "../kosmora/my-listings";
 import type { KosmoraClient, Settings } from "../shared/types";
 import { messageOf } from "../shared/types";
 import {
@@ -29,12 +28,12 @@ import {
   type CardSignals,
   type OverlaySettings,
 } from "./card-signals";
-import { cardIcon, headerIcon } from "./icons";
+import { cardIcon } from "./icons";
 import { MARKET_BADGE_CSS, numberOneIcon, auctionBidSuffix } from "./signal-badges";
 import { el } from "./ui";
 import { observePage, affected, type PageChanges } from "./page-changes";
 
-const STYLE = `:host{display:block;margin:6px 0 10px;font:12px/1.4 system-ui,sans-serif;color:#ece7f3}:host([hidden]){display:none}.badges{display:flex;flex-wrap:wrap;gap:6px}.price-badge{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-height:28px;box-sizing:border-box;padding:4px 8px;border:1px solid;border-radius:6px;font:inherit;box-shadow:0 1px 5px #0005}button{cursor:pointer}button:hover{filter:brightness(1.2)}button:focus-visible{outline:2px solid #e7cb84;outline-offset:3px}button:disabled{cursor:default;opacity:.65}svg{display:block;flex-shrink:0}.history-controls{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%}.history-check{padding:4px;color:#ead6ab;background:#211831;border-color:#584869}.history-check svg{width:14px;height:14px}.amount{overflow-wrap:anywhere}[data-kosmore-sales-warning="row"]{display:block;font-weight:600;margin-bottom:6px}.quick-prices{margin-top:6px}.badges:empty+.quick-prices{margin-top:0}.quick-prices-label{display:block;margin-bottom:4px;color:#d4c6e4}.discount,.quick-price{color:#ffe3af;background:#2c2039;border-color:#796143}.status{font-size:11px;color:#b9dcbc;margin-top:4px}.status:empty{display:none}.status.loading{color:#c3b2d4}.status.error{color:#f3a6b1}${MARKET_BADGE_CSS}`;
+const STYLE = `:host{display:block;margin:6px 0 10px;font:12px/1.4 system-ui,sans-serif;color:#ece7f3}:host([hidden]){display:none}.badges{display:flex;flex-wrap:wrap;gap:6px}.price-badge{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-height:28px;box-sizing:border-box;padding:4px 8px;border:1px solid;border-radius:6px;font:inherit;box-shadow:0 1px 5px #0005}button{cursor:pointer}button:hover{filter:brightness(1.2)}button:focus-visible{outline:2px solid #e7cb84;outline-offset:3px}button:disabled{cursor:default;opacity:.65}svg{display:block;flex-shrink:0}.history-controls{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:100%}.history-check{padding:4px;color:#ead6ab;background:#211831;border-color:#584869}.amount{overflow-wrap:anywhere}[data-kosmore-sales-warning="row"]{display:block;font-weight:600;margin-bottom:6px}.quick-prices{margin-top:6px}.badges:empty+.quick-prices{margin-top:0}.quick-prices-label{display:block;margin-bottom:4px;color:#d4c6e4}.discount,.quick-price{color:#ffe3af;background:#2c2039;border-color:#796143}.status{font-size:11px;color:#b9dcbc;margin-top:4px}.status:empty{display:none}.status.loading{color:#c3b2d4}.status.error{color:#f3a6b1}${MARKET_BADGE_CSS}`;
 interface OverlaySize {
   width: number;
   height: number;
@@ -74,6 +73,9 @@ const KEYS = [
   "showSalesLastSale",
   "salesLastSaleSetsPrice",
   "salesLastSaleAdjustment",
+  "showSalesMedian",
+  "salesMedianSetsPrice",
+  "salesMedianAdjustment",
   "showSalesLowestListing",
   "salesLowestListingSetsPrice",
   "salesLowestListingAdjustment",
@@ -233,8 +235,7 @@ export class SalesOverlays {
     return (
       /^\/market\/sell(?:\/batch)?$/.test(location.pathname) &&
       this.settings?.salesOverlaysEnabled &&
-      (this.settings.showSalesLastSale ||
-        this.settings.showSalesLowestListing ||
+      (this.showsMarketPrices() ||
         this.settings.showSalesMyLastListing ||
         this.settings.salesDiscountEnabled ||
         this.settings.salesCustomMinimumsEnabled ||
@@ -435,7 +436,7 @@ export class SalesOverlays {
   }
   private showsMarketPrices() {
     return !!(
-      this.settings?.showSalesLastSale || this.settings?.showSalesLowestListing
+      this.settings?.showSalesLastSale || this.settings?.showSalesMedian || this.settings?.showSalesLowestListing
     );
   }
   private selectedCopy(target: SalesTarget) {
@@ -461,7 +462,7 @@ export class SalesOverlays {
       showOnSaleOverlay: false,
       showFriendInterestOverlay: false,
       showQuestOverlay: false,
-      showSaleHistoryOverlay: s.showSalesLastSale,
+      showSaleHistoryOverlay: s.showSalesLastSale || s.showSalesMedian,
       showLastSalePriceOverlay: true,
       showActiveAuctionsOverlay: s.showSalesLowestListing,
       showLowestListingPriceOverlay: true,
@@ -496,7 +497,7 @@ export class SalesOverlays {
     const previous = entry.signals;
     const previousError = entry.error;
     const marketJob =
-      this.settings!.showSalesLastSale || this.settings!.showSalesLowestListing
+      this.showsMarketPrices()
         ? this.provider
             .get(
               context.subjectId,
@@ -561,7 +562,7 @@ export class SalesOverlays {
       else if (entry.visible) void this.loadMyPrice(entry);
     }
   }
-  private async loadMyPrice(entry: Entry, refresh = false) {
+  private async loadMyPrice(entry: Entry, verifyAccount = false) {
     if (
       !(
         this.settings?.showSalesMyLastListing ||
@@ -571,7 +572,8 @@ export class SalesOverlays {
       document.hidden ||
       !entry.visible ||
       entry.mineRequest ||
-      (entry.mineResolved && !refresh) ||
+      (entry.mineResolved && !verifyAccount) ||
+      (verifyAccount && !!entry.myAccount) ||
       !this.valid(entry)
     )
       return;
@@ -579,7 +581,7 @@ export class SalesOverlays {
       this.loseListingContext();
       return;
     }
-    if (refresh && Date.now() < this.notBefore) {
+    if (verifyAccount && Date.now() < this.notBefore) {
       entry.mineError =
         "Your listing history is temporarily unavailable. Try again shortly.";
       this.render(entry);
@@ -589,7 +591,7 @@ export class SalesOverlays {
     const request = new AbortController(),
       generation = this.generation;
     entry.mineRequest = request;
-    entry.mineLoading = refresh;
+    entry.mineLoading = verifyAccount;
     entry.mineError = undefined;
     entry.discountPrice = undefined;
     const valid = () =>
@@ -599,7 +601,7 @@ export class SalesOverlays {
     this.render(entry);
     try {
       const account =
-        refresh || this.settings!.salesDiscountEnabled
+        verifyAccount || this.settings!.salesDiscountEnabled
           ? await this.client.account(
               request.signal,
               !this.client.displayAccount,
@@ -707,29 +709,37 @@ export class SalesOverlays {
     }
     const s = this.settings!;
     let historyBadge: HTMLElement | undefined;
-    for (const [kind, label, visible, clickable, adjustment, price] of [
+    for (const [kind, label, showKey, clickKey, adjustmentKey, price] of [
       [
         "sale",
         "Last Sale:",
-        s.showSalesLastSale,
-        s.salesLastSaleSetsPrice,
-        s.salesLastSaleAdjustment,
+        "showSalesLastSale",
+        "salesLastSaleSetsPrice",
+        "salesLastSaleAdjustment",
         entry.signals?.lastSale?.price,
+      ],
+      [
+        "sale",
+        "Median:",
+        "showSalesMedian",
+        "salesMedianSetsPrice",
+        "salesMedianAdjustment",
+        entry.signals?.medianPrice,
       ],
       [
         "auction",
         "Lowest Listed:",
-        s.showSalesLowestListing,
-        s.salesLowestListingSetsPrice,
-        s.salesLowestListingAdjustment,
+        "showSalesLowestListing",
+        "salesLowestListingSetsPrice",
+        "salesLowestListingAdjustment",
         entry.signals?.lowestListing?.price,
       ],
       [
         "history",
         "My Last Listing:",
-        s.showSalesMyLastListing,
-        s.salesMyLastListingSetsPrice,
-        s.salesMyLastListingAdjustment,
+        "showSalesMyLastListing",
+        "salesMyLastListingSetsPrice",
+        "salesMyLastListingAdjustment",
         entry.myPrice,
       ],
     ] as const) {
@@ -739,14 +749,15 @@ export class SalesOverlays {
           : kind === "history"
             ? true
             : entry.signals?.activeAuctions;
-      if (!visible || !hasData) continue;
+      if (!s[showKey] || !hasData) continue;
+      const adjustment = s[adjustmentKey];
       const stale =
         kind === "sale"
           ? entry.signals?.staleLastSale
           : kind === "auction"
             ? entry.signals?.staleListingPrice
             : false;
-      const canClick = clickable && price !== undefined && !stale;
+      const canClick = s[clickKey] && price !== undefined && !stale;
       const badge = canClick
         ? el("button", `price-badge ${kind}`)
         : el("span", `price-badge ${kind}`);
@@ -761,7 +772,7 @@ export class SalesOverlays {
           : `$${formatKosmo(price)}${bids}`;
       badge.append(cardIcon(kind), el("span", "amount", `${label} ${text}`));
       if (
-        kind === "sale" &&
+        showKey === "showSalesLastSale" &&
         price !== undefined &&
         entry.signals?.lastSale?.numberOne
       )
@@ -780,8 +791,6 @@ export class SalesOverlays {
         badge.title += " The starting price is read-only.";
       if (kind === "history" && entry.recordedAt)
         badge.title += ` Submitted ${new Date(entry.recordedAt).toLocaleString()}.`;
-      if (kind === "history" && entry.mineLoading && price !== undefined)
-        badge.title += " Saved price; checking for newer listings…";
       badge.setAttribute(
         "aria-label",
         `${label} ${text}${canClick ? `; set starting price with ${adjustment} Kosmo adjustment` : ""}${stale ? "; last known price" : ""}`,
@@ -795,16 +804,7 @@ export class SalesOverlays {
           if (!this.valid(entry) || !editableSalesInput(entry.target.input))
             return;
           const current = this.settings!;
-          if (
-            kind === "sale"
-              ? !current.showSalesLastSale || !current.salesLastSaleSetsPrice
-              : kind === "history"
-                ? !current.showSalesMyLastListing ||
-                  !current.salesMyLastListingSetsPrice
-                : !current.showSalesLowestListing ||
-                  !current.salesLowestListingSetsPrice
-          )
-            return;
+          if (!current[showKey] || !current[clickKey]) return;
           try {
             if (kind === "history") {
               const account = await this.client.account();
@@ -815,15 +815,9 @@ export class SalesOverlays {
               )
                 return;
             }
-            const offset =
-              kind === "sale"
-                ? current.salesLastSaleAdjustment
-                : kind === "history"
-                  ? current.salesMyLastListingAdjustment
-                  : current.salesLowestListingAdjustment;
             this.setPrice(
               entry,
-              adjustedSalePrice(price!, offset, this.minimum(entry)),
+              adjustedSalePrice(price!, current[adjustmentKey], this.minimum(entry)),
             );
           } catch (error) {
             entry.status.className = "status error";
@@ -842,20 +836,16 @@ export class SalesOverlays {
           ? this.discountButton(entry, entry.discountPrice)
           : undefined;
       if (discount) controls.append(discount);
-      if (!entry.myAccount || s.salesDiscountEnabled)
-        controls.append(this.refreshButton(entry));
-      entry.body.append(controls);
+      if (!entry.myAccount)
+        controls.append(this.verifyAccountButton(entry));
+      if (controls.childElementCount) entry.body.append(controls);
     }
     this.updateVisibility(entry);
   }
-  private refreshButton(entry: Entry) {
-    const check = el("button", "price-badge history-check");
+  private verifyAccountButton(entry: Entry) {
+    const check = el("button", "price-badge history-check", "Verify account");
     check.type = "button";
     check.disabled = this.listingContextLost || !!entry.mineRequest;
-    check.title = entry.myAccount ? LISTING_REFRESH_LABEL : "Verify account";
-    check.setAttribute("aria-label", check.title);
-    if (entry.myAccount) check.append(headerIcon("refresh"));
-    else check.textContent = "Verify account";
     check.addEventListener("click", (event) => {
       event.stopPropagation();
       void this.loadMyPrice(entry, true);

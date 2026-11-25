@@ -53,6 +53,7 @@ function values(): StoredValues {
       disableCardOverlaysInVortex: true,
       showVortexFamilyOverlay: false,
       useFamilyBlacklist: true,
+      socialEnabled: false,
       socialRemindersMasterEnabled: false,
       socialRemindersEnabled: false,
       socialRemindersPinned: true,
@@ -71,6 +72,7 @@ function values(): StoredValues {
           meta: false,
         },
       },
+      packOpeningsEnabled: false,
       packOpeningHotkeysEnabled: true,
       anyKeyDismissesFoundPack: false,
       autoSkipOpening: true,
@@ -239,11 +241,13 @@ it("imports older family settings and round-trips independent family impact choi
     delete old.settings.familyImpactOverlaysEnabled;
     delete old.settings.showSalesFamilyOverlay;
     delete old.settings.useFamilyBlacklist;
+    delete old.settings.socialEnabled;
     delete old.settings.socialRemindersMasterEnabled;
     delete old.settings.socialRemindersEnabled;
     delete old.settings.socialRemindersPinned;
     delete old.settings.packOpeningHotkeys;
     delete old.settings.hoverTooltipHotkeys;
+    delete old.settings.packOpeningsEnabled;
     delete old.settings.packOpeningHotkeysEnabled;
     delete old.settings.anyKeyDismissesFoundPack;
     delete old.settings.autoSkipOpening;
@@ -260,11 +264,13 @@ it("imports older family settings and round-trips independent family impact choi
       familyImpactOverlaysEnabled: true,
       showSalesFamilyOverlay: true,
       useFamilyBlacklist: false,
+      socialEnabled: true,
       socialRemindersMasterEnabled: true,
       socialRemindersEnabled: true,
       socialRemindersPinned: false,
       packOpeningHotkeys: {},
       hoverTooltipHotkeys: {},
+      packOpeningsEnabled: true,
       packOpeningHotkeysEnabled: false,
       anyKeyDismissesFoundPack: true,
       autoSkipOpening: false,

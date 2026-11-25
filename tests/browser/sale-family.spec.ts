@@ -12,7 +12,6 @@ import { launchTestBrowser } from "./browser";
 import { saleFamilyFixture, saleFamilyKeys } from "../fixtures/sale-family";
 import { singleSellFixture } from "../fixtures/sell-many";
 import { card, me, COPY_B, prices } from "../fixtures/data";
-import { myListing, myListingPage } from "../fixtures/my-listings";
 import { familyCatalog } from "../fixtures/families";
 import {
   familyMilestones,
@@ -364,64 +363,45 @@ for (const width of [1440, 390])
     }
   });
 
-for (const history of ["empty", "missing", "failed"] as const)
-  test(`sale listing history reads only on refresh and handles ${history}`, async () => {
-    let lookedUp = 0;
-    await page.route("**/api/me/auctions?**", (route) => {
-      lookedUp++;
-      return route.fulfill(
-        history === "empty"
-          ? { json: myListingPage([]) }
-          : {
-              status: history === "missing" ? 404 : 503,
-              json: {
-                code: history === "missing" ? "not_found" : "unavailable",
-              },
-            },
-      );
-    });
-    await worker.evaluate(async () => {
-      const saved = (await chrome.storage.local.get("kosmore.settings"))[
-        "kosmore.settings"
-      ] as object;
-      await chrome.storage.local.set({
-        "kosmore.settings": {
-          ...saved,
-          salesOverlaysEnabled: true,
-          showSalesLastSale: false,
-          showSalesLowestListing: false,
-        },
-      });
-    });
-    try {
-      for (const [i, path] of [
-        "/market/sell/batch?s=301",
-        "/market/sell?subject=301",
-      ].entries()) {
-        await page.goto("https://kosmora.io" + path);
-        const overlay = page.locator("[data-kosmore-sales-overlay]");
-        await expect(overlay.locator(".price-badge.history")).toContainText(
-          "—",
-        );
-        expect(lookedUp).toBe(i);
-        const refresh = overlay.getByRole("button", {
-          name: "Refresh my listing history",
-        });
-        await refresh.click();
-        await expect(refresh).toBeEnabled();
-        expect(lookedUp).toBe(i + 1);
-        if (history === "empty")
-          await expect(overlay.locator(".status.error")).toHaveCount(0);
-        else
-          await expect(overlay.locator(".status.error")).toContainText(
-            "Your listing history:",
-          );
-        await expect(page.locator("input").first()).toHaveValue("12.00");
-      }
-    } finally {
-      await page.unroute("**/api/me/auctions?**");
-    }
+test("both sell screens verify an unknown account without requesting auction history", async () => {
+  let lookedUp = 0;
+  await page.route("**/api/me/auctions?**", (route) => {
+    lookedUp++;
+    return route.abort();
   });
+  await worker.evaluate(async () => {
+    const saved = (await chrome.storage.local.get("kosmore.settings"))[
+      "kosmore.settings"
+    ] as object;
+    await chrome.storage.local.set({
+      "kosmore.settings": {
+        ...saved,
+        salesOverlaysEnabled: true,
+        showSalesLastSale: false,
+        showSalesLowestListing: false,
+      },
+    });
+  });
+  try {
+    for (const path of [
+      "/market/sell/batch?s=301",
+      "/market/sell?subject=301",
+    ]) {
+      await page.goto("https://kosmora.io" + path);
+      const overlay = page.locator("[data-kosmore-sales-overlay]");
+      await expect(overlay.locator(".price-badge.history")).toContainText(
+        "—",
+      );
+      await overlay.getByRole("button", { name: "Verify account" }).click();
+      await expect(overlay.locator(".price-badge.history")).toContainText("No recorded listing");
+      await expect(overlay.getByRole("button", { name: "Refresh my listing history" })).toHaveCount(0);
+      expect(lookedUp).toBe(0);
+      await expect(page.locator("input").first()).toHaveValue("12.00");
+    }
+  } finally {
+    await page.unroute("**/api/me/auctions?**");
+  }
+});
 
 test("sale family impact includes a restored batch that is filtered before content scripts load", async () => {
   await page.goto(
@@ -610,10 +590,10 @@ test("family impact settings follow section order, preserve preferences and save
         host.previousElementSibling?.id,
         host.nextElementSibling?.id,
       ]),
-    ).toEqual(["card-overlays", "friend-tooltip"]);
+    ).toEqual(["fusion", "social"]);
     const links = await options.locator("nav a").allTextContents();
     expect(links.indexOf("Family Impact Overlay")).toBe(
-      links.indexOf("Card Overlays") + 1,
+      links.indexOf("Fusion") + 1,
     );
     const sale = family.getByLabel("Show on Sell pages", { exact: true });
     await expect(sale).toBeChecked();
@@ -681,25 +661,7 @@ test("family impact settings follow section order, preserve preferences and save
   }
 });
 
-test("Sell Many holds the row layout through a history refresh and a native repaint", async () => {
-  let refresh = false;
-  let startRefresh!: () => void;
-  let finishRefresh!: () => void;
-  const started = new Promise<void>((resolve) => {
-    startRefresh = resolve;
-  });
-  const wait = new Promise<void>((resolve) => {
-    finishRefresh = resolve;
-  });
-  await page.route("**/api/me/auctions?**", async (route) => {
-    if (refresh) {
-      startRefresh();
-      await wait;
-    }
-    return route.fulfill({
-      json: myListingPage(refresh ? [] : [myListing(10, "301")]),
-    });
-  });
+test("Sell Many holds the saved-price row layout through a native repaint", async () => {
   try {
     await page.setViewportSize({ width: 390, height: 1000 });
     await worker.evaluate(async () => {
@@ -709,7 +671,7 @@ test("Sell Many holds the row layout through a history refresh and a native repa
         [key]: {
           ...saved,
           salesOverlaysEnabled: true,
-          showSalesLastSale: true,
+          showSalesLastSale: false,
           showSalesLowestListing: false,
           showSalesMyLastListing: true,
         },
@@ -719,9 +681,7 @@ test("Sell Many holds the row layout through a history refresh and a native repa
     const first = row("301");
     const prices = first.locator("[data-kosmore-sales-overlay]");
     const nextInput = row("302").locator("input");
-    await expect(first.locator(".verdict")).toHaveText("✓ Safe");
     await expect(prices.locator(".price-badge.history")).toBeVisible();
-    await expect(prices.locator(".price-badge.sale")).toBeVisible();
     await expect(prices).toHaveAttribute("aria-busy", "false");
     await prices.evaluate(
       () =>
@@ -744,25 +704,10 @@ test("Sell Many holds the row layout through a history refresh and a native repa
           return rect && [rect.top + scrollY, rect.height];
         });
       });
-    const check = first.getByRole("button", {
-      name: "Refresh my listing history",
-    });
-    await check.click();
-    await expect(prices.locator(".price-badge.history")).toContainText("$17");
-    await expect(prices).toHaveAttribute("aria-busy", "false");
+    await first.getByRole("button", { name: "Verify account" }).click();
+    await expect(prices.locator(".price-badge.history")).toContainText("No recorded listing");
     const before = await layout();
-    refresh = true;
-    await check.click();
-    await started;
-    await expect(prices).toHaveAttribute("aria-busy", "true");
-    expect(await layout()).toEqual(before);
     await nextInput.fill("24.50");
-    finishRefresh();
-    await expect(prices.locator(".price-badge.history")).toContainText("$17");
-    await expect(prices).toHaveAttribute("aria-busy", "false");
-    expect(await layout()).toEqual(before);
-    await expect(nextInput).toHaveValue("24.50");
-    await expect(nextInput).toBeFocused();
 
     // Mimic a draft repaint that replaces the native row in place.
     await first.evaluate((el) => {
@@ -773,14 +718,11 @@ test("Sell Many holds the row layout through a history refresh and a native repa
         overlay.remove();
       el.replaceWith(replacement);
     });
-    await expect(first.locator(".verdict")).toHaveText("✓ Safe");
-    await expect(prices.locator(".price-badge.sale")).toBeVisible();
+    await expect(prices.locator(".price-badge.history")).toContainText("No recorded listing");
     await expect(prices).toHaveAttribute("aria-busy", "false");
     expect(await layout()).toEqual(before);
     await expect(nextInput).toHaveValue("24.50");
   } finally {
-    finishRefresh();
-    await page.unroute("**/api/me/auctions?**");
     await page.setViewportSize({ width: 1440, height: 1000 });
   }
 });

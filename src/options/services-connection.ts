@@ -13,7 +13,8 @@ export function servicesConnection() {
   const field = el("label", "field");
   field.append(el("span", "", "KosMore Services API base URL"));
   const input = el("input");
-  input.type = "url";
+  input.type = "password";
+  input.inputMode = "url";
   input.required = true;
   input.autocomplete = "off";
   input.spellcheck = false;
@@ -90,7 +91,6 @@ export function servicesConnection() {
     controls,
     feedback,
     linkField,
-    el("div", "rule"),
   );
 
   let current: ConnectionStatus = { base: "" };

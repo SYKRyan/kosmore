@@ -1,4 +1,6 @@
 import { button, el } from "../content/ui";
+import { headerIcon } from "../content/icons";
+import { segmentedControl } from "./segmented-control";
 import type { Settings } from "../shared/types";
 import {
   SALE_MINIMUMS,
@@ -15,6 +17,9 @@ export const SALES_SETTINGS_KEYS = [
   "showSalesLastSale",
   "salesLastSaleSetsPrice",
   "salesLastSaleAdjustment",
+  "showSalesMedian",
+  "salesMedianSetsPrice",
+  "salesMedianAdjustment",
   "showSalesLowestListing",
   "salesLowestListingSetsPrice",
   "salesLowestListingAdjustment",
@@ -37,6 +42,13 @@ const OPTIONS = [
     click: "salesLastSaleSetsPrice",
     adjustment: "salesLastSaleAdjustment",
     help: "Last sale price for this finish in Kosmora’s 30-day history.",
+  },
+  {
+    name: "Median",
+    show: "showSalesMedian",
+    click: "salesMedianSetsPrice",
+    adjustment: "salesMedianAdjustment",
+    help: "Median sale price for this finish in Kosmora’s 30-day history.",
   },
   {
     name: "Lowest Listed",
@@ -62,7 +74,12 @@ type SubgroupKey =
 export class SalesSettings {
   readonly host = el("section", "panel");
   private discountAmount: HTMLInputElement;
-  private discountMode = el("select");
+  private discountMode = segmentedControl(
+    "salesDiscountMode",
+    "Discount type",
+    [["flat", "Flat"], ["percent", "Percent"]],
+    (salesDiscountMode) => this.change({ salesDiscountMode }),
+  );
   private discountThreshold: HTMLInputElement;
   private minimums = new Map<SaleRarity, HTMLInputElement>();
   private quickInput = el("input");
@@ -125,23 +142,8 @@ export class SalesSettings {
       (value) => change({ salesDiscountAmount: value }),
       { min: 1 },
     );
-    this.discountMode.id = "salesDiscountMode";
-    for (const [value, label] of [
-      ["flat", "Flat"],
-      ["percent", "Percent"],
-    ]) {
-      const option = el("option", "", label);
-      option.value = value;
-      this.discountMode.append(option);
-    }
-    this.discountMode.addEventListener("change", () =>
-      change({
-        salesDiscountMode:
-          this.discountMode.value === "percent" ? "percent" : "flat",
-      }),
-    );
-    const modeRow = this.settingRow("Discount type", this.discountMode);
-    modeRow.classList.add("sales-discount-mode");
+    const modeRow = el("div", "row settings-subsetting settings-subsetting-text sales-discount-mode");
+    modeRow.append(el("span", "", "Discount type"), this.discountMode.group);
     discount.append(modeRow);
     this.discountThreshold = this.numberSetting(
       discount,
@@ -206,12 +208,10 @@ export class SalesSettings {
       add();
     });
     const addRow = el("div", "quick-price-add");
-    addRow.append(button("Add price", add));
-    quick.append(
-      this.quickList,
-      this.settingRow("Price", this.quickInput),
-      addRow,
-    );
+    const priceLabel = el("label", "", "New Price");
+    priceLabel.htmlFor = this.quickInput.id;
+    addRow.append(priceLabel, this.quickInput, button("Add price", add));
+    quick.append(this.quickList, addRow);
   }
   private toggle(
     key: (typeof OPTIONS)[number]["show" | "click"] | SubgroupKey,
@@ -285,8 +285,16 @@ export class SalesSettings {
   private renderQuickPrices() {
     this.quickList.replaceChildren();
     for (const [index, price] of this.prices.entries()) {
-      const row = el("li", "row settings-subsetting settings-subsetting-text"),
-        actions = el("div", "quick-price-actions");
+      const row = el("li", "quick-price-choice"),
+        actions = el("div", "album-actions");
+      const remove = button("", () => {
+        this.setQuickPrices(this.prices.filter((_, i) => i !== index));
+        this.quickInput.focus();
+      }, "icon-remove");
+      remove.append(headerIcon("trash"));
+      remove.title = `Remove price ${price}`;
+      remove.setAttribute("aria-label", `Remove price ${index + 1}`);
+      actions.append(remove);
       for (const [delta, direction, arrow] of [
         [-1, "up", "↑"],
         [1, "down", "↓"],
@@ -300,20 +308,15 @@ export class SalesSettings {
           ];
           this.setQuickPrices(prices);
           this.quickList.children[destination]
-            ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+            ?.querySelector<HTMLButtonElement>("[data-move]:not(:disabled)")
             ?.focus();
-        });
+        }, "small ghost");
+        move.dataset.move = direction;
         move.disabled = destination < 0 || destination >= this.prices.length;
         move.setAttribute("aria-label", `Move price ${index + 1} ${direction}`);
         actions.append(move);
       }
-      const remove = button("Remove", () => {
-        this.setQuickPrices(this.prices.filter((_, i) => i !== index));
-        this.quickInput.focus();
-      });
-      remove.setAttribute("aria-label", `Remove price ${index + 1}`);
-      actions.append(remove);
-      row.append(el("span", "", String(price)), actions);
+      row.append(el("strong", "quick-price-value", String(price)), actions);
       this.quickList.append(row);
     }
   }
@@ -334,7 +337,7 @@ export class SalesSettings {
     for (const { key, toggle } of this.subgroups)
       toggle.checked = settings[key];
     this.discountAmount.value = String(settings.salesDiscountAmount);
-    this.discountMode.value = settings.salesDiscountMode;
+    this.discountMode.select(settings.salesDiscountMode);
     this.discountThreshold.value = String(settings.salesDiscountThreshold);
     this.minimumValues = settings.salesCustomMinimums;
     for (const [rarity, input] of this.minimums)

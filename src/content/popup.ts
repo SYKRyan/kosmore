@@ -64,7 +64,7 @@ import {
   type PopupPosition,
   type PopupTab,
 } from "../shared/popup-layout";
-import { lastSaleSummary } from "../shared/last-sale";
+import { salePriceSummary } from "../shared/last-sale";
 import { CardNotFoundError } from "../shared/services";
 export interface PopupPlacement {
   left: number;
@@ -1346,6 +1346,7 @@ export class Popup {
             false,
             undefined,
             this.context &&
+              this.settings.socialEnabled &&
               this.settings.friendTooltipEnabled &&
               this.friendTooltip
               ? (badge) =>
@@ -1470,17 +1471,18 @@ export class Popup {
     const finish = this.displayedFinish;
     if (!finish) return;
     const history = this.histories[finish];
-    const lastSale = lastSaleSummary(history);
-    this.lastSold.setAttribute("aria-disabled", String(!lastSale.label));
+    const useMedian = this.settings.useMedianOverlayPrice;
+    const sale = salePriceSummary(history, useMedian);
+    this.lastSold.setAttribute("aria-disabled", String(!sale.label));
     this.lastSold.replaceChildren(
       cardIcon("sale"),
-      el("span", "market-badge-label", lastSale.label ?? "Last Sale: -"),
+      el("span", "market-badge-label", sale.label ?? (useMedian ? "Median: -" : "Last Sale: -")),
     );
-    if (lastSale.numberOne) this.lastSold.append(numberOneIcon());
+    if (sale.numberOne) this.lastSold.append(numberOneIcon());
     const saleStale = this.staleHistories.has(finish);
     this.lastSold.toggleAttribute("data-stale-price", saleStale);
     this.lastSold.title =
-      lastSale.title + (saleStale ? " Last known price." : "");
+      sale.title + (saleStale ? " Last known price." : "");
     const listing = this.lowestListing;
     const price = listing && !(listing instanceof Error) ? listing : undefined;
     if (price && marketName) this.listedFor.href = marketSearchPath(marketName);

@@ -76,6 +76,7 @@ function gridCards(summary: HTMLElement): HTMLElement[] {
 }
 
 export class PackOpeningHotkeys {
+  private focusStyle = document.createElement("style");
   private url = location.href;
   private focused?: HTMLElement;
   private reveal?: {
@@ -115,7 +116,7 @@ export class PackOpeningHotkeys {
   ) {}
 
   start() {
-    const style = document.createElement("style");
+    const style = this.focusStyle;
     style.id = "kosmore-pack-hotkeys-style";
     const focusedSummaryButton = `button.ko-grid-open:is([${PACK_FOCUS}], :focus-visible)`;
     const summaryGrid = `${SUMMARY} .ko-grid`;
@@ -153,6 +154,7 @@ export class PackOpeningHotkeys {
         pointer-events: none;
       }
     `;
+    this.setEnabled(this.settings().packOpeningsEnabled);
     document.head.append(style);
     // A found-pack prompt gets first refusal before navigation shortcuts.
     window.addEventListener("keydown", this.onKeyDown, true);
@@ -178,8 +180,17 @@ export class PackOpeningHotkeys {
       this.reset();
     });
     observePage(() => this.pageChanged());
-    this.focusSummary();
-    this.dismissFoundPackAutomatically();
+    this.pageChanged();
+  }
+
+  setEnabled(enabled: boolean) {
+    this.focusStyle.media = enabled ? "all" : "not all";
+    if (enabled) return;
+    this.nextPackSkip = undefined;
+    this.summaryFocus = undefined;
+    this.revealedOpening = undefined;
+    this.handledKey = undefined;
+    this.reset();
   }
 
   reset() {
@@ -216,12 +227,13 @@ export class PackOpeningHotkeys {
   }
 
   inspectSummaryCard(context: CardContext) {
-    if (context.surface !== "summary" || context.entryIndex === 0) return;
+    if (!this.settings().packOpeningsEnabled || context.surface !== "summary" || context.entryIndex === 0) return;
     const summary = context.anchor.closest<HTMLElement>(SUMMARY);
     if (summary) this.cancelSummaryFocus(summary);
   }
 
   private onFocusIn = (event: FocusEvent) => {
+    if (!this.settings().packOpeningsEnabled) return;
     if (event.target instanceof Element && !this.keepsFocus(event.target)) {
       if (location.pathname === OPENING_PATH) {
         const drop = event.target.closest(".ko-drop");
@@ -240,6 +252,7 @@ export class PackOpeningHotkeys {
     if (
       location.pathname !== OPENING_PATH ||
       !settings.hotkeysEnabled ||
+      !settings.packOpeningsEnabled ||
       !settings.packOpeningHotkeysEnabled ||
       event.target === window ||
       event.defaultPrevented ||
@@ -412,6 +425,7 @@ export class PackOpeningHotkeys {
 
   private onPackClick = (event: MouseEvent) => {
     if (
+      !this.settings().packOpeningsEnabled ||
       location.pathname !== OPENING_PATH ||
       !(event.target instanceof Element)
     )
@@ -525,9 +539,10 @@ export class PackOpeningHotkeys {
   }
 
   dismissFoundPackAutomatically() {
-    const { packOpeningHotkeysEnabled, autoDismissFoundPack } = this.settings();
+    const { packOpeningsEnabled, packOpeningHotkeysEnabled, autoDismissFoundPack } = this.settings();
     if (
       location.pathname !== OPENING_PATH ||
+      !packOpeningsEnabled ||
       !packOpeningHotkeysEnabled ||
       !autoDismissFoundPack
     )
@@ -703,6 +718,7 @@ export class PackOpeningHotkeys {
   }
 
   private pageChanged() {
+    if (!this.settings().packOpeningsEnabled) return;
     this.autoSkip();
     this.focusSummary();
     this.dismissFoundPackAutomatically();

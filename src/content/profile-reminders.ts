@@ -118,6 +118,7 @@ export class ProfileReminders {
   private settings(raw: unknown) {
     const settings = parseSettings(raw);
     this.enabled =
+      settings.socialEnabled &&
       settings.socialRemindersMasterEnabled &&
       (this.kind === "social"
         ? settings.socialRemindersEnabled

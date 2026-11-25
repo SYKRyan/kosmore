@@ -62,6 +62,10 @@ export class TradeInterest {
     this.maybeCount(active);
   });
 
+  private get enabled() {
+    return this.settings.socialEnabled && this.settings.tradeRemindersEnabled;
+  }
+
   private maybeCount(active: Active) {
     if (
       active.visible &&
@@ -84,7 +88,7 @@ export class TradeInterest {
     observePage(() => {
       if (
         this.active ||
-        (this.settings.tradeRemindersEnabled &&
+        (this.enabled &&
           location.pathname === "/trades/new")
       )
         this.scan();
@@ -134,7 +138,7 @@ export class TradeInterest {
   }
   private scan(fresh = false) {
     const surface =
-      this.ready && this.settings.tradeRemindersEnabled ? tradeSurface() : null;
+      this.ready && this.enabled ? tradeSurface() : null;
     if (!surface) {
       this.clear();
       return;

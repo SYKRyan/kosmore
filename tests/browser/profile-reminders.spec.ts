@@ -559,6 +559,16 @@ test("master and page visibility apply live and retain pin preferences and notes
       })
       .click();
     await expect(section.getByRole("status")).toContainText("Saved.");
+    const socialMaster = options.getByRole("switch", { name: "Enable Social", exact: true });
+    await socialMaster.uncheck();
+    await expect(editor()).toHaveCount(0);
+    await expect(socialTrigger).toHaveCount(0);
+    await expect(master).toBeDisabled();
+    await options.reload();
+    await expect(socialMaster).not.toBeChecked();
+    await socialMaster.check();
+    await expect(editor()).toBeVisible();
+    await expect(socialTrigger).toBeVisible();
     await master.uncheck();
     await expect(editor()).toHaveCount(0);
     await expect(socialTrigger).toHaveCount(0);

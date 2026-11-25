@@ -497,6 +497,20 @@ test("trade settings follow Social Reminders, save independently, cancel drafts,
         .locator("#social-reminders")
         .evaluate((e) => e.nextElementSibling?.id),
     ).toBe("trade-reminders");
+    const socialMaster = options.getByRole("switch", { name: "Enable Social", exact: true });
+    await socialMaster.uncheck();
+    await expect(summary()).toHaveCount(0);
+    await expect(save).toBeDisabled();
+    await socialMaster.check();
+    await expect(summary()).toBeVisible();
+    // Counts use complete collection results observed from the native game.
+    await page.route("**/api/collection?**", route => route.fulfill({
+      json: { items: [row("1", "Common", 50)], nextCursor: null },
+    }));
+    await page.evaluate(async () => {
+      for (const family of ["films", "games"])
+        await (await fetch("/api/collection?status=available&split=1&sendable=1&family=" + family)).json();
+    });
     await expect(
       group.getByRole("switch", { name: "Use rarity symbols", exact: true }),
     ).toBeChecked();
@@ -585,7 +599,7 @@ test("trade settings follow Social Reminders, save independently, cancel drafts,
     expect(requests).toBe(before);
     await options.setViewportSize({ width: 390, height: 900 });
     await options
-      .getByRole("link", { name: "Trade Reminders", exact: true })
+      .getByRole("radio", { name: "Trade", exact: true })
       .click();
     expect(
       await options.evaluate(
@@ -893,7 +907,7 @@ test("trade notes settings validate sizes, save only their group, pin, cancel, a
     });
     await options.setViewportSize({ width: 390, height: 900 });
     await options
-      .getByRole("link", { name: "Trade Reminders", exact: true })
+      .getByRole("radio", { name: "Trade", exact: true })
       .click();
     await group.screenshot({
       path: "test-results/screenshots/trade-notes-settings-390.png",

@@ -40,14 +40,14 @@ export const FRIEND_TOOLTIP_KEYS = [
   ...FRIEND_TOOLTIP_NUMBERS.map(([field]) => field),
 ] as const;
 export class FriendTooltipSettings {
-  readonly host = el("section", "panel");
+  readonly host = el("section", "settings-subgroup");
   readonly inputs: {
     field: (typeof FRIEND_TOOLTIP_NUMBERS)[number][0];
     input: HTMLInputElement;
   }[] = [];
   constructor(change: (update: Partial<Settings>) => void) {
     this.host.append(
-      el("h2", "", "Friend Tooltip"),
+      el("h3", "", "Tooltip"),
       el(
         "p",
         "sub",

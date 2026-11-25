@@ -11,6 +11,7 @@ import {
   SALE_MINIMUMS,
   type SaleRarity,
   validDiscountThreshold,
+  validFusionThreshold,
   validSaleAdjustment,
   validSalePrice,
 } from "./sales-prices";
@@ -25,6 +26,7 @@ export const defaults = (): Settings => ({
   tooltipTakesFocus: false,
   outsideClickClosesTooltipOnly: false,
   fullScreenCenteredOnOpen: false,
+  socialEnabled: true,
   socialRemindersMasterEnabled: true,
   profileRemindersEnabled: true,
   profileRemindersPinned: false,
@@ -49,6 +51,7 @@ export const defaults = (): Settings => ({
   hotkeysEnabled: true,
   navigationHotkeysEnabled: true,
   hoverTooltipHotkeysEnabled: true,
+  packOpeningsEnabled: true,
   packOpeningHotkeysEnabled: false,
   anyKeyDismissesFoundPack: true,
   autoSkipOpening: false,
@@ -61,6 +64,9 @@ export const defaults = (): Settings => ({
   showSalesLastSale: true,
   salesLastSaleSetsPrice: true,
   salesLastSaleAdjustment: 0,
+  showSalesMedian: false,
+  salesMedianSetsPrice: true,
+  salesMedianAdjustment: 0,
   showSalesLowestListing: true,
   salesLowestListingSetsPrice: true,
   salesLowestListingAdjustment: 0,
@@ -86,12 +92,18 @@ export const defaults = (): Settings => ({
   popupPosition: null,
   showSaleHistoryOverlay: true,
   showLastSalePriceOverlay: true,
+  useMedianOverlayPrice: false,
   showActiveAuctionsOverlay: true,
   showLowestListingPriceOverlay: true,
   showAuctionBidCounts: true,
   showOnSaleOverlay: true,
   showFriendInterestOverlay: true,
   showQuestOverlay: true,
+  fusionSettingsEnabled: true,
+  fusionShowPriceWarning: true,
+  fusionWarningThreshold: 200,
+  fusionReviewOverlayButton: true,
+  fusionReviewOutsideClickOnly: true,
   familyImpactOverlaysEnabled: true,
   useFamilyBlacklist: false,
   familyBlacklist: [],
@@ -147,6 +159,7 @@ export function parseSettings(value: unknown): Settings {
     "tooltipTakesFocus",
     "outsideClickClosesTooltipOnly",
     "fullScreenCenteredOnOpen",
+    "socialEnabled",
     "socialRemindersMasterEnabled",
     "profileRemindersEnabled",
     "profileRemindersPinned",
@@ -160,6 +173,10 @@ export function parseSettings(value: unknown): Settings {
     "tradeNotesPinned",
     "showTradeFamilyOverlay",
     "showVortexFamilyOverlay",
+    "fusionSettingsEnabled",
+    "fusionShowPriceWarning",
+    "fusionReviewOverlayButton",
+    "fusionReviewOutsideClickOnly",
     "familyImpactOverlaysEnabled",
     "useFamilyBlacklist",
     "showSalesFamilyOverlay",
@@ -167,6 +184,7 @@ export function parseSettings(value: unknown): Settings {
     "hotkeysEnabled",
     "navigationHotkeysEnabled",
     "hoverTooltipHotkeysEnabled",
+    "packOpeningsEnabled",
     "packOpeningHotkeysEnabled",
     "anyKeyDismissesFoundPack",
     "autoSkipOpening",
@@ -177,6 +195,9 @@ export function parseSettings(value: unknown): Settings {
     "salesOverlaysEnabled",
     "showSalesLastSale",
     "salesLastSaleSetsPrice",
+    "showSalesMedian",
+    "salesMedianSetsPrice",
+    "useMedianOverlayPrice",
     "showSalesLowestListing",
     "salesLowestListingSetsPrice",
     "showSalesMyLastListing",
@@ -190,10 +211,13 @@ export function parseSettings(value: unknown): Settings {
     if (typeof v[key] === "boolean") d[key] = v[key];
   for (const key of [
     "salesLastSaleAdjustment",
+    "salesMedianAdjustment",
     "salesLowestListingAdjustment",
     "salesMyLastListingAdjustment",
   ] as const)
     if (validSaleAdjustment(v[key])) d[key] = v[key];
+  if (validFusionThreshold(v.fusionWarningThreshold))
+    d.fusionWarningThreshold = v.fusionWarningThreshold;
   if (validSalePrice(v.salesDiscountAmount, 1))
     d.salesDiscountAmount = v.salesDiscountAmount;
   if (v.salesDiscountMode === "percent") d.salesDiscountMode = "percent";

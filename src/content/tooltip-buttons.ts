@@ -2,6 +2,9 @@ import {
   cardOverlayTargets,
   cardOverlaysAllowed,
   contextKey,
+  FUSION_REVIEW_GRID,
+  inFusionReview,
+  isFusionPage,
   resolveCard,
   topDialog,
   MARKET_ACTIVITY_LINK,
@@ -72,11 +75,23 @@ export class TooltipButtons {
         entry.key === contextKey(context),
     );
   }
+  usesButton(anchor: Element, settings = this.settings) {
+    return (
+      !!settings &&
+      (settings.useOverlayButtonInsteadOfHover ||
+        (settings.fusionSettingsEnabled &&
+          settings.fusionReviewOverlayButton &&
+          inFusionReview(anchor)))
+    );
+  }
   private enabled() {
     return (
       this.settings &&
       settingsForPage(this.settings, location.pathname).enabled &&
-      this.settings.useOverlayButtonInsteadOfHover
+      (this.settings.useOverlayButtonInsteadOfHover ||
+        (this.settings.fusionSettingsEnabled &&
+          this.settings.fusionReviewOverlayButton &&
+          isFusionPage()))
     );
   }
   private contextOf(root: HTMLElement) {
@@ -129,8 +144,13 @@ export class TooltipButtons {
       return;
     }
     for (const [root, entry] of this.entries) {
-      if (changes && !affected(entry.summaryResize ? entry.mount : root, changes)) continue;
-      const context = root.isConnected ? this.contextOf(root) : null;
+      if (
+        changes &&
+        !affected(entry.summaryResize ? entry.mount : root, changes)
+      )
+        continue;
+      const context =
+        root.isConnected && this.usesButton(root) ? this.contextOf(root) : null;
       if (
         !context ||
         contextKey(context) !== entry.key ||
@@ -144,8 +164,16 @@ export class TooltipButtons {
         if (entry.summaryResize) this.positionSummaryButton(entry);
       }
     }
-    for (const scope of !changes || changes.full ? [document] : changes.roots)
-      for (const [root, context] of this.targets(scope)) {
+    const scopes = !changes || changes.full ? [document] : changes.roots;
+    for (const scope of scopes) {
+      // With only the Fusion preference enabled, scan cards in the review grid.
+      const targetScope =
+        this.settings!.useOverlayButtonInsteadOfHover ||
+        (scope instanceof Element && scope.closest(FUSION_REVIEW_GRID))
+          ? scope
+          : scope.querySelector(FUSION_REVIEW_GRID);
+      if (!targetScope) continue;
+      for (const [root, context] of this.targets(targetScope)) {
         if (this.entries.has(root)) continue;
         const host = el("span"),
           button = el("button"),
@@ -202,6 +230,7 @@ export class TooltipButtons {
           const next = this.contextOf(root);
           if (
             this.enabled() &&
+            this.usesButton(root) &&
             next &&
             contextKey(next) === entry.key &&
             !button.hidden
@@ -217,6 +246,7 @@ export class TooltipButtons {
           entry.summaryResize.observe(mount, { box: "border-box" });
         }
       }
+    }
     const dialog = topDialog();
     for (const entry of this.entries.values()) {
       entry.button.hidden = !!dialog && !dialog.contains(entry.root);

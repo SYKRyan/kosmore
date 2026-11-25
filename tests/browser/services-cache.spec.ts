@@ -458,13 +458,30 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await expect(listed).toBeDisabled();
     await expect(listed).not.toHaveAttribute("href");
     await expect(last).toHaveCSS("color", "rgb(177, 173, 184)");
-    const positions = () => recapPopup.locator(".market-badge").evaluateAll((badges) =>
-      badges.map((badge) => [badge.clientWidth, badge.clientHeight, (badge as HTMLElement).offsetLeft]));
-    const loadingPositions = await positions();
+    const layout = () => recapPopup.locator(".header-prices").evaluate((row) => {
+      const [sale, listing] = [...row.children].map((badge) => badge.getBoundingClientRect());
+      return {
+        rowHeight: row.clientHeight,
+        sameLine: sale.top === listing.top,
+        usedWidth: listing.right - sale.left,
+        rowWidth: row.clientWidth,
+      };
+    });
+    const loading = await layout();
+    expect(loading.sameLine).toBe(true);
+    expect(loading.usedWidth).toBeLessThan(loading.rowWidth);
     await worker.evaluate(() => (globalThis as any).servicesFixture.releaseRecap());
     await expect(last).toContainText("Last Sale: $6.50");
     await expect(listed).toHaveAttribute("href", /\/market\?q=/);
-    expect(await positions()).toEqual(loadingPositions);
+    for (const width of [440, 320]) {
+      await recapPopup.evaluate((popup, width) => popup.style.setProperty("--popup-width", width + "px"), width);
+      const loaded = await layout();
+      expect(loaded.sameLine).toBe(true);
+      expect(loaded.rowHeight).toBe(loading.rowHeight);
+      expect(loaded.usedWidth).toBeGreaterThan(loading.usedWidth);
+      expect(loaded.usedWidth).toBeLessThanOrEqual(loaded.rowWidth);
+      if (width === 440) expect(loaded.usedWidth).toBeLessThan(loaded.rowWidth);
+    }
     await expect(recap.locator(".ko-grid .signal-badge.auction")).toHaveCount(2);
     await expect(star).toHaveCSS("animation-name", "none");
     await expect(star).toHaveCSS("color", "rgb(134, 239, 172)");

@@ -2,6 +2,13 @@ import type { CardContext } from "../shared/types";
 export const HOST_ID = "kosmore-root";
 export const FRIEND_TOOLTIP_ID = "kosmore-friend-tooltip";
 export const OVERLAY_ATTR = "data-kosmore-card-overlays";
+export const FUSION_REVIEW_GRID = 'ul[data-testid="mf-list"]';
+export function isFusionPage(pathname = location.pathname) {
+  return pathname === "/fusion" || pathname === "/fusion/";
+}
+export function inFusionReview(anchor?: Element | null) {
+  return isFusionPage() && !!anchor?.closest(FUSION_REVIEW_GRID);
+}
 export const MARKET_ACTIVITY_LINK =
   "a.mk-act-main, a.md-lot-link, .md-ledger > li > a";
 export const MARKET_ACTIVITY_ROW = ".mk-act, .md-lot, .md-ledger > li";

@@ -63,6 +63,21 @@ Card overlays, Sales Overlay, profile reminders, trade reminders, and navigation
 
 **Disable in Vortex** sits directly below each Pulsar control in Hover Tooltip and Card Overlays. Each option independently hides its feature throughout Vortex, including subpages, while preserving the main enabled switch. Both default to off. The hover option also hides tooltip open buttons; the overlay option also hides tooltip header indicators.
 
+### Connected account
+
+1. Enter the **KosMore Services API base URL** from your administrator. Enter your tester invite code if you received one.
+2. Choose **Connect**, allow access to the Services host when prompted, and approve KosMore in the Kosmora sign-in window.
+3. If the browser cannot open that window, choose **Copy Link** and paste the link into a new tab in the same browser profile. This also works as the first sign-in option. If the clipboard is unavailable, copy the **Sign-in link** field manually. The link expires after ten minutes.
+4. Return to Settings and check the linked handle. Private open listings load on demand when the signed-in game account matches. The provider covers open single-card listings and omits lots and face-down listings.
+
+If Settings reports that access is blocked, ask the administrator to restore access and select **Retry access**. Use **Reconnect** for a new sign-in when needed. If an invite is reported as unavailable, request a new one.
+
+**Disconnect** ends the player's Services sessions and retains synced listing history. **Erase synced listing history** asks for confirmation and clears that player's synced prices across linked browsers on their next sync.
+
+To configure pinned albums, keep a Kosmora tab signed in as the linked player. **Pinned Albums** finds that tab automatically when you return to Settings.
+
+Features on Kosmora pages use the account signed in on that page. Pinned shortcuts, friend reminders, and card notes retain their account associations, including when transferred in a backup. Market finish filters are shared across accounts in this browser.
+
 ### Hover tooltip
 
 Hover a supported card, or press its overlay button when enabled, to open KosMore's card popup. It includes rarity, finish, family links, market indicators, album shortcuts, stat boxes, and four icon tabs. The last selected tab is remembered for the next tooltip in that browser tab.
@@ -92,7 +107,7 @@ The **Mobile Friendly** subgroup below tooltip height contains three options, al
 
 ### Pinned albums
 
-Choose the albums that appear as shortcuts in the card tooltip. Keep a signed-in Kosmora tab open and use **Connected account** to choose whose albums you are configuring.
+Choose the albums that appear as shortcuts in the card tooltip. Keep a Kosmora tab open and signed in as the player shown under **Connected Account**.
 
 - Search **Your albums**, then pin or unpin entries.
 - Reorder **Pinned shortcuts** with the move controls; the tooltip follows this order and displays three compact shortcuts per row, aligned with the stat boxes. Long album names use ellipses.
@@ -131,52 +146,20 @@ Add indicators to visible cards and tooltip headers. Each indicator can be confi
 
 Compact Market Activity and journal thumbnails omit price/signal overlays. They still support the tooltip overlay button when enabled.
 
-### Family Impact Overlay
+### Pack Openings
 
-Family Impact and its settings are disabled in the current build. The earlier Fusion **Next Batch** helper has also been removed. Check family tiers in Kosmora when choosing copies to fuse, trade, stake, or sell.
+The **Pack Openings** switch starts on. Turn it off to pause the remaining-pack count, pack shortcuts, automatic card focus, auto-skip, and found-pack dismissal in open game tabs. Turn it back on to use your saved settings and bindings again.
 
-### Friend tooltip
+Find the shortcuts under **Hotkeys → Pack Opening** and the automation and display options under **Pack Openings**. Pack hotkeys start off and bindings start empty. You can also record arrows, Home, and End. Use **Save** at the bottom of Hotkeys to apply changes across all three tabs.
 
-Hover, focus, or click the purple friend indicator in the card tooltip header to see matching friends. This companion popup has its own pin, drag, resize, and timing controls.
+**Show remaining pack count** starts on and shows the number of ready packs above **Open the Next Pack**.
 
-- Click a friend to expand all their saved families and private notes. Matching families are highlighted.
-- One friend expands at a time; a single matching friend expands automatically.
-- Use **Social** or **Profile** to open that player's page. Edit their reminders there; the companion shows saved information.
-- Pin the companion independently of the card tooltip. A pinned companion restores an empty view after page navigation until another card is selected.
-
-Settings control the hover delay, dismiss delay, width, and height independently of the main tooltip. Defaults are **300 ms**, **200 ms**, and **320 × 560 px**. Position and dimensions save automatically. To open this popup, enable card hover tooltips, Card overlays, the interested-friends indicator, and Friend tooltip.
-
-### Social Reminders
-
-On **Social**, select a friend and open **✦ KosMore** below the **Collection** and **Profile** links and above **Between You**. The launcher occupies the same location as the pinned editor. Pin the popup to keep the editor inline; unpin to return to a popup. Pinning and unpinning preserve unsaved edits.
-
-In **Settings → Social Reminders**, the master switch hides reminders on both pages and keeps your preferences. **Show on social page** and **Show on profile page** control where the editor appears. Each has its own pin switch. Both pages show reminders by default, with pinning off. They share private family preferences and notes for the selected player and signed-in account.
-
-### Profile Reminders
-
-On a player's profile, open **✦ KosMore** below the header and above Albums to edit their private family preferences and notes. The launcher occupies the pinned editor's location. This is the same reminder data used on Social, in friend matches, and during trades. The player does not have to be in your current friend list to have a profile reminder.
-
-- Search for and add preferred card families, remove family tokens, and write private notes.
-- Use **Save** to store edits or **Cancel** to restore the saved values.
-- Pin the editor below the profile header and above Albums. Families appear on the left and notes on the right, stacking on narrow screens.
-- While pinned, the standalone control is hidden. Unpin from the widget to return to the popup. Moving between popup and widget preserves unsaved edits.
-- Use **Keep reminders pinned on profiles** in settings to control the persistent pinned display.
-
-Preferences are private to your extension installation and account; saving them does not update the player's Kosmora profile or send them a message.
-
-### Trade reminders
-
-When proposing a trade, KosMore shows the selected player's saved family preferences. **Possible Interest** can show a breakdown by rarity once the game has loaded complete, sendable collection results for the matching families.
-
-- On **Their card**, family badges sit below the “Only the cards…” text, above the breakdown and search bar.
-- On **Your card**, the families and breakdown sit below the trade rule and above the search bar.
-- On other trade steps, the family badges appear below the step numbers.
-- A filled **Notes** badge appears after the family badges when saved notes exist, with a small disclosure icon when unpinned. Tap, hover, or focus to read them; pin them as a read-only **Notes** block below the badges and above Possible Interest. Unpin from the notes header.
-- Counts include only your **available** matching copies, excluding locked copies and copies currently for sale. Standard, Shiny, and Full art copies are included, and each copy counts once even when families overlap.
-- Results are grouped by rarity: Common, Uncommon, Rare, Epic, Legendary, and Mythic. Zero-count rarities and an empty breakdown are hidden. Filtering their cards does not change your counts.
-- A spinner beside **Possible Interest** indicates calculation is in progress. Space is reserved for the counts to keep the search controls from shifting as results arrive.
-
-Settings control **preferred family badges**, **possible interest counts**, and **saved notes** separately. **Use rarity symbols** selects Kosmora's rarity gems instead of names. Notes have their own pin setting, hover/dismiss delays, and tooltip width/height controls. Save family preferences and notes on Social or the player's profile.
+- **Next Card** tears the ready pack and steps through the reveal. A pinned tooltip follows each card as you advance. On the summary, use **Next Card**, **Previous Card**, **Focus First Card**, or **Focus Last Card** to inspect the grid with the tooltip. The selected card keeps focus while summary badges finish loading.
+- **See Card** opens the focused card’s detail page. Press **Enter** on a focused summary card to use Kosmora’s close-up viewer.
+- **Dismiss Found Pack**, **Skip Opening**, **Later**, **Share**, and **Home** activate the corresponding controls when Kosmora offers them. **Next Pack/Back to Packs** opens the next pack or returns to Packs when the summary offers that link.
+- **Any key dismisses found pack** starts on under **Pack Openings**. Turn it off to use the **Dismiss Found Pack** keybind instead.
+- **Auto-dismiss found pack** starts off. Turn it on to dismiss the full-screen Rogue and Mega pack alerts automatically. The found packs still appear on the summary.
+- **Auto-skip on next pack** starts off. After you activate **Next Pack** by mouse or hotkey, it presses **Skip** once when the next pack appears. Kosmora’s reveal hints must be enabled so it can warn you about special packs.
 
 ### Sales Overlay
 
@@ -195,28 +178,68 @@ Discount, Quick Prices, and Custom Rarity Minimums are off by default. Price but
 
 My Last Listing uses submission time to select the latest confirmed starting price across finishes. Its local Sell badge also works offline after account verification. Use **Verify account** if the Sell page has yet to identify the signed-in player. Confirmed prices sync on connection, at browser startup, and about every five minutes while a Kosmora tab is open.
 
+### Family Impact Overlay
+
+Family Impact and its settings are disabled in the current build. The earlier Fusion **Next Batch** helper has also been removed. Check family tiers in Kosmora when choosing copies to fuse, trade, stake, or sell.
+
+### Social
+
+The Social switch turns reminders, trade reminders, and the friend tooltip on or off together. The **Reminders**, **Trade**, and **Tooltip** tabs keep their individual switches and preferences.
+
+#### Reminders
+
+On **Social**, select a friend and open **✦ KosMore** below the **Collection** and **Profile** links and above **Between You**. The launcher occupies the same location as the pinned editor. Pin the popup to keep the editor inline; unpin to return to a popup. Pinning and unpinning preserve unsaved edits.
+
+In **Settings → Social → Reminders**, the master switch hides reminders on both pages and keeps your preferences. **Show on social page** and **Show on profile page** control where the editor appears. Each has its own pin switch. Both pages show reminders by default, with pinning off. They share private family preferences and notes for the selected player and signed-in account.
+
+#### Profile reminders
+
+On a player's profile, open **✦ KosMore** below the header and above Albums to edit their private family preferences and notes. The launcher occupies the pinned editor's location. This is the same reminder data used on Social, in friend matches, and during trades. The player does not have to be in your current friend list to have a profile reminder.
+
+- Search for and add preferred card families, remove family tokens, and write private notes.
+- Use **Save** to store edits or **Cancel** to restore the saved values.
+- Pin the editor below the profile header and above Albums. Families appear on the left and notes on the right, stacking on narrow screens.
+- While pinned, the standalone control is hidden. Unpin from the widget to return to the popup. Moving between popup and widget preserves unsaved edits.
+- Use **Keep reminders pinned on profiles** in settings to control the persistent pinned display.
+
+Preferences are private to your extension installation and account; saving them does not update the player's Kosmora profile or send them a message.
+
+#### Trade
+
+When proposing a trade, KosMore shows the selected player's saved family preferences. **Possible Interest** can show a breakdown by rarity once the game has loaded complete, sendable collection results for the matching families.
+
+- On **Their card**, family badges sit below the “Only the cards…” text, above the breakdown and search bar.
+- On **Your card**, the families and breakdown sit below the trade rule and above the search bar.
+- On other trade steps, the family badges appear below the step numbers.
+- A filled **Notes** badge appears after the family badges when saved notes exist, with a small disclosure icon when unpinned. Tap, hover, or focus to read them; pin them as a read-only **Notes** block below the badges and above Possible Interest. Unpin from the notes header.
+- Counts include only your **available** matching copies, excluding locked copies and copies currently for sale. Standard, Shiny, and Full art copies are included, and each copy counts once even when families overlap.
+- Results are grouped by rarity: Common, Uncommon, Rare, Epic, Legendary, and Mythic. Zero-count rarities and an empty breakdown are hidden. Filtering their cards does not change your counts.
+- A spinner beside **Possible Interest** indicates calculation is in progress. Space is reserved for the counts to keep the search controls from shifting as results arrive.
+
+Settings control **preferred family badges**, **possible interest counts**, and **saved notes** separately. **Use rarity symbols** selects Kosmora's rarity gems instead of names. Notes have their own pin setting, hover/dismiss delays, and tooltip width/height controls. Save family preferences and notes on Social or the player's profile.
+
+#### Tooltip
+
+Hover, focus, or click the purple friend indicator in the card tooltip header to see matching friends. This companion popup has its own pin, drag, resize, and timing controls.
+
+- Click a friend to expand all their saved families and private notes. Matching families are highlighted.
+- One friend expands at a time; a single matching friend expands automatically.
+- Use **Social** or **Profile** to open that player's page. Edit their reminders there; the companion shows saved information.
+- Pin the companion independently of the card tooltip. A pinned companion restores an empty view after page navigation until another card is selected.
+
+Settings control the hover delay, dismiss delay, width, and height independently of the main tooltip. Defaults are **300 ms**, **200 ms**, and **320 × 560 px**. Position and dimensions save automatically. To open this popup, enable card hover tooltips, Card overlays, the interested-friends indicator, and Friend tooltip.
+
 ### Hotkeys
+
+Choose the Navigation, Pack Opening, or Hover Tooltip tab to edit its shortcuts. Each tab has its own enable switch. The shared **Save** and **Cancel** buttons apply to edits in all three tabs.
 
 Under **Hotkeys → Navigation**, assign shortcuts for **Home**, **Collection**, **Albums**, **Tomes**, **Families**, **Fusion**, **Gallery**, **Quests**, **Atlas**, **Social**, **Market**, **My Auctions**, **My Activity**, **Alerts**, **Talents**, **Packs**, **History**, **Pulsar**, **Odyssey**, and **My Profile**.
 
-Click a shortcut control and press a letter, number, or F1–F12, optionally with Ctrl, Alt, Shift, or Meta. Escape cancels recording and **Clear** removes a binding. Save the subgroup to apply your choices. KosMore checks for duplicate bindings across its shortcut groups.
+Click a shortcut control and press a letter, number, or F1–F12, optionally with Ctrl, Alt, Shift, or Meta. Escape cancels recording and **Clear** removes a binding. Use **Save** at the bottom of Hotkeys to apply changes across all three tabs. KosMore checks for duplicate bindings across its shortcut groups.
 
 Shortcuts work on Kosmora pages and pause while typing in fields or editors. Browser-reserved shortcuts may not reach KosMore. **Enable all hotkeys** controls every KosMore shortcut group, including pinned albums, and preserves saved bindings.
 
 Under **Hotkeys → Hover Tooltip**, assign shortcuts to pin, refresh, or close the open tooltip, open Settings or the Market listing search, use Sell, Trade, or Gift, or switch tabs. You can also bind arrows, Home, and End. **Cycle Tabs** wraps from Notes to Market. **Next Tab** and **Previous Tab** stop at the ends. Escape also closes the tooltip.
-
-### Pack Openings
-
-Find the shortcuts under **Hotkeys → Pack Opening** and the automation and display options under **Pack Openings**. Pack hotkeys start off and bindings start empty. You can also record arrows, Home, and End. Save the subgroup to apply your choices.
-
-**Show remaining pack count** starts on and shows the number of ready packs above **Open the Next Pack**.
-
-- **Next Card** tears the ready pack and steps through the reveal. A pinned tooltip follows each card as you advance. On the summary, use **Next Card**, **Previous Card**, **Focus First Card**, or **Focus Last Card** to inspect the grid with the tooltip. The selected card keeps focus while summary badges finish loading.
-- **See Card** opens the focused card’s detail page. Press **Enter** on a focused summary card to use Kosmora’s close-up viewer.
-- **Dismiss Found Pack**, **Skip Opening**, **Later**, **Share**, and **Home** activate the corresponding controls when Kosmora offers them. **Next Pack/Back to Packs** opens the next pack or returns to Packs when the summary offers that link.
-- **Any key dismisses found pack** starts on under **Pack Openings**. Turn it off to use the **Dismiss Found Pack** keybind instead.
-- **Auto-dismiss found pack** starts off. Turn it on to dismiss the full-screen Rogue and Mega pack alerts automatically. The found packs still appear on the summary.
-- **Auto-skip on next pack** starts off. After you activate **Next Pack** by mouse or hotkey, it presses **Skip** once when the next pack appears. Kosmora’s reveal hints must be enabled so it can warn you about special packs.
 
 ### Backup & restore
 
@@ -232,18 +255,3 @@ Backups include saved feature preferences, ordered pinned album shortcuts, marke
 - **Replace:** remove existing supported entries absent from the backup. This requires confirmation; export the destination's data first if you want to keep a copy.
 
 Save or cancel unsaved settings edits before importing. Backups exclude the Services connection, confirmed listing history, cached market data, Sale Rate observations, the card tooltip pin, and per-tab tooltip state. Reconnect the same player to recover previously synced starting prices. Backup files contain readable private notes, so store them somewhere you trust.
-
-### Connected account
-
-1. Enter the **KosMore Services API base URL** from your administrator. Enter your tester invite code if you received one.
-2. Choose **Connect**, allow access to the Services host when prompted, and approve KosMore in the Kosmora sign-in window.
-3. If the browser cannot open that window, choose **Copy Link** and paste the link into a new tab in the same browser profile. This also works as the first sign-in option. If the clipboard is unavailable, copy the **Sign-in link** field manually. The link expires after ten minutes.
-4. Return to Settings and check the linked handle. Private open listings load on demand when the signed-in game account matches. The provider covers open single-card listings and omits lots and face-down listings.
-
-If Settings reports that access is blocked, ask the administrator to restore access and select **Retry access**. Use **Reconnect** for a new sign-in when needed. If an invite is reported as unavailable, request a new one.
-
-**Disconnect** ends the player's Services sessions and retains synced listing history. **Erase synced listing history** asks for confirmation and clears that player's synced prices across linked browsers on their next sync.
-
-For pinned albums, keep a signed-in Kosmora tab open, then select the account whose albums you want to configure. Use **Refresh accounts** after opening another game tab or changing accounts.
-
-The selection controls album configuration in settings. Features on Kosmora pages use the account signed in on that page. Pinned shortcuts, friend reminders, and card notes retain their account associations, including when transferred in a backup. Market finish filters are shared across accounts in this browser.

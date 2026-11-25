@@ -40,9 +40,9 @@ export function tooltipIcon(
   return svg;
 }
 
-/** Matching refresh and close icons for tooltip controls. */
+/** Compact outline icons for action buttons. */
 export function headerIcon(
-  kind: "refresh" | "close",
+  kind: "refresh" | "close" | "trash" | "unpin",
   size = 16,
 ): SVGSVGElement {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -61,9 +61,12 @@ export function headerIcon(
   const path = document.createElementNS(svg.namespaceURI, "path");
   path.setAttribute(
     "d",
-    kind === "refresh"
-      ? "M3 12a9 9 0 0 1 15.36-6.36L21 8 M21 3v5h-5 M21 12a9 9 0 0 1-15.36 6.36L3 16 M3 21v-5h5"
-      : "M6 6l12 12 M18 6 6 18",
+    {
+      refresh: "M3 12a9 9 0 0 1 15.36-6.36L21 8 M21 3v5h-5 M21 12a9 9 0 0 1-15.36 6.36L3 16 M3 21v-5h5",
+      close: "M6 6l12 12 M18 6 6 18",
+      unpin: "M12 10l3-3 1-4 5 5-4 1-2 2 M14 16l-2 2-6-6 2-2 M9 15l-6 6 M3 3l18 18",
+      trash: "M3 6h18 M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2 M5 6l1 14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1l1-14 M10 10v7 M14 10v7",
+    }[kind],
   );
   svg.append(path);
   return svg;

@@ -48,7 +48,7 @@ export const TRADE_SETTINGS_KEYS = [
   ...TRADE_NOTES_NUMBERS.map(([field]) => field),
 ] as const;
 export class TradeSettings {
-  readonly host = el("section", "panel");
+  readonly host = el("section", "settings-subgroup");
   readonly inputs: {
     field: (typeof TRADE_TOGGLES)[number];
     input: HTMLInputElement;
@@ -59,7 +59,7 @@ export class TradeSettings {
   }[] = [];
   constructor(change: (update: Partial<Settings>) => void) {
     this.host.append(
-      el("h2", "", "Trade Reminders"),
+      el("h3", "", "Trade"),
       el(
         "p",
         "sub",

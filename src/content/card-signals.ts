@@ -28,11 +28,15 @@ export interface CardSignals {
   interestedFriends: number;
   quest: boolean;
   lastSale?: MarketSale;
+  medianPrice?: string;
   lowestListing?: AuctionPrice;
   staleLastSale?: boolean;
   staleListingPrice?: boolean;
   auctionFetchedAt?: number;
   marketName?: string;
+}
+export function overlaySalePrice(signals: CardSignals, useMedian: boolean) {
+  return useMedian ? signals.medianPrice : signals.lastSale?.price;
 }
 export function sameOverlaySignals(a: CardSignals, b: CardSignals) {
   return (
@@ -43,6 +47,7 @@ export function sameOverlaySignals(a: CardSignals, b: CardSignals) {
       a.quest === b.quest &&
       a.interestedFriends === b.interestedFriends &&
       a.lastSale?.price === b.lastSale?.price &&
+      a.medianPrice === b.medianPrice &&
       !!a.lastSale?.numberOne === !!b.lastSale?.numberOne &&
       a.lowestListing?.price === b.lowestListing?.price &&
       a.lowestListing?.bids === b.lowestListing?.bids &&
@@ -316,13 +321,12 @@ export class CardSignalProvider {
                 const now = Date.now();
                 if (hit && now - hit.until < 86_400_000) {
                   const cached = latestSale(hit.value);
-                  if (
-                    cached &&
-                    Date.parse(cached.soldAt) >= now - 30 * 86_400_000
-                  )
+                  const recent = cached && Date.parse(cached.soldAt) >= now - 30 * 86_400_000;
+                  if (recent || (!cached && hit.value.median != null))
                     publish({
                       saleHistory: true,
                       lastSale: cached,
+                      medianPrice: hit.value.median ?? undefined,
                       staleLastSale: hit.stale,
                     });
                 }
@@ -336,6 +340,7 @@ export class CardSignalProvider {
                 saleHistory: history.count > 0 || !!history.lastSale,
                 ...(settings.showLastSalePriceOverlay && {
                   lastSale: latestSale(history),
+                  medianPrice: history.median ?? undefined,
                   staleLastSale: this.client.peekHistory?.(id, displayedFinish)
                     ?.stale,
                 }),

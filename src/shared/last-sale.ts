@@ -13,24 +13,36 @@ export function latestSale(history: MarketHistory) {
   );
 }
 
-export function lastSaleSummary(history: MarketHistory | Error | undefined) {
+function badgePrice(amount: string) {
+  const cents = (BigInt(amount) + 5000n) / 10000n;
+  return `$${(cents / 100n).toLocaleString("en-US")}.${String(cents % 100n).padStart(2, "0")}`;
+}
+
+export function salePriceSummary(
+  history: MarketHistory | Error | undefined,
+  useMedian = false,
+) {
   if (!history)
     return {
       title: "Loading completed sales for this finish.",
     };
   if (history instanceof Error)
     return { title: history.message };
-  const latest = latestSale(history);
-  const partial = !history.complete && !history.daily;
-  if (!latest)
+  if (useMedian) {
+    if (history.median == null)
+      return { title: "No median sale price is available for this finish." };
     return {
-      title: "No completed sale price is available for this finish.",
+      label: `Median: ${badgePrice(history.median)}`,
+      title: `${FINISH_LABEL[history.finish]} · Median completed-sale price over the last ${history.days} days · Kosmo.`,
     };
-  const cents = (BigInt(latest.price) + 5000n) / 10000n;
-  const price = `${(cents / 100n).toLocaleString("en-US")}.${String(cents % 100n).padStart(2, "0")}`;
+  }
+  const latest = latestSale(history);
+  if (!latest)
+    return { title: "No completed sale price is available for this finish." };
+  const partial = !history.complete && !history.daily;
   return {
     numberOne: latest.numberOne,
-    label: `Last Sale: $${price}${partial ? " (partial)" : ""}`,
+    label: `Last Sale: ${badgePrice(latest.price)}${partial ? " (partial)" : ""}`,
     title: `${FINISH_LABEL[latest.finish]} · ${new Date(latest.soldAt).toLocaleString()} · Kosmo.${latest.numberOne ? " #1 copy." : ""}${partial ? " Some history is incomplete or unavailable." : ""}`,
   };
 }

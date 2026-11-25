@@ -1,5 +1,5 @@
 import type { Settings } from "../shared/types";
-import type { CardSignals, OverlaySettings } from "./card-signals";
+import { overlaySalePrice, type CardSignals, type OverlaySettings } from "./card-signals";
 import { cardIcon } from "./icons";
 import { el } from "./ui";
 import { formatKosmo } from "../kosmora/contracts";
@@ -21,7 +21,7 @@ export const SIGNAL_BADGE_CSS = `${MARKET_BADGE_CSS}.signal-badge.quest{display:
 
 export function signalBadges(
   signals: CardSignals,
-  settings: OverlaySettings & Pick<Settings, "showAuctionBidCounts">,
+  settings: OverlaySettings & Pick<Settings, "showAuctionBidCounts" | "useMedianOverlayPrice">,
   showPrices = false,
   marketName?: string,
   onFriendBadge?: (badge: HTMLElement) => void,
@@ -50,7 +50,7 @@ export function signalBadges(
       : "";
     const description =
       price !== undefined
-        ? `${label}. ${kind === "sale" ? "Last sale" : "Lowest observed auction price"}: ${formatKosmo(price)} Kosmo${bids}, for this finish.`
+        ? `${label}. ${kind === "sale" ? (settings.useMedianOverlayPrice ? "Median" : "Last sale") : "Lowest observed auction price"}: ${formatKosmo(price)} Kosmo${bids}, for this finish.`
         : label;
     const accessibleDescription =
       badge instanceof HTMLAnchorElement
@@ -74,7 +74,7 @@ export function signalBadges(
       badge.classList.add("with-price");
       badge.append(el("span", "badge-price", `$${formatKosmo(price)}${bids}`));
     }
-    if (kind === "sale" && price !== undefined && signals.lastSale?.numberOne) {
+    if (kind === "sale" && !settings.useMedianOverlayPrice && price !== undefined && signals.lastSale?.numberOne) {
       badge.append(numberOneIcon());
       badge.title += " #1 copy.";
       badge.setAttribute("aria-label", badge.title);
@@ -95,7 +95,7 @@ export function signalBadges(
       "sale",
       "Completed sales in the last 30 days",
       showPrices && settings.showLastSalePriceOverlay
-        ? signals.lastSale?.price
+        ? overlaySalePrice(signals, settings.useMedianOverlayPrice)
         : undefined,
       showPrices && signals.staleLastSale,
     );

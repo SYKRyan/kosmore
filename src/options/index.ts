@@ -4,6 +4,8 @@ import "../content/stat-box.css";
 import { StatSettings } from "./stat-settings";
 import { HotkeySettings, shortcutControls } from "./hotkey-settings";
 import { settingsNavigation } from "./settings-navigation";
+import { settingsTabs } from "./settings-tabs";
+import { segmentedControl } from "./segmented-control";
 import { SalesSettings, SALES_SETTINGS_KEYS } from "./sales-settings";
 import { BackupSettings } from "./backup-settings";
 import { TradeSettings, TRADE_SETTINGS_KEYS } from "./trade-settings";
@@ -21,7 +23,7 @@ import {
   type Shortcut,
 } from "../shared/hotkeys";
 import { button, el, note } from "../content/ui";
-import { headerIcon } from "../content/icons";
+import { headerIcon, pinIcon } from "../content/icons";
 import {
   readSettings,
   saveSettings,
@@ -30,11 +32,14 @@ import {
   SETTINGS_KEY,
 } from "../shared/settings";
 import { request, type Session } from "../shared/messages";
+import { SERVICES_STATE_KEY, type ConnectionStatus } from "../shared/services";
 import { FAMILY_IMPACT_AVAILABLE } from "../shared/feature-availability";
+import { validFusionThreshold } from "../shared/sales-prices";
 import { messageOf, type Album, type Settings } from "../shared/types";
 const app = document.getElementById("app")!;
 type FeatureKey =
   | "enabled"
+  | "socialEnabled"
   | "socialRemindersMasterEnabled"
   | "profileRemindersEnabled"
   | "socialRemindersEnabled"
@@ -43,11 +48,13 @@ type FeatureKey =
   | "hotkeysEnabled"
   | "navigationHotkeysEnabled"
   | "hoverTooltipHotkeysEnabled"
+  | "packOpeningsEnabled"
   | "packOpeningHotkeysEnabled"
   | "showAuctionBidCounts"
   | "showRemainingPackCount"
   | "cardOverlaysEnabled"
   | "familyImpactOverlaysEnabled"
+  | "fusionSettingsEnabled"
   | "salesOverlaysEnabled"
   | "statBoxesEnabled"
   | "pinnedAlbumsEnabled";
@@ -64,9 +71,9 @@ function queueSettingsWrite<T>(write: () => Promise<T>): Promise<T> {
 }
 let saved: Settings = defaults(),
   draft: Settings = defaults(),
-  sessions: Session[] = [],
   selected: Session | undefined,
   albums: Album[] = [],
+  albumMessage = "",
   filter = "",
   sequence = 0,
   busy = false,
@@ -138,50 +145,39 @@ const tooltipTakesFocus = checkboxSetting(
 general.append(el("div", "rule"));
 const mobileFriendly = el("fieldset", "settings-subgroup");
 mobileFriendly.append(el("legend", "", "Mobile Friendly"));
-const useOverlayButton = el("input");
-useOverlayButton.type = "checkbox";
-useOverlayButton.id = "use-overlay-button-instead-of-hover";
-const useOverlayButtonLabel = el(
-  "label",
-  "label settings-toggle",
-  "Use Overlay Button Instead of Hover",
-);
-useOverlayButtonLabel.prepend(useOverlayButton);
-const useOverlayButtonRow = el("div", "row");
-useOverlayButtonRow.append(
-  useOverlayButtonLabel,
-  el(
-    "span",
-    "hint",
+function reviewTooltipControls(host: HTMLElement, fusion: boolean) {
+  const prefix = fusion ? "fusion-review-" : "";
+  const button = checkboxSetting(
+    prefix + "use-overlay-button-instead-of-hover",
+    "Use Overlay Button Instead of Hover",
     "Press the round Kosmora button at the bottom-left corner of a card to open its tooltip. Hover is disabled on cards showing the button. Tapped tooltips stay open until dismissed. Useful on touch screens.",
-  ),
-);
-mobileFriendly.append(useOverlayButtonRow, el("div", "rule"));
-useOverlayButton.addEventListener("change", () => {
-  draft.useOverlayButtonInsteadOfHover = useOverlayButton.checked;
-});
-const outsideClickOnly = el("input");
-outsideClickOnly.type = "checkbox";
-outsideClickOnly.id = "outside-click-closes-tooltip-only";
-const outsideClickLabel = el(
-  "label",
-  "label settings-toggle",
-  "Outside Click Closes Tooltip Only",
-);
-outsideClickLabel.prepend(outsideClickOnly);
-const outsideClickRow = el("div", "row");
-outsideClickRow.append(
-  outsideClickLabel,
-  el(
-    "span",
-    "hint",
+    (value) => {
+      draft[
+        fusion ? "fusionReviewOverlayButton" : "useOverlayButtonInsteadOfHover"
+      ] = value;
+    },
+    host,
+    "checkbox",
+    false,
+  );
+  const outside = checkboxSetting(
+    prefix + "outside-click-closes-tooltip-only",
+    "Outside Click Closes Tooltip Only",
     "When the tooltip is unpinned, an outside click or tap closes it without opening a card, changing selection, or activating the control underneath. The next click works normally. Pinned tooltips keep their normal behavior.",
-  ),
-);
-mobileFriendly.append(outsideClickRow, el("div", "rule"));
-outsideClickOnly.addEventListener("change", () => {
-  draft.outsideClickClosesTooltipOnly = outsideClickOnly.checked;
-});
+    (value) => {
+      draft[
+        fusion
+          ? "fusionReviewOutsideClickOnly"
+          : "outsideClickClosesTooltipOnly"
+      ] = value;
+    },
+    host,
+  );
+  return { button, outside };
+}
+const { button: useOverlayButton, outside: outsideClickOnly } =
+  reviewTooltipControls(mobileFriendly, false);
+mobileFriendly.append(el("div", "rule"));
 const fullScreenCentered = el("input");
 fullScreenCentered.type = "checkbox";
 fullScreenCentered.id = "full-screen-centered-on-open";
@@ -338,19 +334,11 @@ hotkeysPanel.setAttribute("aria-label", "Hotkeys");
 hotkeySettings.host.id = "navigation-hotkeys";
 packHotkeySettings.host.id = "pack-opening-hotkeys";
 tooltipHotkeySettings.host.id = "hover-tooltip-hotkeys";
-const hotkeySubgroups = el(
-  "fieldset",
-  "settings-group-content hotkey-subgroups",
-);
-hotkeySubgroups.setAttribute("aria-label", "Hotkey subgroups");
-hotkeySubgroups.append(
+const hotkeyPanels = [
   hotkeySettings.host,
   packHotkeySettings.host,
   tooltipHotkeySettings.host,
-);
-const hotkeysStatus = el("p", "status");
-hotkeysStatus.setAttribute("data-feature-status", "");
-hotkeysStatus.setAttribute("role", "status");
+];
 hotkeysPanel.append(
   el("h2", "", "Hotkeys"),
   el(
@@ -358,13 +346,11 @@ hotkeysPanel.append(
     "sub hotkeys-subtitle",
     "Choose a letter, number, or F-key with optional Ctrl, Alt, Shift, or Meta. Pack Opening and Hover Tooltip also accept arrows, Home, and End. Escape cancels recording. Shortcuts pause while typing, and browser-reserved keys may not reach KosMore. The master switch also controls pinned album shortcuts.",
   ),
-  hotkeySubgroups,
-  hotkeysStatus,
+  ...settingsTabs("Hotkey subgroups", hotkeyPanels),
 );
 const packBehavior = el("section", "panel");
-const packHeading = el("div", "settings-group-heading");
-packHeading.append(el("h2", "", "Pack Openings"));
-packBehavior.append(packHeading);
+packBehavior.append(el("h2", "", "Pack Openings"));
+const packOpeningsEnabled = sectionToggle(packBehavior, "packOpeningsEnabled", "Enable pack openings");
 function syncTooltipSizing() {
   for (const { field, input } of popupInputs)
     if (field === "popupWidth" || field === "popupHeight")
@@ -389,7 +375,8 @@ function sectionToggle(
   featureGroups.set(host, { key, input });
   const commit = () => {
     draft[key] = input.checked;
-    void persistFeature(host, key, input);
+    if (hotkeyPanels.includes(host)) renderGroupState(host);
+    else void persistFeature(host, key, input);
   };
   input.addEventListener("change", () => {
     if (input.checked && !draft[key] && confirmEnable) {
@@ -423,8 +410,10 @@ function renderGroupState(host: HTMLElement) {
     ":scope > .settings-group-content",
   );
   if (content) content.disabled = disabled || saving || !settingsReady;
-  if (host === packBehavior)
-    anyKeyDismissesFoundPack.disabled = !draft.hotkeysEnabled;
+  if (host === packBehavior) {
+    anyKeyDismissesFoundPack.disabled = !saved.packOpeningHotkeysEnabled || !draft.hotkeysEnabled;
+    autoSkipOpening.disabled = autoDismissFoundPack.disabled = !saved.packOpeningHotkeysEnabled;
+  }
   for (const input of host.querySelectorAll<HTMLInputElement>(
     ".settings-group-independent input",
   ))
@@ -438,9 +427,7 @@ function renderGroupState(host: HTMLElement) {
 }
 function groupDisabled(host: HTMLElement) {
   if (host === familyImpact && !FAMILY_IMPACT_AVAILABLE) return true;
-  return host === packBehavior
-    ? !draft.packOpeningHotkeysEnabled
-    : featureGroups.get(host)?.input.checked === false;
+  return featureGroups.get(host)?.input.checked === false;
 }
 const allHotkeysEnabled = sectionToggle(
   hotkeysPanel,
@@ -470,9 +457,9 @@ const friendTooltipEnabled = sectionToggle(
   "friendTooltipEnabled",
   "Enable friend tooltip",
 );
-const socialSettings = el("section", "panel");
+const socialSettings = el("section", "settings-subgroup");
 socialSettings.append(
-  el("h2", "", "Social Reminders"),
+  el("h3", "", "Reminders"),
   el(
     "p",
     "sub",
@@ -544,6 +531,19 @@ const tradeEnabled = sectionToggle(
   "tradeRemindersEnabled",
   "Enable trade reminders",
 );
+socialSettings.id = "social-reminders";
+tradeSettings.host.id = "trade-reminders";
+friendTooltipSettings.host.id = "friend-tooltip";
+const socialPanel = el("section", "panel");
+const socialStatus = el("p", "status");
+socialStatus.setAttribute("role", "status");
+socialStatus.setAttribute("data-feature-status", "");
+socialPanel.append(
+  el("h2", "", "Social"),
+  ...settingsTabs("Social settings", [socialSettings, tradeSettings.host, friendTooltipSettings.host]),
+  socialStatus,
+);
+const socialEnabled = sectionToggle(socialPanel, "socialEnabled", "Enable Social");
 const overlays = el("section", "panel");
 overlays.append(
   el("h2", "", "Card Overlays"),
@@ -576,6 +576,7 @@ function checkboxSetting(
   update: (checked: boolean) => void,
   host: HTMLElement = overlays,
   role: "checkbox" | "switch" = "checkbox",
+  divider = true,
 ) {
   const row = el("div", "row"),
     input = el("input", role === "switch" ? "section-switch" : ""),
@@ -587,9 +588,21 @@ function checkboxSetting(
   row.append(text);
   if (hint) row.append(el("span", "hint", hint));
   input.addEventListener("change", () => update(input.checked));
-  host.append(el("div", "rule"), row);
+  if (divider) host.append(el("div", "rule"));
+  host.append(row);
   return input;
 }
+const showRemainingPackCount = checkboxSetting(
+  "showRemainingPackCount",
+  "Show remaining pack count",
+  "Show how many ready packs remain above Open the Next Pack.",
+  (checked) => {
+    draft.showRemainingPackCount = checked;
+    void persistFeature(packBehavior, "showRemainingPackCount", showRemainingPackCount);
+  },
+  packBehavior,
+);
+packBehavior.append(el("p", "hint", "Enable Pack Opening under Hotkeys to use the following options."));
 const anyKeyDismissesFoundPack = checkboxSetting(
   "anyKeyDismissesFoundPack",
   "Any key dismisses found pack",
@@ -616,22 +629,6 @@ const autoDismissFoundPack = checkboxSetting(
     draft.autoDismissFoundPack = checked;
   },
   packBehavior,
-);
-const packDisplaySettings = el("div", "settings-group-independent");
-packHeading.after(packDisplaySettings);
-const showRemainingPackCount = checkboxSetting(
-  "showRemainingPackCount",
-  "Show remaining pack count",
-  "Show how many ready packs remain above Open the Next Pack.",
-  (checked) => {
-    draft.showRemainingPackCount = checked;
-    void persistFeature(
-      packBehavior,
-      "showRemainingPackCount",
-      showRemainingPackCount,
-    );
-  },
-  packDisplaySettings,
 );
 function overlayPriceToggle(
   parent: HTMLInputElement,
@@ -701,12 +698,36 @@ const saleOverlay = checkboxSetting(
 const lastSalePriceOverlay = overlayPriceToggle(
   saleOverlay,
   "last-sale-price-overlay",
-  "Show last sale price",
-  "Last sale price for this finish in Kosmora’s 30-day history.",
+  "Show price",
+  "Show the selected sale price beside the gavel.",
   (checked) => {
     draft.showLastSalePriceOverlay = checked;
   },
 );
+const priceModeRow = el(
+  "div",
+  "row settings-subsetting settings-subsetting-text",
+);
+const priceModes = segmentedControl(
+  "card-overlay-price-mode",
+  "Card overlay price",
+  [["lastSale", "Last Sale"], ["median", "Median"]],
+  (value) => {
+    draft.useMedianOverlayPrice = value === "median";
+  },
+);
+priceModeRow.append(
+  priceModes.group,
+  el("span", "hint", "Price for this finish in the last 30 days. Also used by the hover tooltip and fusion warning."),
+);
+overlays.append(priceModeRow);
+function syncPriceMode() {
+  priceModes.select(draft.useMedianOverlayPrice ? "median" : "lastSale");
+  priceModes.group.disabled =
+    !draft.showSaleHistoryOverlay || !draft.showLastSalePriceOverlay;
+}
+saleOverlay.addEventListener("change", syncPriceMode);
+lastSalePriceOverlay.addEventListener("change", syncPriceMode);
 const friendOverlay = checkboxSetting(
   "friend-interest-overlay",
   "Show interested friends icon on cards",
@@ -723,6 +744,55 @@ const questOverlay = checkboxSetting(
     draft.showQuestOverlay = checked;
   },
 );
+const fusion = el("section", "panel");
+fusion.append(el("h2", "", "Fusion"));
+const fusionEnabled = sectionToggle(
+  fusion,
+  "fusionSettingsEnabled",
+  "Enable Fusion",
+);
+const fusionWarning = checkboxSetting(
+  "fusion-price-warning",
+  "Show Price Warning",
+  "Highlight fusion cards in red when their finish’s selected Card Overlays price exceeds the threshold. Applies during review and on fusion results.",
+  (checked) => {
+    draft.fusionShowPriceWarning = checked;
+    fusionThreshold.disabled = !checked;
+    if (!checked && !validFusionThreshold(draft.fusionWarningThreshold)) {
+      draft.fusionWarningThreshold = saved.fusionWarningThreshold;
+      fusionThreshold.value = String(draft.fusionWarningThreshold);
+    }
+  },
+  fusion,
+);
+const fusionThreshold = el("input");
+fusionThreshold.type = "number";
+fusionThreshold.min = "0";
+fusionThreshold.step = "0.000001";
+fusionThreshold.id = "fusion-warning-threshold";
+fusionThreshold.addEventListener("input", () => {
+  draft.fusionWarningThreshold = fusionThreshold.valueAsNumber;
+});
+const thresholdRow = el("div", "row settings-subsetting");
+const thresholdInfo = el("div");
+const thresholdLabel = el("label", "label", "Threshold");
+thresholdLabel.htmlFor = fusionThreshold.id;
+const thresholdHint = el("p", "sub", "Price in Kosmo.");
+thresholdHint.id = "fusion-warning-threshold-hint";
+fusionThreshold.setAttribute("aria-describedby", thresholdHint.id);
+thresholdInfo.append(thresholdLabel, thresholdHint);
+thresholdRow.append(thresholdInfo, fusionThreshold);
+const reviewSettings = el("fieldset", "settings-subgroup");
+reviewSettings.append(
+  el("legend", "", "Show Them All and Keep Some"),
+  el(
+    "p",
+    "sub",
+    "Apply these tooltip controls in the Many at once card review. Hover Tooltip preferences also apply here.",
+  ),
+);
+const reviewControls = reviewTooltipControls(reviewSettings, true);
+fusion.append(thresholdRow, el("div", "rule"), reviewSettings);
 const familyImpact = el("section", "panel");
 familyImpact.append(
   el("h2", "", "Family Impact Overlay"),
@@ -788,7 +858,6 @@ const familyBlacklistSettings = new FamilyBlacklistSettings(
   async () => {
     const session =
       selected ??
-      sessions[0] ??
       (await request<Session[]>({ op: "sessions" }))[0];
     if (!session)
       throw new Error("Open a signed-in Kosmora tab, then retry families.");
@@ -821,27 +890,9 @@ delay.addEventListener("input", () => {
   draft.hoverDelayMs = Number(delay.value);
 });
 const connection = el("section", "panel"),
-  connectionContent = el("div", "settings-group-content"),
-  accountRow = el("div", "account-row"),
-  select = el("select");
-select.setAttribute("aria-label", "Kosmora account");
+  connectionContent = el("div", "settings-group-content");
 connection.append(el("h2", "", "Connected Account"), connectionContent);
-connectionContent.append(
-  servicesConnection(),
-  el(
-    "p",
-    "sub",
-    "Select the Kosmora account used for pinned albums. Keep a signed-in game tab open.",
-  ),
-);
-const refresh = button(
-  "Refresh accounts",
-  () => void discover(),
-  "ghost small",
-);
-accountRow.append(select, refresh);
-const connectionStatus = el("div");
-connectionContent.append(el("div", "rule"), accountRow, connectionStatus);
+connectionContent.append(servicesConnection());
 connection.setAttribute("aria-label", "connected account");
 const albumSettings = el("section", "panel");
 albumSettings.append(
@@ -894,17 +945,22 @@ type SettingsGroup = {
   validate?: () => string | undefined;
   render: () => void;
 };
-function groupControls(group: SettingsGroup) {
-  group.host.setAttribute("aria-label", group.name);
+function wrapOptions(host: HTMLElement, name: string) {
+  host.setAttribute("aria-label", name);
   const content = el("fieldset", "settings-group-content");
-  content.setAttribute("aria-label", `${group.name} options`);
-  for (const child of [...group.host.children])
+  content.setAttribute("aria-label", `${name} options`);
+  for (const child of [...host.children])
     if (
       !child.matches("h3, .settings-group-heading, .settings-group-independent")
     )
       content.append(child);
-  group.host.append(content);
-  renderGroupState(group.host);
+  host.append(content);
+}
+function groupControls(group: SettingsGroup) {
+  wrapOptions(group.host, group.name);
+  groupActions(group);
+}
+function groupActions(group: SettingsGroup) {
   const status = el("p", "status");
   status.setAttribute("role", "status");
   status.setAttribute("aria-live", "polite");
@@ -976,25 +1032,13 @@ groupControls({
     }
   },
 });
-groupControls({
-  host: hotkeySettings.host,
-  name: "navigation hotkeys",
-  keys: ["navigationHotkeysEnabled", "hotkeys"],
-  render: renderSettings,
-  validateSave: validateShortcuts,
-});
-groupControls({
-  host: packHotkeySettings.host,
-  name: "pack opening",
-  keys: ["packOpeningHotkeysEnabled", "packOpeningHotkeys"],
-  render: renderSettings,
-  validateSave: validateShortcuts,
-});
-groupControls({
-  host: tooltipHotkeySettings.host,
-  name: "hover tooltip hotkeys",
-  keys: ["hoverTooltipHotkeysEnabled", "hoverTooltipHotkeys"],
-  render: renderSettings,
+for (const panel of hotkeyPanels)
+  wrapOptions(panel, panel.querySelector("h3")!.textContent!);
+groupActions({
+  host: hotkeysPanel,
+  name: "Hotkeys",
+  keys: ["navigationHotkeysEnabled", "hotkeys", "packOpeningHotkeysEnabled", "packOpeningHotkeys", "hoverTooltipHotkeysEnabled", "hoverTooltipHotkeys"],
+  render: renderHotkeys,
   validateSave: validateShortcuts,
 });
 groupControls({
@@ -1032,12 +1076,29 @@ groupControls({
     "cardOverlaysEnabled",
     "showSaleHistoryOverlay",
     "showLastSalePriceOverlay",
+    "useMedianOverlayPrice",
     "showActiveAuctionsOverlay",
     "showLowestListingPriceOverlay",
     "showOnSaleOverlay",
     "showFriendInterestOverlay",
     "showQuestOverlay",
   ],
+  render: renderSettings,
+});
+groupControls({
+  host: fusion,
+  name: "fusion settings",
+  keys: [
+    "fusionSettingsEnabled",
+    "fusionShowPriceWarning",
+    "fusionWarningThreshold",
+    "fusionReviewOverlayButton",
+    "fusionReviewOutsideClickOnly",
+  ],
+  validate: () =>
+    validFusionThreshold(draft.fusionWarningThreshold)
+      ? undefined
+      : "Enter a threshold of zero or more Kosmo with up to six decimal places.",
   render: renderSettings,
 });
 groupControls({
@@ -1102,6 +1163,12 @@ const backupSettings = new BackupSettings({
 });
 const settingsGroups = [
   {
+    id: "connected-account",
+    label: "Connected Account",
+    host: connection,
+    path: "M20 21v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2 M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+  },
+  {
     id: "hover-tooltip",
     label: "Hover Tooltip",
     host: general,
@@ -1126,28 +1193,10 @@ const settingsGroups = [
     path: "M7 3h14v14H7Z M3 7v14h14 M12 7h4 M12 11h4",
   },
   {
-    id: "family-impact-overlay",
-    label: "Family Impact Overlay",
-    host: familyImpact,
-    path: "M10.3 4.9a2 2 0 0 1 3.4 0l8.1 13.5a1.7 1.7 0 0 1-1.5 2.6H3.7a1.7 1.7 0 0 1-1.5-2.6Z M12 9v4 M12 17h.01",
-  },
-  {
-    id: "friend-tooltip",
-    label: "Friend Tooltip",
-    host: friendTooltipSettings.host,
-    path: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-4 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
-  },
-  {
-    id: "social-reminders",
-    label: "Social Reminders",
-    host: socialSettings,
-    path: "M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z M10 21a2 2 0 0 0 4 0",
-  },
-  {
-    id: "trade-reminders",
-    label: "Trade Reminders",
-    host: tradeSettings.host,
-    path: "M3 7h18 M17 3l4 4-4 4 M21 17H3 M7 13l-4 4 4 4",
+    id: "pack-openings",
+    label: "Pack Openings",
+    host: packBehavior,
+    path: "M6.9 5.3 15.9 2a1.5 1.5 0 0 1 1.9.9l5.1 14a1.5 1.5 0 0 1-.9 1.9l-9 3.3a1.5 1.5 0 0 1-1.9-.9L6 7.2a1.5 1.5 0 0 1 .9-1.9Z M4.5 11.5 2 16.5a1.5 1.5 0 0 0 .7 2L7 20.6 M13.2 8.4l3.6 2.8-1.1 4.5-3.7-2.9Z",
   },
   {
     id: "sales-overlay",
@@ -1156,16 +1205,28 @@ const settingsGroups = [
     path: "M4 4h7l9 9-7 7-9-9V4Z M8 8h.01 M12 12l4 4",
   },
   {
+    id: "fusion",
+    label: "Fusion",
+    host: fusion,
+    path: "M3 5h4l5 7h8 M3 19h4l5-7 M16 8l4 4-4 4",
+  },
+  {
+    id: "family-impact-overlay",
+    label: "Family Impact Overlay",
+    host: familyImpact,
+    path: "M10.3 4.9a2 2 0 0 1 3.4 0l8.1 13.5a1.7 1.7 0 0 1-1.5 2.6H3.7a1.7 1.7 0 0 1-1.5-2.6Z M12 9v4 M12 17h.01",
+  },
+  {
+    id: "social",
+    label: "Social",
+    host: socialPanel,
+    path: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-4 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
+  },
+  {
     id: "hotkeys",
     label: "Hotkeys",
     host: hotkeysPanel,
     path: "M3 5h18v14H3Z M7 9h.01 M11 9h.01 M15 9h.01 M7 12h.01 M11 12h.01 M15 12h.01 M7 15h10",
-  },
-  {
-    id: "pack-openings",
-    label: "Pack Openings",
-    host: packBehavior,
-    path: "M6.9 5.3 15.9 2a1.5 1.5 0 0 1 1.9.9l5.1 14a1.5 1.5 0 0 1-.9 1.9l-9 3.3a1.5 1.5 0 0 1-1.9-.9L6 7.2a1.5 1.5 0 0 1 .9-1.9Z M4.5 11.5 2 16.5a1.5 1.5 0 0 0 .7 2L7 20.6 M13.2 8.4l3.6 2.8-1.1 4.5-3.7-2.9Z",
   },
   {
     id: "backup-restore",
@@ -1173,13 +1234,8 @@ const settingsGroups = [
     host: backupSettings.host,
     path: "M12 3v12 M7 10l5 5 5-5 M4 15v6h16v-6",
   },
-  {
-    id: "connected-account",
-    label: "Connected Account",
-    host: connection,
-    path: "M20 21v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2 M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z",
-  },
-];
+  // Keep the Family Impact settings available for a future release.
+].filter((group) => group.host !== familyImpact);
 app.append(...settingsGroups.map((group) => group.host));
 document.body.prepend(settingsNavigation(settingsGroups));
 for (const event of ["input", "change", "click"])
@@ -1194,6 +1250,7 @@ app.append(
   ),
 );
 function renderSettings() {
+  socialEnabled.checked = draft.socialEnabled;
   socialRemindersMaster.checked = draft.socialRemindersMasterEnabled;
   renderReminderSettings();
   tradeEnabled.checked = draft.tradeRemindersEnabled;
@@ -1201,14 +1258,19 @@ function renderSettings() {
   friendTooltipEnabled.checked = draft.friendTooltipEnabled;
   friendTooltipSettings.render(draft);
   allHotkeysEnabled.checked = draft.hotkeysEnabled;
-  navigationHotkeysEnabled.checked = draft.navigationHotkeysEnabled;
-  packHotkeysEnabled.checked = draft.packOpeningHotkeysEnabled;
-  hoverHotkeysEnabled.checked = draft.hoverTooltipHotkeysEnabled;
+  packOpeningsEnabled.checked = draft.packOpeningsEnabled;
+  renderHotkeys();
   anyKeyDismissesFoundPack.checked = draft.anyKeyDismissesFoundPack;
   autoSkipOpening.checked = draft.autoSkipOpening;
   autoDismissFoundPack.checked = draft.autoDismissFoundPack;
   showRemainingPackCount.checked = draft.showRemainingPackCount;
   overlaysEnabled.checked = draft.cardOverlaysEnabled;
+  fusionEnabled.checked = draft.fusionSettingsEnabled;
+  fusionWarning.checked = draft.fusionShowPriceWarning;
+  fusionThreshold.value = String(draft.fusionWarningThreshold);
+  fusionThreshold.disabled = !draft.fusionShowPriceWarning;
+  reviewControls.button.checked = draft.fusionReviewOverlayButton;
+  reviewControls.outside.checked = draft.fusionReviewOutsideClickOnly;
   familyImpactEnabled.checked =
     FAMILY_IMPACT_AVAILABLE && draft.familyImpactOverlaysEnabled;
   salesEnabled.checked = draft.salesOverlaysEnabled;
@@ -1233,6 +1295,7 @@ function renderSettings() {
   saleOverlay.checked = draft.showSaleHistoryOverlay;
   lastSalePriceOverlay.checked = draft.showLastSalePriceOverlay;
   lastSalePriceOverlay.disabled = !draft.showSaleHistoryOverlay;
+  syncPriceMode();
   auctionOverlay.checked = draft.showActiveAuctionsOverlay;
   listingPriceOverlay.checked = draft.showLowestListingPriceOverlay;
   listingPriceOverlay.disabled = !draft.showActiveAuctionsOverlay;
@@ -1251,27 +1314,32 @@ function renderSettings() {
       : { ...draft, familyImpactOverlaysEnabled: false },
   );
   statSettings.render(draft.stats);
-  hotkeySettings.render(draft.hotkeys);
-  packHotkeySettings.render(draft.packOpeningHotkeys);
-  tooltipHotkeySettings.render(draft.hoverTooltipHotkeys);
   salesSettings.render(draft);
   for (const host of [
     general,
+    socialPanel,
     friendTooltipSettings.host,
     socialSettings,
     tradeSettings.host,
     albumSettings,
     statSettings.host,
     overlays,
+    fusion,
     familyImpact,
     salesSettings.host,
     hotkeysPanel,
-    hotkeySettings.host,
-    packHotkeySettings.host,
-    tooltipHotkeySettings.host,
     packBehavior,
   ])
     renderGroupState(host);
+}
+function renderHotkeys() {
+  navigationHotkeysEnabled.checked = draft.navigationHotkeysEnabled;
+  packHotkeysEnabled.checked = draft.packOpeningHotkeysEnabled;
+  hoverHotkeysEnabled.checked = draft.hoverTooltipHotkeysEnabled;
+  hotkeySettings.render(draft.hotkeys);
+  packHotkeySettings.render(draft.packOpeningHotkeys);
+  tooltipHotkeySettings.render(draft.hoverTooltipHotkeys);
+  for (const panel of hotkeyPanels) renderGroupState(panel);
 }
 function pinned() {
   return selected ? (draft.pinnedAlbums[selected.account.key] ?? []) : [];
@@ -1328,9 +1396,7 @@ function renderAlbums() {
   pins.replaceChildren();
   albumShortcutHint.textContent = "";
   if (!selected) {
-    catalog.append(
-      el("p", "empty", "Connect a signed-in Kosmora tab to see your albums."),
-    );
+    catalog.append(el("p", "empty", albumMessage || "Loading your albums…"));
     pins.append(el("p", "empty", "Your pinned albums will appear here."));
     return;
   }
@@ -1345,13 +1411,15 @@ function renderAlbums() {
     );
     const isPinned = ids.includes(album.id);
     const pin = button(
-      isPinned ? "Unpin" : "Pin",
+      "",
       () =>
         setPins(
           isPinned ? ids.filter((id) => id !== album.id) : [...ids, album.id],
         ),
-      "small ghost",
+      isPinned ? "icon-remove" : "small ghost icon-pin",
     );
+    pin.append(isPinned ? headerIcon("unpin") : pinIcon());
+    pin.title = `${isPinned ? "Unpin" : "Pin"} ${album.name}`;
     pin.setAttribute(
       "aria-label",
       `${isPinned ? "Unpin" : "Pin"} ${album.name}`,
@@ -1405,14 +1473,15 @@ function renderAlbums() {
     const remove = button(
       "",
       () => setPins(ids.filter((x) => x !== id)),
-      "small ghost",
+      "icon-remove",
     );
-    remove.append(headerIcon("close"));
+    remove.append(headerIcon("trash"));
     remove.setAttribute(
       "aria-label",
       `Unpin ${album?.name ?? "unavailable album"}`,
     );
-    actions.append(remove);
+    remove.title = remove.getAttribute("aria-label")!;
+    actions.prepend(remove);
     row.append(
       name,
       actions,
@@ -1431,89 +1500,43 @@ function renderAlbums() {
       el("p", "empty", "Pin an album on the left to add a shortcut."),
     );
 }
-async function discover() {
+async function discoverAlbums() {
   const n = ++sequence;
-  refresh.disabled = true;
-  connectionStatus.replaceChildren(note("Finding signed-in game tabs…"));
-  try {
-    const found = await request<Session[]>({ op: "sessions" });
-    if (n !== sequence) return;
-    sessions = [...new Map(found.map((s) => [s.account.key, s])).values()];
-    select.replaceChildren();
-    const prompt = el(
-      "option",
-      "",
-      sessions.length ? "Choose an account…" : "No signed-in game tab",
-    );
-    prompt.value = "";
-    select.append(prompt);
-    for (const s of sessions) {
-      const o = el("option", "", s.account.handle);
-      o.value = s.account.key;
-      select.append(o);
-    }
-    const old = selected?.account.key;
-    selected = old
-      ? sessions.find((s) => s.account.key === old)
-      : sessions.length === 1
-        ? sessions[0]
-        : undefined;
-    select.value = selected?.account.key ?? "";
-    connectionStatus.replaceChildren();
-    if (!sessions.length) {
-      connectionStatus.append(
-        note("Open Kosmora, sign in, then refresh accounts."),
-      );
-      const a = el("a", "", "Open Kosmora");
-      a.href = "https://kosmora.io/home";
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      connectionStatus.append(a);
-    } else if (!selected)
-      connectionStatus.append(
-        note("Choose the account whose pinned albums you want to configure."),
-      );
-    albums = [];
-    renderAlbums();
-    if (selected) await loadAlbums();
-  } catch (error) {
-    connectionStatus.replaceChildren(note(messageOf(error), true));
-  } finally {
-    refresh.disabled = false;
-  }
-}
-async function loadAlbums() {
-  const n = ++sequence;
-  const session = selected;
-  if (!session) return;
-  connectionStatus.replaceChildren(note("Loading your albums…"));
-  try {
-    const list = await request<Album[]>({
-      op: "albums",
-      tabId: session.tabId,
-      accountKey: session.account.key,
-    });
-    if (n !== sequence) return;
-    albums = list;
-    connectionStatus.replaceChildren(
-      note(`Connected to ${session.account.handle}.`),
-    );
-    renderAlbums();
-  } catch (error) {
-    if (n === sequence) {
-      albums = [];
-      renderAlbums();
-      connectionStatus.replaceChildren(note(messageOf(error), true));
-    }
-  }
-}
-select.addEventListener("change", () => {
-  sequence++;
-  selected = sessions.find((s) => s.account.key === select.value);
+  selected = undefined;
   albums = [];
+  albumMessage = "Loading your albums…";
   renderAlbums();
-  if (selected) void loadAlbums();
-});
+  try {
+    const linked = await request<ConnectionStatus>({ op: "servicesStatus" });
+    if (n !== sequence) return;
+    const account = linked.handle?.toLowerCase();
+    if (!account || !linked.playerId || linked.blocked) {
+      albumMessage = linked.blocked
+        ? "Restore access under Connected Account to see your albums."
+        : "Link your Kosmora account under Connected Account to see your albums.";
+    } else {
+      const sessions = await request<Session[]>({ op: "sessions" });
+      if (n !== sequence) return;
+      const session = sessions.find((s) => s.account.key === account);
+      if (session) {
+        const list = await request<Album[]>({
+          op: "albums",
+          tabId: session.tabId,
+          accountKey: account,
+        });
+        if (n !== sequence) return;
+        selected = session;
+        albums = list;
+      } else {
+        albumMessage = `Open Kosmora and sign in as ${linked.handle} to see your albums.`;
+      }
+    }
+  } catch (error) {
+    if (n !== sequence) return;
+    albumMessage = messageOf(error);
+  }
+  renderAlbums();
+}
 async function persist(
   group: SettingsGroup,
   status: HTMLElement,
@@ -1537,8 +1560,11 @@ async function persist(
   renderGroupState(group.host);
   backupSettings.refreshControls();
   save.disabled = true;
+  const changedKeys = group.host === hotkeysPanel
+    ? group.keys.filter((key) => JSON.stringify(draft[key]) !== JSON.stringify(saved[key]))
+    : group.keys;
   const values = Object.fromEntries(
-    group.keys.map((key) => [key, structuredClone(draft[key])]),
+    changedKeys.map((key) => [key, structuredClone(draft[key])]),
   );
   const albumAccounts =
     group.host === albumSettings ? changedAlbumAccounts() : undefined;
@@ -1567,8 +1593,9 @@ async function persist(
       await saveSettings(next);
       return next;
     });
-    for (const key of group.keys)
+    for (const key of changedKeys)
       Object.assign(saved, { [key]: structuredClone(next[key]) });
+    if (group.host === hotkeysPanel) renderGroupState(packBehavior);
     if (albumAccounts) {
       for (const key of ALBUM_ACCOUNT_SETTINGS)
         Object.assign(draft, { [key]: structuredClone(next[key]) });
@@ -1634,16 +1661,16 @@ void readSettings()
     renderAlbums();
     settingsReady = true;
     backupSettings.refreshControls();
-    const albumSection = document.getElementById("pinned-albums");
-    if (albumSection) {
-      const visible = new IntersectionObserver((entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          visible.disconnect();
-          if (!sequence) void discover();
-        }
-      });
-      visible.observe(albumSection);
-    }
+    const visible = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        visible.disconnect();
+        void discoverAlbums();
+      }
+    });
+    visible.observe(albumSettings);
+    document.addEventListener("visibilitychange", () => {
+      if (sequence && !document.hidden) void discoverAlbums();
+    });
   })
   .catch((error) => {
     settingsReady = true;
@@ -1651,6 +1678,8 @@ void readSettings()
     app.append(note(`Could not load settings: ${messageOf(error)}`, true));
   });
 chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[SERVICES_STATE_KEY] && sequence)
+    void discoverAlbums();
   if (area !== "local" || !changes[SETTINGS_KEY]) return;
   const next = parseSettings(changes[SETTINGS_KEY].newValue);
   for (const [host, { key, input }] of featureGroups) {
@@ -1684,6 +1713,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
     ["autoDismissFoundPack", autoDismissFoundPack],
     ["showRemainingPackCount", showRemainingPackCount],
     ["showAuctionBidCounts", showAuctionBidCounts],
+    ["fusionShowPriceWarning", fusionWarning],
+    ["fusionReviewOverlayButton", reviewControls.button],
+    ["fusionReviewOutsideClickOnly", reviewControls.outside],
   ] as const) {
     if (draft[key] === saved[key]) {
       draft[key] = next[key];
@@ -1691,6 +1723,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
     }
     saved[key] = next[key];
   }
+  if (draft.fusionWarningThreshold === saved.fusionWarningThreshold) {
+    draft.fusionWarningThreshold = next.fusionWarningThreshold;
+    fusionThreshold.value = String(next.fusionWarningThreshold);
+  }
+  saved.fusionWarningThreshold = next.fusionWarningThreshold;
+  fusionThreshold.disabled = !draft.fusionShowPriceWarning;
   statSettings.render(draft.stats);
   for (const { field, input } of popupInputs) {
     if (field !== "popupWidth" && field !== "popupHeight") continue;

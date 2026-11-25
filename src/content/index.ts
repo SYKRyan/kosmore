@@ -1,7 +1,14 @@
 import { setRequestPriority } from "../shared/request-scheduler";
 import { NativeReadCache } from "../shared/native-read-cache";
 import { GameClient } from "../kosmora/client";
-import { contextKey, HOST_ID, resolveCard, topDialog } from "../kosmora/dom";
+import {
+  contextKey,
+  HOST_ID,
+  inFusionReview,
+  isFusionPage,
+  resolveCard,
+  topDialog,
+} from "../kosmora/dom";
 import { isTabRequest, request } from "../shared/messages";
 import {
   parsePopupState,
@@ -161,7 +168,7 @@ window.addEventListener("message", (event) => {
         const observed = client.observeIdentity(event.data.data) ?? "";
         void chrome.storage.local.set({ "kosmore.gameAccountHint": observed });
       }
-      if (event.data.kind === "inventory" && settings.showRemainingPackCount) {
+      if (event.data.kind === "inventory" && remainingPackCountEnabled()) {
         try {
           client.observeInventory(event.data.data, event.data.href);
         } catch {}
@@ -207,10 +214,12 @@ function needsServicesCards() {
   return (
     page.enabled ||
     page.cardOverlaysEnabled ||
+    (isFusionPage() &&
+      settings.fusionSettingsEnabled &&
+      settings.fusionShowPriceWarning) ||
     settings.salesOverlaysEnabled ||
     (FAMILY_IMPACT_AVAILABLE && settings.familyImpactOverlaysEnabled) ||
-    settings.friendTooltipEnabled ||
-    settings.showTradePossibleInterest
+    (settings.socialEnabled && (settings.friendTooltipEnabled || settings.showTradePossibleInterest))
   );
 }
 let cardRefresh: ReturnType<typeof setTimeout> | undefined;
@@ -246,6 +255,9 @@ function refreshServiceControls(
     if (popup && current && affected.has(current.subjectId)) void show(current);
   }, 80);
 }
+function remainingPackCountEnabled() {
+  return settings.packOpeningsEnabled && settings.showRemainingPackCount;
+}
 function syncRelayPreferences() {
   const family =
     FAMILY_IMPACT_AVAILABLE && settings.familyImpactOverlaysEnabled;
@@ -257,7 +269,7 @@ function syncRelayPreferences() {
       preferences: {
         servicesCards: needsServicesCards(),
         packOpenings: pageSettings().enabled,
-        inventory: settings.showRemainingPackCount,
+        inventory: remainingPackCountEnabled(),
         fusion: family && settings.showFusionFamilyOverlay,
         vortex: family && settings.showVortexFamilyOverlay,
         familyMilestones:
@@ -276,7 +288,7 @@ function syncRelayPreferences() {
 }
 const remainingPacks = new RemainingPacks(
   client,
-  () => settings.showRemainingPackCount,
+  remainingPackCountEnabled,
 );
 let pinnedState: PopupState = { pinned: false, position: null };
 const navigationHotkeys = new NavigationHotkeys(
@@ -380,7 +392,10 @@ function checkUrl() {
   packOpeningHotkeys.reset();
   friendTooltip.setSettings(pageSettings());
   tooltipButtons.setSettings(settings);
-  if (previous.cardOverlaysEnabled !== pageSettings().cardOverlaysEnabled)
+  if (
+    previous.cardOverlaysEnabled !== pageSettings().cardOverlaysEnabled ||
+    isFusionPage(previousUrl.pathname) !== isFusionPage()
+  )
     overlays.invalidate();
   navigationAway();
 }
@@ -672,6 +687,14 @@ function loadHeaderSignals(
     .then(receive)
     .catch(() => {});
 }
+function outsideClickClosesTooltipOnly() {
+  return (
+    settings.outsideClickClosesTooltipOnly ||
+    (settings.fusionSettingsEnabled &&
+      settings.fusionReviewOutsideClickOnly &&
+      inFusionReview(popup?.context?.anchor))
+  );
+}
 function enter(target: Element, pointer?: PointerEvent) {
   if (!pageSettings().enabled) return;
   if (tooltipButtons.contains(target)) {
@@ -684,11 +707,7 @@ function enter(target: Element, pointer?: PointerEvent) {
     return;
   }
   if (target.closest(`#${HOST_ID}`)) {
-    if (
-      settings.outsideClickClosesTooltipOnly &&
-      popup &&
-      current !== popup.context
-    ) {
+    if (outsideClickClosesTooltipOnly() && popup && current !== popup.context) {
       clearTimeout(openTimer);
       current = popup.context;
     }
@@ -714,7 +733,7 @@ function enter(target: Element, pointer?: PointerEvent) {
     current.anchor === context.anchor
   )
     return;
-  if (popup?.isPinned || (settings.outsideClickClosesTooltipOnly && popup))
+  if (popup?.isPinned || (popup && outsideClickClosesTooltipOnly()))
     clearTimeout(openTimer);
   else hide();
   keyboardOpened = false;
@@ -782,7 +801,7 @@ function closeOnlyOutside(event: Event) {
   )
     return false;
   return (
-    settings.outsideClickClosesTooltipOnly &&
+    outsideClickClosesTooltipOnly() &&
     !!popup &&
     !popup.isPinned &&
     !insideTooltip(event)
@@ -1075,7 +1094,7 @@ observePage(() => {
     return;
   }
   if (contextKey(next) !== contextKey(current)) {
-    if (settings.useOverlayButtonInsteadOfHover) {
+    if (tooltipButtons.usesButton(next.anchor)) {
       navigationAway();
       return;
     }
@@ -1163,12 +1182,15 @@ function applySettings(next: Settings) {
   }
   syncRelayPreferences();
   if (
-    previous.useOverlayButtonInsteadOfHover !==
-    settings.useOverlayButtonInsteadOfHover
+    current &&
+    tooltipButtons.usesButton(current.anchor, previous) !==
+      tooltipButtons.usesButton(current.anchor, settings)
   )
     navigationAway();
   friendTooltip.setSettings(pageSettings());
   navigationHotkeys.settingsChanged();
+  if (previous.packOpeningsEnabled !== settings.packOpeningsEnabled)
+    packOpeningHotkeys.setEnabled(settings.packOpeningsEnabled);
   if (previous.packOpeningHotkeysEnabled && !settings.packOpeningHotkeysEnabled)
     packOpeningHotkeys.reset();
   else if (!settings.hotkeysEnabled) packOpeningHotkeys.cancelHotkeyActions();
@@ -1276,7 +1298,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.op === "session") return account;
     if (account.key !== message.accountKey)
       throw new Error(
-        "Your Kosmora account changed. Refresh connected accounts.",
+        "Your Kosmora account changed. Return to Settings with the linked player signed in.",
       );
     return message.op === "listFamilies"
       ? client.families(undefined, true)

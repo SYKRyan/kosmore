@@ -1,5 +1,6 @@
 import { FAMILY_IMPACT_AVAILABLE } from "../../src/shared/feature-availability";
 import { questCatalog } from "../fixtures/quests";
+import { mockServiceCard } from "./service-card";
 import { serviceDetails } from "../fixtures/services";
 import { parseServicesCard } from "../../src/shared/services";
 import {
@@ -314,6 +315,28 @@ test.afterAll(async () => {
   }
 });
 
+async function mockLinkedAccount(options: Page, handle = "FixturePlayer") {
+  await options.addInitScript((handle) => {
+    const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+    chrome.runtime.sendMessage = new Proxy(send, {
+      apply(target, receiver, args) {
+        const [message] = args;
+        if (message?.op === "servicesStatus")
+          return Promise.resolve({
+            requestId: message.requestId,
+            ok: true,
+            data: {
+              base: "https://services.example.test",
+              handle,
+              playerId: "000000000000000000000001",
+            },
+          });
+        return Reflect.apply(target, receiver, args);
+      },
+    });
+  }, handle);
+}
+
 async function enableTooltipButtons() {
   await worker.evaluate(async () => {
     const settings = (await chrome.storage.local.get("kosmore.settings"))[
@@ -627,22 +650,7 @@ test("Pulsar: exclusions leave Vortex and the hub enabled while disabling the ot
     },
     "42",
   );
-  const fixture = await worker.evaluateHandle((card) => {
-    const listener: Parameters<
-      typeof chrome.runtime.onMessage.addListener
-    >[0] = (message, _sender, reply) => {
-      if (message.op !== "servicesRead" || !message.ids.includes("42")) return;
-      reply({
-        requestId: message.requestId,
-        ok: true,
-        data: {
-          "42": { card, until: Date.now() + 300_000, stale: false },
-        },
-      });
-    };
-    chrome.runtime.onMessage.addListener(listener);
-    return () => chrome.runtime.onMessage.removeListener(listener);
-  }, card);
+  const fixture = await mockServiceCard(worker, card);
   try {
     await pulsarSettings({
       disableHoverTooltipInPulsar: true,
@@ -2142,13 +2150,16 @@ test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", 
       name: "Set shortcut for Next Card",
       exact: true,
     });
-    const save = pack.getByRole("button", {
+    const hotkeys = options.locator("#hotkeys");
+    const save = hotkeys.getByRole("button", {
       name: "Save",
       exact: true,
     });
     const toggle = pack.getByRole("switch", {
       name: "Enable pack opening hotkeys",
     });
+    await expect(hotkeys.locator(".tab-panels .savebar")).toHaveCount(0);
+    await expect(hotkeys.locator(".savebar")).toHaveCount(1);
     const anyKey = behavior.getByRole("checkbox", {
       name: "Any key dismisses found pack",
     });
@@ -2164,11 +2175,24 @@ test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", 
     await expect(autoDismiss).not.toBeChecked();
     await expect(anyKey).toBeDisabled();
     await toggle.check();
+    await record.click();
+    await record.press("ArrowRight");
+    await options.getByRole("radio", { name: "Navigation" }).click();
+    const navSwitch = nav.getByRole("switch", { name: "Enable navigation hotkey" });
+    await navSwitch.uncheck();
+    await hotkeys.getByRole("button", { name: "Cancel" }).click();
+    await expect(navSwitch).toBeChecked();
+    await options.getByRole("radio", { name: "Pack Opening" }).click();
+    await expect(toggle).not.toBeChecked();
+    await expect(record).toHaveText("Not set");
+    await toggle.check();
+    await expect(anyKey).toBeDisabled();
+    await save.click();
     await expect(anyKey).toBeEnabled();
     await anyKey.uncheck();
     await autoSkip.check();
     await autoDismiss.check();
-    await pack.getByRole("button", { name: "Cancel" }).click();
+    await hotkeys.getByRole("button", { name: "Cancel" }).click();
     await behavior.getByRole("button", { name: "Cancel" }).click();
     await expect(anyKey).toBeChecked();
     await expect(autoSkip).not.toBeChecked();
@@ -2177,7 +2201,7 @@ test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", 
     await autoSkip.check();
     await autoDismiss.check();
     await save.click();
-    await expect(pack.locator(".savebar .status")).toContainText("Saved");
+    await expect(hotkeys.locator(".savebar .status")).toContainText("Saved");
     await behavior.getByRole("button", { name: "Save" }).click();
     await expect(behavior.locator(".savebar .status")).toContainText("Saved");
     await options.reload();
@@ -2195,27 +2219,29 @@ test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", 
     await record.click();
     await record.press("ArrowRight");
     await expect(record).toHaveText("Arrow Right");
-    await pack.getByRole("button", { name: "Cancel" }).click();
+    await hotkeys.getByRole("button", { name: "Cancel" }).click();
     await expect(record).toHaveText("Not set");
+    await options.getByRole("radio", { name: "Navigation" }).click();
     const home = nav.getByRole("button", {
       name: "Set shortcut for Home",
       exact: true,
     });
     await home.click();
     await home.press("h");
-    await nav.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(nav.getByRole("status")).toContainText("Saved");
+    // Both bindings are drafts until the single Hotkeys save.
+    await options.getByRole("radio", { name: "Pack Opening" }).click();
     await record.click();
     await record.press("h");
     await save.click();
-    await expect(pack.locator(".savebar .status")).toContainText("both use H");
+    await expect(hotkeys.locator(".savebar .status")).toContainText("both use H");
     await record.click();
     await record.press("ArrowRight");
     await save.click();
-    await expect(pack.locator(".savebar .status")).toContainText("Saved");
+    await expect(hotkeys.locator(".savebar .status")).toContainText("Saved");
     await toggle.uncheck();
+    await save.click();
     await expect(record).toBeDisabled();
-    await expect(pack.locator(".savebar .status")).toContainText("Saved");
+    await expect(hotkeys.locator(".savebar .status")).toContainText("Saved");
     await options.reload();
     await expect(toggle).not.toBeChecked();
     await toggle.check();
@@ -2225,7 +2251,7 @@ test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", 
       .getByRole("button", { name: "Clear shortcut for Next Card" })
       .click();
     await save.click();
-    await expect(pack.locator(".savebar .status")).toContainText("Saved");
+    await expect(hotkeys.locator(".savebar .status")).toContainText("Saved");
     await options.reload();
     await expect(record).toHaveText("Not set");
   } finally {
@@ -2244,7 +2270,8 @@ test("tooltip hotkeys record independently and Escape cancels the recorder", asy
     const record = group.getByRole("button", {
       name: "Set shortcut for Close Tooltip",
     });
-    const save = group.getByRole("button", { name: "Save", exact: true });
+    const hotkeys = options.locator("#hotkeys");
+    const save = hotkeys.getByRole("button", { name: "Save", exact: true });
     await expect(
       group.getByText(
         "Escape always closes the tooltip, even when this shortcut is unset.",
@@ -2257,18 +2284,18 @@ test("tooltip hotkeys record independently and Escape cancels the recorder", asy
     await record.click();
     await record.press("h");
     await save.click();
-    await expect(group.getByRole("status")).toContainText("both use H");
+    await expect(hotkeys.getByRole("status")).toContainText("both use H");
     await record.click();
     await record.press("x");
     await save.click();
-    await expect(group.getByRole("status")).toContainText("Saved");
+    await expect(hotkeys.getByRole("status")).toContainText("Saved");
     await options.reload();
     await expect(record).toHaveText("X");
     await group
       .getByRole("button", { name: "Clear shortcut for Close Tooltip" })
       .click();
     await save.click();
-    await expect(group.getByRole("status")).toContainText("Saved");
+    await expect(hotkeys.getByRole("status")).toContainText("Saved");
     await options.reload();
     await expect(record).toHaveText("Not set");
     await expect(
@@ -2317,17 +2344,23 @@ test("Hotkeys switches pause live shortcuts and preserve individual settings", a
     expect(
       navigationBox.y - (subtitleBox.y + subtitleBox.height),
     ).toBeGreaterThanOrEqual(12);
+    const navigationTab = hotkeys.getByRole("radio", { name: "Navigation" });
+    await navigationTab.press("End");
+    await expect(hover).toBeVisible();
+    await expect(navigation).toBeHidden();
     await tooltipSwitch.uncheck();
-    await expect(hover.locator(".savebar .status")).toContainText("Saved.");
+    await hotkeys.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(hotkeys.getByRole("status")).toContainText("Saved.");
     await expect(
       hover.getByRole("button", { name: "Set shortcut for Pin/Unpin" }),
     ).toBeDisabled();
     await master.uncheck();
-    await expect(hotkeys.locator("[data-feature-status]")).toContainText(
+    await expect(hotkeys.getByRole("status")).toContainText(
       "Saved.",
     );
-    await expect(navigation.getByRole("switch")).toBeDisabled();
     await expect(tooltipSwitch).toBeDisabled();
+    await navigationTab.click();
+    await expect(navigation.getByRole("switch")).toBeDisabled();
     await expect(anyKey).toBeDisabled();
     await expect(
       options.getByRole("checkbox", { name: "Auto-skip on next pack" }),
@@ -2366,11 +2399,12 @@ test("Hotkeys switches pause live shortcuts and preserve individual settings", a
 
     await options.bringToFront();
     await master.check();
-    await expect(hotkeys.locator("[data-feature-status]")).toContainText(
+    await expect(hotkeys.getByRole("status")).toContainText(
       "Saved.",
     );
-    await expect(tooltipSwitch).not.toBeChecked();
     await expect(navigation.getByRole("switch")).toBeChecked();
+    await hotkeys.getByRole("radio", { name: "Hover Tooltip" }).click();
+    await expect(tooltipSwitch).not.toBeChecked();
     await expect(anyKey).toBeEnabled();
     await page.bringToFront();
     await page.keyboard.press("d");
@@ -2389,7 +2423,8 @@ test("Hotkeys switches pause live shortcuts and preserve individual settings", a
 
     await options.bringToFront();
     await tooltipSwitch.check();
-    await expect(hover.locator(".savebar .status")).toContainText("Saved.");
+    await hotkeys.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(hotkeys.getByRole("status")).toContainText("Saved.");
     await openCard();
     await page.keyboard.press("p");
     await expect(popup).toHaveAttribute("data-pinned", "");
@@ -2566,6 +2601,19 @@ test("Pack Openings shows the ready-pack count above the native Next Pack button
     const setting = pack.getByRole("checkbox", {
       name: "Show remaining pack count",
     });
+    const master = pack.getByRole("switch", { name: "Enable pack openings" });
+    await expect(master).toBeChecked();
+    await master.uncheck();
+    await expect(count).toHaveCount(0);
+    await options.reload();
+    await expect(master).not.toBeChecked();
+    await expect(pack.getByText("Disabled", { exact: true })).toBeVisible();
+    for (const control of await pack.getByRole("checkbox").all())
+      await expect(control).toBeDisabled();
+    await expect(pack.getByRole("button", { name: "Save" })).toBeDisabled();
+    await expect(setting).toBeChecked();
+    await master.check();
+    await expect(count).toHaveText("2 packs ready");
     await expect(setting).toBeChecked();
     await setting.uncheck();
     await expect(count).toHaveCount(0);
@@ -2592,6 +2640,7 @@ test("Pack Openings shows the ready-pack count above the native Next Pack button
 test("pinned album hotkeys record in the album row and use the available tooltip button", async () => {
   await page.goto("https://kosmora.io/collection");
   const options = await context.newPage();
+  await mockLinkedAccount(options);
   try {
     await options.goto(
       `chrome-extension://${extensionId}/options.html#pinned-albums`,
@@ -2626,7 +2675,7 @@ test("pinned album hotkeys record in the album row and use the available tooltip
     await expect(pins.locator(".savebar .status")).toContainText("Saved");
     await options.reload();
     await expect(album).toHaveText("J");
-    const nav = options.locator("#navigation-hotkeys");
+    const nav = options.locator("#hotkeys");
     const home = nav.getByRole("button", {
       name: "Set shortcut for Home",
       exact: true,
@@ -3012,12 +3061,10 @@ test("auto-skip on next pack works by mouse and hotkey and leaves rare-pack warn
 });
 
 test("auto-dismiss closes both found-pack alerts while keeping both summary notices", async () => {
-  await worker.evaluate(async () => {
-    const key = "kosmore.settings";
-    const saved = (await chrome.storage.local.get(key))[key] as object;
-    await chrome.storage.local.set({
-      [key]: { ...saved, packOpeningHotkeysEnabled: true },
-    });
+  await pulsarSettings({
+    packOpeningsEnabled: false,
+    packOpeningHotkeysEnabled: true,
+    autoDismissFoundPack: true,
   });
   await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&packHotkeys=1`);
   await expect(page.locator("#kosmore-pack-hotkeys-style")).toHaveCount(1);
@@ -3026,15 +3073,11 @@ test("auto-dismiss closes both found-pack alerts while keeping both summary noti
   await expect(page.locator(".ko-beat-shown")).toBeVisible();
   await page.keyboard.press("ArrowRight");
   await expect(page.locator(".ko-drop-rogue")).toBeVisible();
+  await page.keyboard.press("d");
+  await expect(page.locator(".ko-drop-rogue")).toBeVisible();
   await expect(page.locator("body")).not.toHaveAttribute("data-dismiss", /.+/);
 
-  await worker.evaluate(async () => {
-    const key = "kosmore.settings";
-    const saved = (await chrome.storage.local.get(key))[key] as object;
-    await chrome.storage.local.set({
-      [key]: { ...saved, autoDismissFoundPack: true },
-    });
-  });
+  await pulsarSettings({ packOpeningsEnabled: true });
   await expect(page.locator(".ko-drop")).toHaveCount(0);
   await expect(page.locator("body")).toHaveAttribute("data-dismiss", "2");
   const notices = page.getByRole("list", { name: "Found packs" });
@@ -3505,61 +3548,55 @@ test("settings groups are ordered with separate account controls and a fixed anc
   await page.goto("https://kosmora.io/collection");
   const options = await context.newPage();
   try {
-    await options.goto(`chrome-extension://${extensionId}/options.html`);
-    await expect(
-      options.getByText("Connected to FixturePlayer.", { exact: true }),
-    ).toBeVisible();
+    await options.goto(
+      `chrome-extension://${extensionId}/options.html#pinned-albums`,
+    );
+    const groups = [
+      ["Connected Account", "connected-account"],
+      ["Hover Tooltip", "hover-tooltip"],
+      ["Pinned Albums", "pinned-albums"],
+      ["Tooltip Stat Boxes", "stat-boxes"],
+      ["Card Overlays", "card-overlays"],
+      ["Pack Openings", "pack-openings"],
+      ["Sales Overlay", "sales-overlay"],
+      ["Fusion", "fusion"],
+      ["Social", "social"],
+      ["Hotkeys", "hotkeys"],
+      ["Backup & Restore", "backup-restore"],
+    ];
+    const labels = groups.map(([label]) => label);
     expect(
       await options
         .locator("#app > section")
         .evaluateAll((sections) =>
           sections.map((section) => section.querySelector("h2")?.textContent),
         ),
-    ).toEqual([
-      "Hover Tooltip",
-      "Pinned Albums",
-      "Tooltip Stat Boxes",
-      "Card Overlays",
-      "Family Impact Overlay",
-      "Friend Tooltip",
-      "Social Reminders",
-      "Trade Reminders",
-      "Sales Overlay",
-      "Hotkeys",
-      "Pack Openings",
-      "Fusion",
-      "Backup & Restore",
-      "Connected Account",
-    ]);
+    ).toEqual(labels);
     const connection = options.locator("#connected-account"),
       albums = options.locator("#pinned-albums"),
       nav = options.getByRole("navigation", { name: "Settings groups" });
-    await expect(nav.getByRole("link")).toHaveText([
-      "Hover Tooltip",
-      "Pinned Albums",
-      "Tooltip Stat Boxes",
-      "Card Overlays",
-      "Family Impact Overlay",
-      "Friend Tooltip",
-      "Social Reminders",
-      "Trade Reminders",
-      "Sales Overlay",
-      "Hotkeys",
-      "Pack Openings",
-      "Fusion",
-      "Backup & Restore",
-      "Connected Account",
-    ]);
-    await expect(connection.getByLabel("Kosmora account")).toBeVisible();
+    await expect(nav.getByRole("link")).toHaveText(labels);
+    const socialSelector = options.getByRole("radiogroup", { name: "Social settings" });
+    await expect(socialSelector.locator("label")).toHaveText(["Reminders", "Trade", "Tooltip"]);
+    const reminders = socialSelector.getByRole("radio", { name: "Reminders" });
+    await expect(reminders).toBeChecked();
+    await reminders.press("ArrowRight");
+    await expect(socialSelector.getByRole("radio", { name: "Trade" })).toBeChecked();
+    await expect(options.locator("#trade-reminders")).toBeVisible();
+    await expect(options.getByRole("radio", { name: "Navigation" })).toBeChecked();
+    await socialSelector.getByRole("radio", { name: "Trade" }).press("Home");
+    await expect(reminders).toBeChecked();
+    await expect(connection.getByRole("combobox")).toHaveCount(0);
+    await expect(connection.getByRole("button", { name: "Refresh accounts" })).toHaveCount(0);
+    await expect(connection.getByLabel("KosMore Services API base URL")).toHaveAttribute("type", "password");
     await expect(
       connection.locator(".album-list,.pin-list,.savebar"),
     ).toHaveCount(0);
     await expect(albums.getByLabel("Search albums")).toBeVisible();
     await expect(albums.locator(".album-account")).toHaveCount(0);
     for (const selector of [
-      "#hotkeys > .hotkeys-subtitle + .hotkey-subgroups",
+      "#hotkeys > .settings-tabs + .tab-panels",
       "#backup-restore .sub + .rule + .notice",
-      "#connected-account .sub + .rule + .account-row",
       "#trade-reminders .rule + .row:has(#tradeNotesHoverDelayMs)",
       "#trade-reminders .rule + .row:has(#tradeNotesDismissDelayMs)",
       "#trade-reminders .rule + .row:has(#tradeNotesWidth)",
@@ -3571,7 +3608,8 @@ test("settings groups are ordered with separate account controls and a fixed anc
     for (const label of [
       "Enable navigation hotkey",
       "Enable card overlays",
-      "Enable family impact overlays",
+      "Enable pack openings",
+      "Enable Fusion",
       "Enable social reminders",
       "Enable sales overlay",
       "Enable stat boxes",
@@ -3579,11 +3617,11 @@ test("settings groups are ordered with separate account controls and a fixed anc
     ])
       await expect(options.getByLabel(label, { exact: true })).toBeChecked();
     await expect(
-      options.getByRole("switch", { name: "Enable pack opening hotkeys" }),
+      options.getByLabel("Enable pack opening hotkeys", { exact: true }),
     ).not.toBeChecked();
     await expect(
-      options.locator(".settings-group-heading").getByRole("switch"),
-    ).toHaveCount(14);
+      options.locator(".settings-group-heading").getByRole("switch", { includeHidden: true }),
+    ).toHaveCount(15);
     for (const [name, id] of [
       ["Show on social page", "socialRemindersEnabled"],
       ["Show on profile page", "profileRemindersEnabled"],
@@ -3647,6 +3685,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
             const headingLeft = text.getBoundingClientRect().left;
             const panel = section.getBoundingClientRect();
             const body = content.getBoundingClientRect();
+            const selector = section.querySelector(":scope > .settings-tabs")?.getBoundingClientRect();
             const save = section
               .querySelector(":scope > .savebar")
               ?.getBoundingClientRect();
@@ -3659,6 +3698,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
               icon: { width: icon.width, height: icon.height },
               offsets: [
                 body.left - headingLeft,
+                ...(selector ? [selector.left - body.left, selector.right - body.right] : []),
                 body.left - panel.left - (panel.right - body.right),
                 ...(save
                   ? [save.left - body.left, save.right - body.right]
@@ -3672,6 +3712,9 @@ test("settings groups are ordered with separate account controls and a fixed anc
           }),
         );
       const iconSize = options.viewportSize()!.width <= 480 ? 22 : 24;
+      const fusionContent = await options.locator("#fusion > .settings-group-content").boundingBox();
+      const threshold = await options.locator("#fusion-warning-threshold").boundingBox();
+      expect(threshold!.x + threshold!.width).toBeCloseTo(fusionContent!.x + fusionContent!.width, 0);
       for (const { label, icon, offsets } of alignment) {
         expect(icon, label ?? undefined).toEqual({
           width: iconSize,
@@ -3710,15 +3753,15 @@ test("settings groups are ordered with separate account controls and a fixed anc
             );
           }),
         );
-      expect(salesOffsets).toHaveLength(3);
+      expect(salesOffsets).toHaveLength(4);
       for (const offset of salesOffsets) expect(offset).toBeLessThanOrEqual(1);
     };
     const checkActionSizes = async () => {
       const groups = await options
-        .locator("#app .save-actions")
+        .locator("#app .save-actions:visible")
         .evaluateAll((rows) =>
           rows.map((row) => ({
-            nested: !!row.closest(".hotkey-subgroups"),
+            nested: !!row.closest(".tab-panels"),
             sizes: [...row.children].map((button) => {
               const { width, height } = button.getBoundingClientRect();
               return { width, height };
@@ -3742,22 +3785,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       (await navigationIcon.getAttribute("d"))!,
     );
     const initial = (await nav.boundingBox())!;
-    for (const [label, id] of [
-      ["Hover Tooltip", "hover-tooltip"],
-      ["Pinned Albums", "pinned-albums"],
-      ["Tooltip Stat Boxes", "stat-boxes"],
-      ["Card Overlays", "card-overlays"],
-      ["Family Impact Overlay", "family-impact-overlay"],
-      ["Friend Tooltip", "friend-tooltip"],
-      ["Social Reminders", "social-reminders"],
-      ["Trade Reminders", "trade-reminders"],
-      ["Sales Overlay", "sales-overlay"],
-      ["Hotkeys", "hotkeys"],
-      ["Pack Openings", "pack-openings"],
-      ["Fusion", "fusion"],
-      ["Backup & Restore", "backup-restore"],
-      ["Connected Account", "connected-account"],
-    ]) {
+    for (const [label, id] of groups) {
       const link = nav.getByRole("link", { name: label, exact: true });
       const heading = options.locator(`#${id} h2`).first();
       const icon = heading.locator("svg");
@@ -3772,9 +3800,9 @@ test("settings groups are ordered with separate account controls and a fixed anc
       const now = (await nav.boundingBox())!;
       expect({ x: now.x, y: now.y }).toEqual({ x: initial.x, y: initial.y });
     }
-    const socialIcon = options.locator("#social-reminders h2 svg");
+    const socialIcon = options.locator("#social h2 svg");
     const socialLink = nav.getByRole("link", {
-      name: "Social Reminders",
+      name: "Social",
       exact: true,
     });
     await expect(socialIcon).toHaveCSS("color", "rgb(164, 191, 210)");
@@ -3791,7 +3819,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       .getByRole("link", { name: "Connected Account", exact: true })
       .click();
     await options.screenshot({
-      path: "test-results/screenshots/settings-account-bottom.png",
+      path: "test-results/screenshots/settings-account-top.png",
     });
     await nav.getByRole("link", { name: "Hover Tooltip", exact: true }).click();
     await options.screenshot({
@@ -3812,11 +3840,12 @@ test("settings groups are ordered with separate account controls and a fixed anc
       await checkSwitchLayout();
       await checkContentAlignment();
       await checkActionSizes();
-      expect(
-        await options.evaluate(
-          () => document.documentElement.scrollWidth <= innerWidth,
-        ),
-      ).toBe(true);
+      const overflowing = await options.evaluate(() =>
+        [...document.querySelectorAll("#app *")]
+          .filter((element) => element.getBoundingClientRect().right > innerWidth + 1)
+          .map((element) => element.id || element.className || element.tagName),
+      );
+      expect(overflowing, `Controls outside the ${width}px viewport`).toEqual([]);
       const before = (await nav.boundingBox())!;
       await nav
         .getByRole("link", { name: "Connected Account", exact: true })
@@ -3839,6 +3868,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
 test("feature switches save immediately and disabled settings groups are read-only", async () => {
   await page.goto("https://kosmora.io/collection");
   const options = await context.newPage();
+  await mockLinkedAccount(options);
   const groups = [
     ["hover-tooltip", "Enable card hover tooltips", "Hover delay"],
     ["pinned-albums", "Enable pinned albums", "Search albums"],
@@ -3856,14 +3886,18 @@ test("feature switches save immediately and disabled settings groups are read-on
       "Show sale history icon on cards",
     ],
     ["sales-overlay", "Enable sales overlay", "Show Last Sale price"],
-    ["navigation-hotkeys", "Enable navigation hotkey", "Set shortcut for Home"],
   ];
   try {
-    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await options.goto(`chrome-extension://${extensionId}/options.html#pinned-albums`);
     await expect(
-      options.getByText("Connected to FixturePlayer.", { exact: true }),
+      options.getByRole("button", { name: "Move up Favourites" }),
     ).toBeVisible();
+    const showGroup = async (id: string) => {
+      const tab = options.locator("#" + id + "-tab");
+      if (await tab.count()) await tab.click();
+    };
     const checkDisabled = async (id: string) => {
+      await showGroup(id);
       const group = options.locator(`#${id}`);
       await expect(group).toHaveClass(/settings-group-disabled/);
       await expect(group.locator(".settings-group-state")).toHaveText(
@@ -3883,6 +3917,7 @@ test("feature switches save immediately and disabled settings groups are read-on
         await expect(button).toBeDisabled();
     };
     for (const [id, label, editable] of groups) {
+      await showGroup(id);
       const group = options.locator(`#${id}`);
       await group.getByRole("switch", { name: label, exact: true }).uncheck();
       await checkDisabled(id);
@@ -3899,18 +3934,12 @@ test("feature switches save immediately and disabled settings groups are read-on
       await checkDisabled(id);
     }
     await options.reload();
+    await options.locator("#pinned-albums").scrollIntoViewIfNeeded();
     await expect(
-      options.getByText("Connected to FixturePlayer.", { exact: true }),
-    ).toBeVisible();
-    // Account refresh rebuilds album buttons without making a disabled group editable.
-    await options
-      .getByRole("button", { name: "Refresh accounts", exact: true })
-      .click();
-    await expect(
-      options.getByText("Connected to FixturePlayer.", { exact: true }),
-    ).toBeVisible();
+      options.getByRole("button", { name: "Move up Favourites" }),
+    ).toBeDisabled();
     for (const [id] of groups) await checkDisabled(id);
-    await expect(options.getByLabel("Kosmora account")).toBeEnabled();
+    await expect(options.getByLabel("KosMore Services API base URL")).toBeEnabled();
     await mkdir("test-results/screenshots", { recursive: true });
     await options
       .getByRole("link", { name: "Hover Tooltip", exact: true })
@@ -4139,9 +4168,10 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
     const set = async (label: string, group: string, on: boolean) => {
       await options.getByLabel(label, { exact: true }).setChecked(on);
       const section = options.getByRole("region", { name: group, exact: true });
+      if (group === "Hotkeys") await section.getByRole("button", { name: "Save", exact: true }).click();
       await expect(section.getByRole("status")).toContainText("Saved.");
     };
-    await set("Enable navigation hotkey", "navigation hotkeys", false);
+    await set("Enable navigation hotkey", "Hotkeys", false);
     await set("Enable card overlays", "overlay settings", false);
     await expect(page.locator("[data-kosmore-card-overlays]")).toHaveCount(0);
     await expect(popup.locator(".header-signals .signal-badge")).toHaveCount(0);
@@ -4203,7 +4233,7 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
     await set("Enable pinned albums", "album shortcuts", true);
     await expect(popup.locator(".album-add")).toHaveCount(2);
     await expect(popup.getByLabel("Owned copy")).toHaveValue(COPY_A);
-    await set("Enable navigation hotkey", "navigation hotkeys", true);
+    await set("Enable navigation hotkey", "Hotkeys", true);
     await page.locator("h1").click();
     await page.keyboard.press("Alt+Shift+H");
     await expect(page).toHaveURL("https://kosmora.io/home");
@@ -4213,12 +4243,34 @@ test("section enable settings apply live and preserve shortcuts, stat choices an
   }
 });
 test("options discovers the real content-script session, saves ordered pins and cancels drafts", async () => {
+  account = "AnotherPlayer";
   await page.goto("https://kosmora.io/collection");
   const options = await context.newPage();
-  await options.goto(`chrome-extension://${extensionId}/options.html`);
-  await expect(
-    options.getByText("Connected to FixturePlayer.", { exact: true }),
-  ).toBeVisible();
+  await options.goto(`chrome-extension://${extensionId}/options.html#pinned-albums`);
+  const catalog = options.locator("#pinned-albums .album-list");
+  await expect(catalog).toContainText("Link your Kosmora account");
+  await mockLinkedAccount(options);
+  await options.reload();
+  await expect(catalog).toContainText("sign in as FixturePlayer");
+  account = "FixturePlayer";
+  await page.reload();
+  await options.reload();
+  const catalogUnpin = catalog.getByRole("button", { name: "Unpin Favourites", exact: true });
+  const pinsList = options.locator("#pinned-albums .pin-list");
+  const pinnedUnpin = pinsList.getByRole("button", { name: "Unpin Favourites", exact: true });
+  await expect(pinnedUnpin.locator("+ button")).toHaveAccessibleName("Move up Favourites");
+  for (const icon of [pinnedUnpin, catalogUnpin]) {
+    await expect(icon).toHaveText("");
+    await expect(icon.locator("svg")).toBeVisible();
+    await icon.hover();
+    await expect(icon).toHaveCSS("color", "rgb(255, 118, 126)");
+  }
+  const unpinPath = await catalogUnpin.locator("svg path").getAttribute("d");
+  await expect(pinnedUnpin.locator("svg path")).not.toHaveAttribute("d", unpinPath!);
+  await catalogUnpin.click();
+  const pin = catalog.getByRole("button", { name: "Pin Favourites", exact: true });
+  await expect(pin.locator("svg")).toBeVisible();
+  await pin.click();
   await options
     .getByRole("button", { name: "Move up Favourites", exact: true })
     .click();
@@ -4559,9 +4611,6 @@ test("variant checkboxes persist across popups and options saves without closing
   await expect(popup.getByLabel("Shiny", { exact: true })).not.toBeChecked();
   const options = await context.newPage();
   await options.goto(`chrome-extension://${extensionId}/options.html`);
-  await expect(
-    options.getByText("Connected to FixturePlayer.", { exact: true }),
-  ).toBeVisible();
   await options
     .locator("#hover-tooltip")
     .getByRole("button", { name: "Save", exact: true })
@@ -6017,7 +6066,7 @@ test("market overlays show sale and listing prices at top right and quest before
     }
     await options.goto(`chrome-extension://${extensionId}/options.html`);
     const lastPrice = options.getByRole("switch", {
-        name: "Show last sale price",
+        name: "Show price",
         exact: true,
       }),
       listingPrice = options.getByRole("switch", {
@@ -6053,7 +6102,7 @@ test("market overlays show sale and listing prices at top right and quest before
       options
         .locator("#card-overlays")
         .getByText(
-          "Last sale price for this finish in Kosmora’s 30-day history.",
+          "Show the selected sale price beside the gavel.",
           { exact: true },
         ),
     ).toBeVisible();
@@ -6547,16 +6596,13 @@ test("shortcut recording detects conflicts and group saves preserve other drafts
   const options = await context.newPage();
   try {
     await options.goto(`chrome-extension://${extensionId}/options.html`);
-    const hotkeys = options.getByRole("region", {
-      name: "navigation hotkeys",
-      exact: true,
-    });
+    const hotkeys = options.locator("#hotkeys");
     const record = (label: string) =>
       hotkeys.getByRole("button", {
         name: `Set shortcut for ${label}`,
         exact: true,
       });
-    await expect(hotkeys.locator(".hotkey-row")).toHaveCount(NAVIGATION.length);
+    await expect(hotkeys.locator("#navigation-hotkeys .hotkey-row")).toHaveCount(NAVIGATION.length);
     await options.getByLabel("Tooltip width", { exact: true }).fill("600");
     await record("Home").click();
     await record("Home").press("Alt+Shift+H");
@@ -8236,6 +8282,49 @@ test("single-sale badges share settings and respect click toggles, visibility, r
     await options.close();
   }
 });
+test("Discount type preserves saved settings and verified sell screens omit the history refresh", async () => {
+  await pulsarSettings({
+    salesDiscountEnabled: true,
+    salesDiscountMode: "percent",
+    salesDiscountAmount: 18,
+  });
+  const options = await context.newPage();
+  let historyReads = 0;
+  await page.route("**/api/me/auctions?**", (route) => {
+    historyReads++;
+    return route.abort();
+  });
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html#sales-overlay`);
+    const sales = options.locator("#sales-overlay");
+    const type = sales.getByRole("group", { name: "Discount type", exact: true });
+    const flat = type.getByRole("radio", { name: "Flat", exact: true });
+    const percent = type.getByRole("radio", { name: "Percent", exact: true });
+    await expect(percent).toBeChecked();
+    await percent.press("ArrowLeft");
+    await expect(flat).toBeChecked();
+    await sales.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(percent).toBeChecked();
+    await flat.click();
+    await sales.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(sales.getByRole("status")).toContainText("Saved");
+    await options.reload();
+    await expect(flat).toBeChecked();
+    await expect(percent).not.toBeChecked();
+    await expect(sales.getByLabel("Amount", { exact: true })).toHaveValue("18");
+    for (const path of ["/market/sell?subject=42", "/market/sell/batch?s=42.v,46.f"]) {
+      await page.goto("https://kosmora.io" + path);
+      const row = page.locator("[data-kosmore-sales-overlay]").first();
+      await expect(row.locator(".price-badge.history")).toContainText("No recorded listing");
+      await expect(row.getByRole("button", { name: "Refresh my listing history" })).toHaveCount(0);
+    }
+    expect(historyReads).toBe(0);
+  } finally {
+    await page.unroute("**/api/me/auctions?**");
+    await options.close();
+  }
+});
+
 test("Quick Prices retain their order and nodes through refreshes, and rarity warnings leave submission available", async () => {
   const options = await context.newPage();
   try {
@@ -8250,25 +8339,24 @@ test("Quick Prices retain their order and nodes through refreshes, and rarity wa
       name: "Enable Discount button",
     });
     const amount = settings.getByLabel("Amount", { exact: true }),
-      type = settings.getByLabel("Discount type", { exact: true }),
+      type = settings.getByRole("group", { name: "Discount type", exact: true }),
       threshold = settings.getByLabel("Threshold", { exact: true });
     await expect(discount).not.toBeChecked();
     await expect(amount).toBeVisible();
     await expect(amount).toBeDisabled();
     await discount.check();
     await expect(amount).toHaveValue("25");
-    await expect(type).toHaveValue("flat");
+    await expect(type.getByRole("radio", { name: "Flat" })).toBeChecked();
     await expect(threshold).toHaveValue("5");
     const amountBox = (await amount.boundingBox())!,
       typeBox = (await type.boundingBox())!,
       thresholdBox = (await threshold.boundingBox())!;
-    expect(typeBox.width).toBe(amountBox.width);
-    expect(typeBox.x).toBe(amountBox.x);
+    expect(typeBox.x + typeBox.width).toBeCloseTo(amountBox.x + amountBox.width, 0);
     expect(typeBox.y).toBeGreaterThan(amountBox.y + amountBox.height);
     expect(thresholdBox.y).toBeGreaterThan(typeBox.y + typeBox.height);
     await discount.uncheck();
     const quick = settings.getByRole("group", { name: "Quick Prices" }),
-      priceInput = quick.getByLabel("Price", { exact: true }),
+      priceInput = quick.getByLabel("New Price", { exact: true }),
       addPrice = quick.getByRole("button", { name: "Add price" });
     await expect(priceInput).toBeVisible();
     await expect(priceInput).toBeDisabled();
@@ -8276,6 +8364,9 @@ test("Quick Prices retain their order and nodes through refreshes, and rarity wa
     await quickSwitch.check();
     const priceBox = (await priceInput.boundingBox())!,
       addBox = (await addPrice.boundingBox())!;
+    const labelBox = (await quick.getByText("New Price", { exact: true }).boundingBox())!;
+    expect(labelBox.x).toBe(priceBox.x);
+    expect(labelBox.y + labelBox.height).toBeLessThanOrEqual(priceBox.y);
     expect(priceBox.x).toBe(amountBox.x);
     expect(addBox.x + addBox.width).toBeCloseTo(priceBox.x + priceBox.width, 0);
     expect(addBox.y).toBeGreaterThan(priceBox.y + priceBox.height);
@@ -8283,6 +8374,12 @@ test("Quick Prices retain their order and nodes through refreshes, and rarity wa
       await priceInput.fill(price);
       await addPrice.click();
     }
+    const firstPrice = quick.getByRole("listitem").first();
+    await expect(firstPrice.getByRole("button").first()).toHaveAccessibleName("Remove price 1");
+    await expect(firstPrice.getByRole("button").first().locator("svg")).toBeVisible();
+    await firstPrice.getByRole("button").first().hover();
+    await expect(firstPrice.getByRole("button").first()).toHaveCSS("color", "rgb(255, 118, 126)");
+    await expect(firstPrice.getByRole("button").nth(1)).toHaveAccessibleName("Move price 1 up");
     await quick.getByRole("button", { name: "Move price 2 up" }).click();
     await quick.getByRole("button", { name: "Remove price 3" }).click();
     await settings
@@ -8353,9 +8450,7 @@ test("Quick Prices retain their order and nodes through refreshes, and rarity wa
     await prices
       .first()
       .evaluate((node) => node.setAttribute("data-test-original", ""));
-    await refresh.click();
-    await expect(refresh).toBeEnabled();
-    await expect(prices.first()).toHaveAttribute("data-test-original", "");
+    await expect(refresh).toHaveCount(0);
     await settings
       .getByLabel("Last Sale price adjustment", { exact: true })
       .fill("-1");
@@ -8435,19 +8530,13 @@ async function seedDiscountHistory(listings: TrackedListing[]) {
   );
 }
 
-test("Discount uses the selected copy's saved unsold listings on both sell screens without refreshing history", async () => {
+test("Discount uses saved unsold listings on both sell screens without refreshing history", async () => {
   await pulsarSettings({
     salesDiscountEnabled: true,
     salesDiscountMode: "percent",
     salesDiscountThreshold: 2,
   });
   await seedDiscountHistory([
-    {
-      id: myListing(21).id,
-      copyId: COPY_B,
-      startPrice: "99000000",
-      group: "unsold",
-    },
     {
       id: myListing(20).id,
       copyId: COPY_A,
@@ -8466,63 +8555,52 @@ test("Discount uses the selected copy's saved unsold listings on both sell scree
     historyReads++;
     return route.abort();
   });
-  await page.goto(
-    `https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`,
-  );
-  const sharedRefresh =
-    ".history-controls > .history + .discount + .history-check";
-  await expect(page.locator(sharedRefresh)).toBeVisible();
-  await page
-    .getByRole("button", { name: "Discount: $76.5", exact: true })
-    .click();
-  await expect(page.getByTestId("sell-start")).toHaveValue("76.5");
-  await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
-  await page.route("**/api/market/listings/batch?**", (route) =>
-    route.fulfill({
-      json: {
-        items: [
-          {
-            key: "42.v",
-            instanceId: COPY_A,
-            card: { subjectId: "42" },
-            rarity: "Rare",
-            suggestion: "100",
-          },
-        ],
-      },
-    }),
-  );
-  await page.route("**/api/market/sell-draft", (route) =>
-    route.fulfill({ json: {} }),
-  );
-  await page.evaluate(() =>
-    fetch("/api/market/listings/batch?subjects=42.v").then((response) =>
-      response.json(),
-    ),
-  );
-  const first = page.locator(".bsell-row").first();
-  await expect(first.locator(sharedRefresh)).toBeVisible();
-  await first
-    .getByRole("button", { name: "Discount: $76.5", exact: true })
-    .click();
-  await expect(
-    first.getByRole("textbox", { name: /Starting price/ }),
-  ).toHaveValue("76.5");
-  await page.evaluate(
-    (copy) =>
-      fetch("/api/market/sell-draft", {
-        method: "PUT",
-        body: JSON.stringify({
-          items: [{ subjectId: "42", veil: true, copy }],
-        }),
+  const fixture = await mockServiceCard(worker, parseServicesCard(serviceDetails("42"), "42"));
+  try {
+    await page.goto(
+      `https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`,
+    );
+    const historyButtons = ".history-controls > .history + .discount:last-child";
+    await expect(page.locator(historyButtons)).toBeVisible();
+    await page
+      .getByRole("button", { name: "Discount: $76.5", exact: true })
+      .click();
+    await expect(page.getByTestId("sell-start")).toHaveValue("76.5");
+    await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
+    await page.route("**/api/market/listings/batch?**", (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            {
+              key: "42.v",
+              instanceId: COPY_A,
+              card: { subjectId: "42" },
+              rarity: "Rare",
+              suggestion: "100",
+            },
+          ],
+        },
       }),
-    COPY_B,
-  );
-  await expect(first.locator(".price-badge.discount")).toHaveCount(0);
-  await expect(
-    first.getByRole("textbox", { name: /Starting price/ }),
-  ).toHaveValue("76.5");
-  expect(historyReads).toBe(0);
+    );
+    await page.evaluate(() =>
+      fetch("/api/market/listings/batch?subjects=42.v").then((response) =>
+        response.json(),
+      ),
+    );
+    const first = page.locator(".bsell-row").first();
+    await expect(first.locator(historyButtons)).toBeVisible();
+    await first
+      .getByRole("button", { name: "Discount: $76.5", exact: true })
+      .click();
+    await expect(
+      first.getByRole("textbox", { name: /Starting price/ }),
+    ).toHaveValue("76.5");
+    expect(historyReads).toBe(0);
+  } finally {
+    await fixture.evaluate((remove) => remove());
+    await page.unroute("**/api/me/auctions?**");
+    await page.unroute("**/api/market/listings/batch?**");
+  }
 });
 
 test("Discount checks the outcomes of saved submissions without a history refresh", async () => {
@@ -8578,7 +8656,7 @@ test("Discount checks the outcomes of saved submissions without a history refres
   expect(historyReads).toBe(0);
 });
 
-test("Discount verifies older saved expirations using Kosmora's live copy fields", async () => {
+test("Discount does not probe older auction details when the saved history is insufficient", async () => {
   await pulsarSettings({ salesDiscountEnabled: true });
   const listings = Array.from({ length: 6 }, (_, i) =>
     myListing(460 + i, "42", {
@@ -8637,35 +8715,10 @@ test("Discount verifies older saved expirations using Kosmora's live copy fields
     ),
   );
   const row = page.locator(".bsell-row").first();
-  await row
-    .getByRole("button", { name: "Refresh my listing history", exact: true })
-    .click();
-  await row
-    .getByRole("button", { name: "Discount: $395", exact: true })
-    .click();
-  await expect(
-    row.getByRole("textbox", { name: /Starting price/ }),
-  ).toHaveValue("395");
-  await expect(
-    page.locator(".bsell-row").nth(1).locator(".discount"),
-  ).toHaveCount(0);
-  expect(detailReads).toBe(5);
-  const saved = await worker.evaluate(async (key) => {
-    const { listings } = (await chrome.storage.local.get(key))[key] as {
-      listings: { copyId?: string; group: string; startPrice: string }[];
-    };
-    return listings;
-  }, savedDiscountHistoryKey);
-  expect(saved.map(({ copyId }) => copyId)).toEqual([
-    COPY_A,
-    COPY_A,
-    COPY_B,
-    COPY_A,
-    COPY_A,
-    COPY_A,
-  ]);
-  expect(saved.every(({ group }) => group === "unsold")).toBe(true);
-  expect(saved[0].startPrice).toBe("420000000");
+  await expect(row.locator(".price-badge.history")).toContainText("No recorded listing");
+  await expect(row.getByRole("button", { name: "Refresh my listing history" })).toHaveCount(0);
+  await expect(row.locator(".discount")).toHaveCount(0);
+  expect(detailReads).toBe(0);
 });
 
 test("late sales prices cannot populate a replaced batch row or edit a new card automatically", async () => {
@@ -10417,9 +10470,7 @@ test("Sell Many shows one reconnect notice when the tab outlives an extension re
     await expect(notice).toHaveText(
       "Refresh this Kosmora tab to reconnect your listing history.",
     );
-    await expect(refresh).toHaveCount(2);
-    for (const button of await refresh.all())
-      await expect(button).toBeDisabled();
+    await expect(refresh).toHaveCount(0);
     await expect(page.getByText(/Extension context invalidated/i)).toHaveCount(
       0,
     );
@@ -10428,30 +10479,221 @@ test("Sell Many shows one reconnect notice when the tab outlives an extension re
     await page.reload();
     await expect(page.locator("[data-kosmore-sales-overlay]")).toHaveCount(2);
     await expect(notice).toHaveCount(0);
-    await expect(refresh.first()).toBeEnabled();
+    await expect(refresh).toHaveCount(0);
   } finally {
     await session.detach();
   }
 });
 
-test("shows Family Impact as unavailable and removes the Fusion Batches settings", async () => {
-  test.skip(FAMILY_IMPACT_AVAILABLE, "Family Impact is enabled in this build.");
+test("Fusion settings replace Family Impact and support save, cancel and the master switch", async () => {
   const options = await context.newPage();
   try {
-    await options.goto(
-      `chrome-extension://${extensionId}/options.html#family-impact-overlay`,
-    );
-    const group = options.locator("#family-impact-overlay");
+    await options.goto(`chrome-extension://${extensionId}/options.html#fusion`);
+    const group = options.locator("#fusion");
     await expect(
-      group.getByText("Family Impact is currently unavailable."),
-    ).toBeVisible();
-    await expect(
-      group.getByRole("switch", { name: "Enable family impact overlays" }),
-    ).toBeDisabled();
-    await expect(
-      options.getByRole("switch", { name: "Enable Fusion", exact: true }),
+      options.getByRole("heading", { name: "Family Impact Overlay" }),
     ).toHaveCount(0);
+    await expect(
+      options.getByRole("link", { name: "Family Impact Overlay" }),
+    ).toHaveCount(0);
+    const review = group.getByRole("group", {
+      name: "Show Them All and Keep Some",
+      exact: true,
+    });
+    const warning = group.getByLabel("Show Price Warning", { exact: true });
+    const threshold = group.getByLabel("Threshold", { exact: true });
+    const master = group.getByRole("switch", {
+      name: "Enable Fusion",
+      exact: true,
+    });
+    await expect(master).toBeChecked();
+    await expect(warning).toBeChecked();
+    await expect(threshold).toHaveValue("200");
+    await expect(review.getByRole("checkbox")).toHaveCount(2);
+    for (const input of await review.getByRole("checkbox").all())
+      await expect(input).toBeChecked();
+    await warning.uncheck();
+    await expect(threshold).toBeDisabled();
+    await group.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(threshold).toBeEnabled();
+    await threshold.fill("12.75");
+    await group.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(group.getByRole("status")).toContainText("Saved.");
+    await options.reload();
+    await expect(threshold).toHaveValue("12.75");
+    await master.uncheck();
+    await expect(threshold).toBeDisabled();
+    await expect(review.getByRole("checkbox").first()).toBeDisabled();
   } finally {
     await options.close();
+  }
+});
+
+test("Median mode updates card and tooltip prices and the separate Sales badge fills both sell screens", async () => {
+  await pulsarSettings({ showSaleHistoryOverlay: true });
+  const details = serviceDetails("42");
+  details.sales.plain.lastSale.price = "12000000";
+  details.sales.plain.lastSale.numberOne = true;
+  const fixture = await mockServiceCard(worker, parseServicesCard({
+    ...details,
+    sales: {
+      ...details.sales,
+      shiny: { ...details.sales.plain, last30Days: { count: 3, median: "17500000" } },
+    },
+  }, "42"));
+  const options = await context.newPage();
+  try {
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    const overlays = options.locator("#card-overlays");
+    const modes = overlays.getByRole("group", { name: "Card overlay price" });
+    const lastSaleMode = modes.getByRole("radio", { name: "Last Sale" });
+    const medianMode = modes.getByRole("radio", { name: "Median" });
+    await expect(lastSaleMode).toBeChecked();
+    await expect(medianMode).not.toBeChecked();
+    await lastSaleMode.press("ArrowRight");
+    await expect(medianMode).toBeChecked();
+    await overlays.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(lastSaleMode).toBeChecked();
+    await page.goto("https://kosmora.io/collection");
+    const badge = page.locator("[data-kosmore-card-overlays] .sale");
+    await expect(badge.locator(".badge-price")).toHaveText("$12");
+    await expect(badge.locator(".number-one")).toBeVisible();
+    await page.locator(".kc-article").hover();
+    const heading = page.locator("#kosmore-root .last-sold");
+    await expect(heading).toContainText("Last Sale: $12.00");
+    await medianMode.click();
+    await medianMode.click();
+    await expect(medianMode).toBeChecked();
+    await expect(lastSaleMode).not.toBeChecked();
+    await overlays.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(badge.locator(".badge-price")).toHaveText("$6.5");
+    await expect(badge.locator(".number-one")).toHaveCount(0);
+    await expect(heading).toHaveText("Median: $6.50");
+    await options.reload();
+    await expect(medianMode).toBeChecked();
+
+    const sales = options.locator("#sales-overlay");
+    const showMedian = sales.getByLabel("Show Median price", { exact: true });
+    const adjustment = sales.getByLabel("Median price adjustment", { exact: true });
+    await expect(showMedian).not.toBeChecked();
+    await expect(adjustment).toBeDisabled();
+    await page.goto(`https://kosmora.io/market/sell?subject=42&instance=${COPY_A}`);
+    const last = page.getByRole("button", { name: /^Last Sale: \$12/ });
+    await expect(last).toBeEnabled();
+    const median = page.getByRole("button", { name: /^Median:/ });
+    await expect(median).toHaveCount(0);
+    await showMedian.check();
+    await adjustment.fill("-0.5");
+    await sales.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(last).toBeEnabled();
+    await median.click();
+    await expect(page.getByTestId("sell-start")).toHaveValue("6");
+    await sales.getByLabel("Show Last Sale price", { exact: true }).uncheck();
+    await sales.getByLabel("Show Lowest Listed price", { exact: true }).uncheck();
+    await sales.getByRole("button", { name: "Save", exact: true }).click();
+    await page.goto("https://kosmora.io/market/sell/batch?s=42.v,46.f");
+    await median.click();
+    await expect(page.locator(".bsell-row input").first()).toHaveValue("17");
+    await expect(page.locator(".bsell-row input").nth(1)).toHaveValue("12.00");
+  } finally {
+    await options.close();
+    await fixture.evaluate((remove) => remove());
+  }
+});
+
+test("Fusion price warnings cover both modes and results, with review-only tooltip controls", async () => {
+  const details = serviceDetails("42");
+  details.sales.plain.lastSale.price = "200000001";
+  const fixture = await mockServiceCard(worker, parseServicesCard(details, "42"));
+  const path = "https://kosmora.io/fusion*";
+  await page.route(path, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `
+    <style>.kc-article,.pick{width:120px;height:170px;position:relative}.kc-img{width:80px}.pick-hit{position:absolute;inset:0}.mf-sheet{width:500px}</style>
+    <main class="fu-screen">${face()}</main>
+    <button onclick="document.querySelector('dialog').showModal()">See them all and keep some</button>
+    <dialog class="mf-sheet"><ul data-testid="mf-list"><li><div class="pick">${face()}
+    <button class="pick-hit" aria-pressed="false" onclick="this.setAttribute('aria-pressed','true')">Keep card</button></div></li></ul>
+    <button onclick="this.closest('dialog').close()">Done</button></dialog>`,
+    }),
+  );
+  try {
+    await pulsarSettings({ cardOverlaysEnabled: false });
+    const warn = "[data-kosmore-fusion-price-warning]";
+    for (const mode of ["one", "many"]) {
+      await page.goto(`https://kosmora.io/fusion?mode=${mode}`);
+      await expect(page.locator("main .kc-article")).toHaveCSS(
+        "outline-color",
+        "rgb(255, 69, 79)",
+      );
+      await expect(
+        page.locator("main [data-kosmore-tooltip-buttons]"),
+      ).toHaveCount(0);
+    }
+    await page.getByText("See them all and keep some").click();
+    const dialog = page.locator("dialog");
+    await expect(dialog.locator(warn)).toBeVisible();
+    await pulsarSettings({ useMedianOverlayPrice: true });
+    await expect(page.locator(warn)).toHaveCount(0);
+    await pulsarSettings({ fusionWarningThreshold: 6 });
+    await expect(dialog.locator(warn)).toBeVisible();
+    await pulsarSettings({ useMedianOverlayPrice: false, fusionWarningThreshold: 200 });
+    const keep = dialog.getByRole("button", { name: "Keep card" });
+    await keep.hover();
+    await page.waitForTimeout(200);
+    const popup = page.locator("#kosmore-root");
+    await expect(popup).toHaveCount(0);
+    await dialog
+      .getByRole("button", { name: "Open card tooltip for Northern Lights" })
+      .click();
+    await expect(popup).toBeVisible();
+    await keep.click();
+    await expect(popup).toHaveCount(0);
+    await expect(keep).toHaveAttribute("aria-pressed", "false");
+    await keep.click();
+    await expect(keep).toHaveAttribute("aria-pressed", "true");
+    await pulsarSettings({
+      fusionReviewOverlayButton: false,
+      fullScreenCenteredOnOpen: true,
+    });
+    await expect(dialog.locator("[data-kosmore-tooltip-buttons]")).toHaveCount(
+      0,
+    );
+    await page.mouse.move(0, 0);
+    await keep.hover();
+    await expect(popup).toHaveAttribute("data-full-screen", "");
+    await page.mouse.click(12, 12);
+    await expect(popup).toHaveCount(0);
+    await dialog.getByText("Done").click();
+    for (const surface of ["fu-result", "fh-grid"]) {
+      await page.locator("main").evaluate(
+        (main, { surface, html }) => {
+          main.innerHTML = `<div class="${surface}">${html}</div>`;
+        },
+        { surface, html: face() },
+      );
+      await expect(page.locator(`.${surface} ${warn}`)).toBeVisible();
+      await expect(
+        page.locator(`.${surface} [data-kosmore-tooltip-buttons]`),
+      ).toHaveCount(0);
+    }
+    const resultFace = page.locator("main .kc");
+    await resultFace.evaluate((card) => card.classList.add("kc-fa"));
+    await expect(page.locator("main").locator(warn)).toHaveCount(0);
+    await resultFace.evaluate((card) => card.classList.remove("kc-fa"));
+    await expect(page.locator("main").locator(warn)).toBeVisible();
+    await pulsarSettings({ fusionSettingsEnabled: false, useOverlayButtonInsteadOfHover: true });
+    await expect(page.locator(warn)).toHaveCount(0);
+    await expect(page.locator("main [data-kosmore-tooltip-buttons]")).toBeVisible();
+    await pulsarSettings({ fusionSettingsEnabled: true, fusionWarningThreshold: 200.000001 });
+    await expect(page.locator(warn)).toHaveCount(0);
+    await pulsarSettings({ fusionWarningThreshold: 200 });
+    await expect(page.locator("main").locator(warn)).toBeVisible();
+    await page.evaluate(() => history.pushState({}, "", "/collection"));
+    await expect(page.locator(warn)).toHaveCount(0);
+  } finally {
+    await fixture.evaluate((remove) => remove());
+    await page.unroute(path);
   }
 });

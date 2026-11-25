@@ -23,6 +23,7 @@ import {
   SALE_MINIMUMS,
   type SaleRarity,
   validDiscountThreshold,
+  validFusionThreshold,
   validSaleAdjustment,
   validSalePrice,
 } from "./sales-prices";
@@ -97,6 +98,13 @@ function backupSettings(value: unknown): Settings {
       "Unsupported settings version. Update KosMore before importing this backup.",
     );
   const standard = defaults();
+  if (
+    Object.hasOwn(raw, "fusionWarningThreshold") &&
+    !validFusionThreshold(raw.fusionWarningThreshold)
+  )
+    throw new Error(
+      "Fusion warning threshold must be a nonnegative price with up to six decimal places.",
+    );
   if (Object.hasOwn(raw, "familyBlacklist")) {
     const names = array(raw.familyBlacklist, "Family blacklist");
     if (!names.every((name): name is string => typeof name === "string"))
@@ -145,6 +153,7 @@ function backupSettings(value: unknown): Settings {
   }
   for (const key of [
     "salesLastSaleAdjustment",
+    "salesMedianAdjustment",
     "salesLowestListingAdjustment",
     "salesMyLastListingAdjustment",
   ] as const)

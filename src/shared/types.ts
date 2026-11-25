@@ -122,6 +122,7 @@ export interface Settings {
   tooltipTakesFocus: boolean;
   outsideClickClosesTooltipOnly: boolean;
   fullScreenCenteredOnOpen: boolean;
+  socialEnabled: boolean;
   socialRemindersMasterEnabled: boolean;
   profileRemindersEnabled: boolean;
   profileRemindersPinned: boolean;
@@ -146,6 +147,7 @@ export interface Settings {
   hotkeysEnabled: boolean;
   navigationHotkeysEnabled: boolean;
   hoverTooltipHotkeysEnabled: boolean;
+  packOpeningsEnabled: boolean;
   packOpeningHotkeysEnabled: boolean;
   anyKeyDismissesFoundPack: boolean;
   autoSkipOpening: boolean;
@@ -158,6 +160,9 @@ export interface Settings {
   showSalesLastSale: boolean;
   salesLastSaleSetsPrice: boolean;
   salesLastSaleAdjustment: number;
+  showSalesMedian: boolean;
+  salesMedianSetsPrice: boolean;
+  salesMedianAdjustment: number;
   showSalesLowestListing: boolean;
   salesLowestListingSetsPrice: boolean;
   salesLowestListingAdjustment: number;
@@ -183,12 +188,18 @@ export interface Settings {
   popupPosition: import("./popup-layout").PopupPosition | null;
   showSaleHistoryOverlay: boolean;
   showLastSalePriceOverlay: boolean;
+  useMedianOverlayPrice: boolean;
   showActiveAuctionsOverlay: boolean;
   showLowestListingPriceOverlay: boolean;
   showAuctionBidCounts: boolean;
   showOnSaleOverlay: boolean;
   showFriendInterestOverlay: boolean;
   showQuestOverlay: boolean;
+  fusionSettingsEnabled: boolean;
+  fusionShowPriceWarning: boolean;
+  fusionWarningThreshold: number;
+  fusionReviewOverlayButton: boolean;
+  fusionReviewOutsideClickOnly: boolean;
   familyImpactOverlaysEnabled: boolean;
   useFamilyBlacklist: boolean;
   familyBlacklist: string[];

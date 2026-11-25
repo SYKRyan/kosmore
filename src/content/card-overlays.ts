@@ -2,14 +2,17 @@ import {
   cardOverlayTargets,
   cardOverlaysAllowed,
   contextKey,
+  isFusionPage,
   OVERLAY_ATTR,
   resolveCard,
 } from "../kosmora/dom";
 import { ApiError } from "../kosmora/client";
+import { settingMicros } from "../shared/sales-prices";
 import type { CardContext, KosmoraClient, Settings } from "../shared/types";
 import { settingsForPage } from "../shared/page-settings";
 import {
   CardSignalProvider,
+  overlaySalePrice,
   sameOverlaySignals,
   type CardSignals,
 } from "./card-signals";
@@ -35,6 +38,7 @@ interface Entry {
   positioned?: OverlayPosition;
   albumSale?: { host: HTMLElement; positioned?: OverlayPosition };
 }
+const FUSION_WARNING = "data-kosmore-fusion-price-warning";
 const OFFSCREEN_PAUSE_MS = 50;
 const HOST_STYLE = `
 :host{all:initial;position:absolute;inset:6px;container-type:inline-size;z-index:20;pointer-events:none;user-select:none;font:600 10px/1 system-ui,sans-serif}
@@ -99,6 +103,7 @@ function restorePosition(previous?: OverlayPosition) {
 export class CardOverlays {
   private provider: CardSignalProvider;
   private settings?: Settings;
+  private warningThresholdMicros = 0n;
   private entries = new Map<HTMLElement, Entry>();
   private queue = new Set<Entry>();
   private intersection: IntersectionObserver;
@@ -127,6 +132,13 @@ export class CardOverlays {
     });
   }
   start() {
+    const style = el("style");
+    style.textContent = `[${FUSION_WARNING}] {
+      outline: 3px solid #ff454f !important;
+      outline-offset: 2px;
+      box-shadow: 0 0 8px 3px #ff334bb3, 0 0 18px 4px #f3233f66 !important;
+    }`;
+    document.head.append(style);
     observePage((changes) => {
       if (
         this.enabled() ||
@@ -176,12 +188,30 @@ export class CardOverlays {
       this.settings?.showFriendInterestOverlay !==
         settings.showFriendInterestOverlay ||
       this.settings?.showQuestOverlay !== settings.showQuestOverlay;
-    const bidsChanged = this.settings?.showAuctionBidCounts !== settings.showAuctionBidCounts;
+    const bidsChanged =
+      this.settings?.showAuctionBidCounts !== settings.showAuctionBidCounts;
+    const priceModeChanged =
+      this.settings?.useMedianOverlayPrice !== settings.useMedianOverlayPrice;
+    const warningChanged =
+      this.fusionWarningEnabled() !== this.fusionWarningEnabled(settings);
+    const thresholdChanged =
+      this.settings?.fusionWarningThreshold !== settings.fusionWarningThreshold;
+    if (thresholdChanged)
+      this.warningThresholdMicros = settingMicros(
+        settings.fusionWarningThreshold,
+      )!;
     this.settings = settings;
-    if (changed) this.invalidate();
-    else if (bidsChanged)
-      for (const entry of this.entries.values())
-        if (entry.signals?.lowestListing?.bids) this.render(entry, entry.signals, true);
+    if (changed || warningChanged) {
+      this.invalidate();
+      return;
+    }
+    if (priceModeChanged || bidsChanged || thresholdChanged)
+      for (const entry of this.entries.values()) {
+        if (entry.signals && (priceModeChanged || (bidsChanged && entry.signals.lowestListing?.bids)))
+          this.render(entry, entry.signals, true);
+        else if (thresholdChanged && this.fusionWarningEnabled())
+          this.renderWarning(entry, entry.signals);
+      }
   }
   invalidate(clear = true) {
     this.generation++;
@@ -213,7 +243,12 @@ export class CardOverlays {
     this.pump();
   }
   refreshSaleStatus(ids: ReadonlySet<string>) {
-    if (!this.enabled() || !this.settings?.showOnSaleOverlay) return;
+    if (
+      !this.enabled() ||
+      !this.settings?.cardOverlaysEnabled ||
+      !this.settings.showOnSaleOverlay
+    )
+      return;
     for (const entry of this.entries.values())
       if (ids.has(entry.context.subjectId)) this.renderSaleStatus(entry);
   }
@@ -255,15 +290,23 @@ export class CardOverlays {
       signal,
     );
   }
+  private fusionWarningEnabled(settings = this.settings) {
+    return (
+      !!settings?.fusionSettingsEnabled &&
+      settings.fusionShowPriceWarning &&
+      isFusionPage()
+    );
+  }
   enabled() {
     return (
-      this.settings &&
-      settingsForPage(this.settings, location.pathname).cardOverlaysEnabled &&
-      (this.settings?.showSaleHistoryOverlay ||
-        this.settings?.showOnSaleOverlay ||
-        this.settings?.showActiveAuctionsOverlay ||
-        this.settings?.showFriendInterestOverlay ||
-        this.settings?.showQuestOverlay)
+      this.fusionWarningEnabled() ||
+      (this.settings &&
+        settingsForPage(this.settings, location.pathname).cardOverlaysEnabled &&
+        (this.settings?.showSaleHistoryOverlay ||
+          this.settings?.showOnSaleOverlay ||
+          this.settings?.showActiveAuctionsOverlay ||
+          this.settings?.showFriendInterestOverlay ||
+          this.settings?.showQuestOverlay))
     );
   }
   private schedule() {
@@ -324,7 +367,8 @@ export class CardOverlays {
         done: false,
       };
       this.entries.set(root, entry);
-      if (this.settings?.showOnSaleOverlay) this.renderSaleStatus(entry);
+      if (this.settings?.cardOverlaysEnabled && this.settings.showOnSaleOverlay)
+        this.renderSaleStatus(entry);
       this.intersection.observe(root);
       if (this.isSummaryEntry(entry)) this.queue.add(entry);
     }
@@ -377,6 +421,7 @@ export class CardOverlays {
     return entry.visible || this.isSummaryEntry(entry);
   }
   private remove(entry: Entry) {
+    entry.root.removeAttribute(FUSION_WARNING);
     entry.request?.abort();
     this.intersection.unobserve(entry.root);
     this.queue.delete(entry);
@@ -453,6 +498,22 @@ export class CardOverlays {
     }
     const generation = this.generation,
       settings = this.settings!;
+    const reads = this.fusionWarningEnabled()
+      ? {
+          ...settings,
+          cardOverlaysEnabled: true,
+          showSaleHistoryOverlay: true,
+          showLastSalePriceOverlay: true,
+          showOnSaleOverlay:
+            settings.cardOverlaysEnabled && settings.showOnSaleOverlay,
+          showActiveAuctionsOverlay:
+            settings.cardOverlaysEnabled && settings.showActiveAuctionsOverlay,
+          showFriendInterestOverlay:
+            settings.cardOverlaysEnabled && settings.showFriendInterestOverlay,
+          showQuestOverlay:
+            settings.cardOverlaysEnabled && settings.showQuestOverlay,
+        }
+      : settings;
     this.running++;
     const request = new AbortController();
     entry.request = request;
@@ -491,9 +552,9 @@ export class CardOverlays {
       .get(
         entry.context.subjectId,
         entry.visible
-          ? settings
+          ? reads
           : {
-              ...settings,
+              ...reads,
               showOnSaleOverlay: false,
               showFriendInterestOverlay: false,
             },
@@ -558,8 +619,17 @@ export class CardOverlays {
       });
     this.pump();
   }
+  private renderWarning(entry: Entry, signals?: CardSignals) {
+    const price = signals && overlaySalePrice(signals, this.settings!.useMedianOverlayPrice);
+    const warn =
+      this.fusionWarningEnabled() &&
+      !!price &&
+      BigInt(price) > this.warningThresholdMicros;
+    entry.root.toggleAttribute(FUSION_WARNING, warn);
+  }
   private render(entry: Entry, signals: CardSignals, force = false) {
-    if (this.settings?.showOnSaleOverlay) {
+    this.renderWarning(entry, signals);
+    if (this.settings?.cardOverlaysEnabled && this.settings.showOnSaleOverlay) {
       const onSale = this.client.saleStatus?.(entry.context.subjectId);
       if (onSale !== undefined && signals.onSale !== onSale)
         signals = { ...signals, onSale };
@@ -573,11 +643,12 @@ export class CardOverlays {
     if (!force && sameSignals && entry.host?.isConnected && !artworkChanged) return;
     if (artworkChanged) this.removeAlbumSale(entry);
     if (
-      !signals.onSale &&
-      !signals.activeAuctions &&
-      !signals.saleHistory &&
-      !signals.interestedFriends &&
-      !signals.quest
+      !this.settings!.cardOverlaysEnabled ||
+      (!signals.onSale &&
+        !signals.activeAuctions &&
+        !(signals.saleHistory && this.settings!.showSaleHistoryOverlay) &&
+        !signals.interestedFriends &&
+        !signals.quest)
     ) {
       entry.host?.remove();
       entry.host = undefined;

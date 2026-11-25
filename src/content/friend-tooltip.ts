@@ -117,11 +117,7 @@ export class FriendTooltip {
   }
   setSettings(settings: Settings) {
     this.settings = settings;
-    if (
-      !settings.friendTooltipEnabled ||
-      !settings.cardOverlaysEnabled ||
-      !settings.showFriendInterestOverlay
-    ) {
+    if (!this.enabled()) {
       this.hide();
       return;
     }
@@ -199,16 +195,11 @@ export class FriendTooltip {
   reset() {
     this.url = location.href;
     this.hide();
-    if (
-      this.state.pinned &&
-      this.settings.friendTooltipEnabled &&
-      this.settings.cardOverlaysEnabled &&
-      this.settings.showFriendInterestOverlay
-    )
-      this.createView();
+    if (this.state.pinned && this.enabled()) this.createView();
   }
   private enabled() {
     return (
+      this.settings.socialEnabled &&
       this.settings.friendTooltipEnabled &&
       this.settings.cardOverlaysEnabled &&
       this.settings.showFriendInterestOverlay

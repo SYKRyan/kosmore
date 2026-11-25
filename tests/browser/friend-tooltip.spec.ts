@@ -9,6 +9,9 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, dirname, basename } from "node:path";
 import { launchTestBrowser } from "./browser";
+import { mockServiceCard } from "./service-card";
+import { serviceDetails } from "../fixtures/services";
+import { parseServicesCard } from "../../src/shared/services";
 import { defaults } from "../../src/shared/settings";
 import { card, face, friends, me, prices } from "../fixtures/data";
 import { multiSelectFixture } from "../fixtures/multi-select";
@@ -466,6 +469,11 @@ test("friend tooltip hover and dismissal use independent timings and cancel pend
 });
 
 test("friend tooltip settings save independently, disable the popup, cancel edits, and stay usable on narrow screens", async () => {
+  const details = serviceDetails("42");
+  const fixture = await mockServiceCard(worker, parseServicesCard({
+    ...details, card: { ...details.card, families: card("42").families },
+  }, "42"));
+  await page.reload();
   const options = await context.newPage();
   try {
     await options.goto(`chrome-extension://${extensionId}/options.html`);
@@ -475,7 +483,7 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
         exact: true,
       });
     await options
-      .getByRole("link", { name: "Friend Tooltip", exact: true })
+      .getByRole("radio", { name: "Tooltip", exact: true })
       .click();
     await group.getByLabel("Friend hover delay", { exact: true }).fill("250");
     await group.getByLabel("Friend dismiss delay", { exact: true }).fill("800");
@@ -489,6 +497,12 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
     await expect
       .poll(async () => (await dialog().boundingBox())!.width)
       .toBe(280);
+    const socialMaster = options.getByRole("switch", { name: "Enable Social", exact: true });
+    await socialMaster.uncheck();
+    await expect(dialog()).toHaveCount(0);
+    await expect(trigger()).toHaveCount(0);
+    await socialMaster.check();
+    await open();
     await group.getByLabel("Enable friend tooltip", { exact: true }).uncheck();
     await expect(
       group.getByLabel("Friend hover delay", { exact: true }),
@@ -511,7 +525,7 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
     ).toBeChecked();
     await options.setViewportSize({ width: 390, height: 900 });
     await options
-      .getByRole("link", { name: "Friend Tooltip", exact: true })
+      .getByRole("radio", { name: "Tooltip", exact: true })
       .click();
     expect(
       await options.evaluate(
@@ -551,6 +565,7 @@ test("friend tooltip settings save independently, disable the popup, cancel edit
       path: "test-results/screenshots/friend-tooltip-390.png",
     });
   } finally {
+    await fixture.evaluate((remove) => remove());
     await options.close();
   }
 });
