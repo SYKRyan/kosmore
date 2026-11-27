@@ -11,9 +11,10 @@ afterEach(() => {
 });
 
 it("checks each summary once despite rerenders, visibility toggles, and elapsed time", async () => {
-  const readyPackIds = vi.fn(async () => ["first", "second", "third"]);
+  const client = new GameClient();
+  const readyPackIds = vi.spyOn(client, "readyPackIds").mockResolvedValue(["first", "second", "third"]);
   let enabled = true;
-  const remaining = new RemainingPacks({ readyPackIds }, () => enabled);
+  const remaining = new RemainingPacks(client, () => enabled, () => true);
   history.replaceState(null, "", "/packs/open?id=first");
   remaining.refresh();
   expect(readyPackIds).not.toHaveBeenCalled();

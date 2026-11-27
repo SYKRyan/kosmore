@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { launchTestBrowser } from "./browser";
@@ -206,10 +206,20 @@ test("uses the unified Services response on a cold cache, then reuses it across 
       `chrome-extension://${extension}/options.html#connected-account`,
     );
     const url = options.getByLabel("KosMore Services API base URL");
-    await expect(url).toHaveValue("");
+    const { defaultBaseUrl } = JSON.parse(await readFile(resolve(bundle, "services-config.json"), "utf8"));
+    await expect(url).toHaveValue(defaultBaseUrl);
+    await expect(url).toHaveAttribute("type", "password");
     await expect(
       options.getByRole("button", { name: "Connect", exact: true }),
-    ).toBeDisabled();
+    ).toBeEnabled();
+    await url.fill(service);
+    await url.blur();
+    await expect.poll(() => options.evaluate(async () =>
+      (await chrome.runtime.sendMessage({ op: "servicesStatus", requestId: "check-base" })).data.base
+    )).toBe(service);
+    await url.fill("");
+    await url.blur();
+    await expect(url).toHaveValue(defaultBaseUrl);
     await url.fill(service);
     await url.blur();
     await options.evaluate(() => {
@@ -604,6 +614,11 @@ test("uses the unified Services response on a cold cache, then reuses it across 
       () => (globalThis as any).servicesFixture.batches.length,
     );
     await expect(accountBadge).toHaveText("Connect Account");
+    const accountLink = options.getByRole("link", { name: "Connected Account", exact: true });
+    const accountPanel = options.locator("#connected-account");
+    await expect(accountPanel).toHaveCSS("animation-name", "connection-border-pulse");
+    for (const control of [accountBadge, accountLink])
+      await expect(control).toHaveCSS("animation-name", "connection-pulse");
     await cards.goto("https://kosmora.io/collection?card=78");
     await cards.locator('main a[href="/card/78"]').hover();
     await expect(
@@ -620,6 +635,8 @@ test("uses the unified Services response on a cold cache, then reuses it across 
     await options.getByRole("button", { name: "Retry access" }).click();
     await expect(options.getByText("Linked to FixturePlayer.")).toBeVisible();
     await expect(accountBadge).toHaveText("Connected to FixturePlayer");
+    for (const control of [accountBadge, accountLink, accountPanel])
+      await expect(control).toHaveCSS("animation-name", "none");
 
     await worker.evaluate(async () => {
       const key = "kosmore.settings";

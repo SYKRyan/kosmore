@@ -3,6 +3,13 @@ import { el } from "./ui";
 
 export const PACK_SUMMARY_STATUS_ATTR = "data-kosmore-pack-summary-status";
 
+export function packStar() {
+  const star = el("span", "kosmore-star");
+  star.setAttribute("aria-hidden", "true");
+  star.style.clipPath = "polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%)";
+  return star;
+}
+
 export function packSummaryStatus(grid: HTMLElement) {
   const host = el("div");
   host.setAttribute(PACK_SUMMARY_STATUS_ATTR, "");
@@ -19,7 +26,6 @@ export function packSummaryStatus(grid: HTMLElement) {
       height: 14px;
       margin-inline-end: 5px;
       background: currentColor;
-      clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
       font-size: inherit;
       vertical-align: calc(0.5cap - 7px);
     }
@@ -35,9 +41,7 @@ export function packSummaryStatus(grid: HTMLElement) {
   `,
   );
   const label = el("span", "kosmore-label");
-  const icon = el("span", "kosmore-star");
-  icon.setAttribute("aria-hidden", "true");
-  label.append(icon, el("span", "", "KosMore"));
+  label.append(packStar(), el("span", "", "KosMore"));
   const status = el("span", "loading");
   status.setAttribute("role", "status");
   host.attachShadow({ mode: "open" }).append(style, label, status);

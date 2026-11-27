@@ -51,6 +51,8 @@ interface Job {
 export function installServicesBackground() {
   const store = new ServicesCardStore();
   let base = "";
+  let defaultBase: string;
+  let usesDefault = true;
   let session: Session | undefined;
   let generation = new AbortController();
   let lastPrune = 0;
@@ -65,22 +67,50 @@ export function installServicesBackground() {
   let listingRetryAt = 0;
   const passive = new Set<string>();
   let deferred: string | undefined;
-  const ready = store.connection().then(async (connection) => {
-    base = connection?.base ?? "";
-    session = connection?.session;
-    pendingLink = (await chrome.storage.session?.get(PENDING_LINK_KEY))?.[
-      PENDING_LINK_KEY
-    ] as PendingLink | undefined;
-    const saved = (await chrome.storage?.session?.get(DEFERRED_CARD_KEY))?.[
-      DEFERRED_CARD_KEY
-    ] as { base?: string; player?: string; id?: unknown } | undefined;
-    if (
-      saved?.base === base &&
-      saved?.player === session?.playerId &&
-      validCardId(saved?.id)
-    )
-      deferred = saved.id;
-  });
+  const config = fetch(chrome.runtime.getURL("services-config.json")).then(
+    async (response) => {
+      if (!response.ok)
+        throw new Error("Could not load the packaged Services URL.");
+      const data = object(await response.json());
+      if (typeof data.defaultBaseUrl !== "string")
+        throw new Error("Missing defaultBaseUrl in services-config.json.");
+      return {
+        defaultBase: servicesBase(data.defaultBaseUrl),
+        legacyBase:
+          typeof data.legacyBaseUrl === "string"
+            ? servicesBase(data.legacyBaseUrl)
+            : undefined,
+      };
+    },
+  );
+  const ready = Promise.all([store.connection(), config]).then(
+    async ([connection, packaged]) => {
+      defaultBase = packaged.defaultBase;
+      const savedBase = connection?.base || defaultBase;
+      usesDefault =
+        connection?.usesDefault ??
+        (savedBase === defaultBase || savedBase === packaged.legacyBase);
+      base = usesDefault ? defaultBase : savedBase;
+      const baseChanged = !!connection && connection.base !== base;
+      session = baseChanged ? undefined : connection?.session;
+      if (connection && (baseChanged || connection.usesDefault === undefined))
+        await store.saveConnection({ base, usesDefault, session }, baseChanged);
+      pendingLink = (await chrome.storage.session?.get(PENDING_LINK_KEY))?.[
+        PENDING_LINK_KEY
+      ] as PendingLink | undefined;
+      if (pendingLink && pendingLink.target !== base) await clearPendingLink();
+      if (baseChanged) await persistDeferred();
+      const saved = (await chrome.storage?.session?.get(DEFERRED_CARD_KEY))?.[
+        DEFERRED_CARD_KEY
+      ] as { base?: string; player?: string; id?: unknown } | undefined;
+      if (
+        saved?.base === base &&
+        saved?.player === session?.playerId &&
+        validCardId(saved?.id)
+      )
+        deferred = saved.id;
+    },
+  );
   let connectionWrites: Promise<unknown> = Promise.resolve();
   const serialize = <T>(operation: () => Promise<T>) => {
     const result = connectionWrites.then(operation);
@@ -178,7 +208,11 @@ export function installServicesBackground() {
       await chrome.storage?.session?.remove(DEFERRED_CARD_KEY).catch(() => {});
   }
 
-  async function replace(nextBase: string, nextSession?: Session) {
+  async function replace(
+    nextBase: string,
+    nextSession?: Session,
+    nextUsesDefault = usesDefault,
+  ) {
     await clearPendingLink();
     generation.abort();
     generation = new AbortController();
@@ -190,9 +224,10 @@ export function installServicesBackground() {
     retryAt = 0;
     retryCards.clear();
     base = nextBase;
+    usesDefault = nextUsesDefault;
     session = nextSession;
     await persistDeferred();
-    await store.saveConnection({ base, session });
+    await store.saveConnection({ base, usesDefault, session });
     await chrome.storage.local.set({
       [SERVICES_STATE_KEY]: crypto.randomUUID(),
     });
@@ -326,7 +361,8 @@ export function installServicesBackground() {
     linking = attempt;
     const link = await serialize(async () => {
       attempt.signal.throwIfAborted();
-      if (base !== target) await replace(target);
+      if (base !== target)
+        await replace(target, undefined, target === defaultBase);
       const signal = AbortSignal.any([attempt.signal, generation.signal]);
       const flow = await startLink(target, inviteCode?.trim(), signal);
       signal.throwIfAborted();
@@ -1051,10 +1087,20 @@ export function installServicesBackground() {
           case "servicesSave": {
             if (typeof message.base !== "string")
               throw new Error("Invalid Services URL.");
-            const next = message.base ? servicesBase(message.base) : "";
+            const next = message.base
+              ? servicesBase(message.base)
+              : defaultBase;
             if (next !== base) linking?.abort();
             return serialize(async () => {
-              if (next !== base) await replace(next);
+              const inherit = next === defaultBase;
+              if (next !== base) await replace(next, undefined, inherit);
+              else if (usesDefault !== inherit) {
+                await store.saveConnection(
+                  { base, session, usesDefault: inherit },
+                  false,
+                );
+                usesDefault = inherit;
+              }
               return status();
             });
           }

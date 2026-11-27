@@ -2,6 +2,47 @@
 
 A browser extension that adds card insights, shortcuts, and private reminders to Kosmora.
 
+## Install & update
+
+The release ZIP is ready to load in a Chromium-based browser. KosMore requires Chromium 120 or later.
+
+### First installation
+
+1. Download `KosMore-2.0.60.zip`. Extract it into a folder you will keep, such as `Documents\KosMore`. Open that folder and find `manifest.json`. This is the folder you will select in step 3.
+2. Open the Extensions page in the browser you use for Kosmora. In Chrome, enter `chrome://extensions` in the address bar. In Edge, enter `edge://extensions`. In Vivaldi, enter `vivaldi://extensions`.
+3. Turn on **Developer mode**. Select **Load unpacked**, choose the folder containing `manifest.json`, and confirm. The Extensions page should now list **KosMore 2.0.60**. Keep that folder in place.
+4. Open Kosmora in the same browser profile and sign in to the player you want to link. Refresh any Kosmora tabs that were already open.
+5. Open the browser’s **Extensions** menu and select **KosMore** to open Settings. Select the red **Connect Account** button at the top.
+6. Leave the masked **KosMore Services API base URL** filled in. If you received a tester invite code, enter it. Select **Connect**, allow access to the Services host if prompted, and approve KosMore in the Kosmora sign-in window.
+7. Return to KosMore Settings. A green **Connected to** badge showing your player handle confirms setup.
+
+If the sign-in window does not open, select **Copy Link** in **Connected Account**. Paste the link into a new tab in the same browser profile, approve KosMore, then return to Settings. If needed, copy the **Sign-in link** field manually.
+
+On **Vivaldi for Android**, extract the ZIP with your Files app. In Vivaldi, enable **Desktop Site**, then open **Extensions → Manage Extensions**. Continue at step 3 and tap **Select Folder** when prompted. [Vivaldi’s Android guide](https://help.vivaldi.com/android/android-tools/extensions-on-android/)
+
+### Update an existing installation
+
+You can update directly from 2.0.51. These steps also apply to other unpacked releases from 2.0.1 onward.
+
+1. Open the browser profile where KosMore is already installed. For an optional backup, open **KosMore Settings → Backup & Restore → Export backup** and save the file.
+2. Download `KosMore-2.0.60.zip` and extract it. Open the extracted folder that contains `manifest.json`.
+3. Copy the **contents** of that folder into the folder your browser already uses for KosMore. Choose **Replace** or **Overwrite** when prompted. The new `manifest.json` should replace the old one at the same location.
+4. On the browser’s Extensions page, find the existing **KosMore** entry and select **Reload** (the circular arrow). Check that the version now reads **2.0.60**.
+5. Refresh your open Kosmora tabs and reopen KosMore Settings. If the green badge shows your handle, you’re done. If you see **Connect Account**, follow steps 5–7 under **First installation**. Your saved settings and notes carry over with an in-place update.
+
+**Using a build from 2.0.0 or earlier with a different extension ID?** In the old installation, export a backup first. Disable that installation and follow **First installation** using a separate folder. In the new installation, open **Backup & Restore**, select the saved file, review the preview, and choose **Import backup**. Verify your notes and pinned albums before removing the old installation.
+
+### Install or update from source
+
+Use Node.js 22.12 or newer and the pnpm version declared in `package.json`.
+
+1. Obtain the source, or pull the latest changes in your existing checkout.
+2. Run `pnpm install`, then `pnpm build` from the repository folder.
+3. For a new installation, use **Load unpacked** to select the generated `dist` folder. For an update, reload the existing extension after rebuilding. If it loads from a separate folder, copy the rebuilt files there first.
+4. Refresh your Kosmora tabs and reopen settings. Pulling source alone does not rebuild the extension.
+
+## Features at a glance
+
 Connect your Kosmora account in **Settings → Connected Account** to load shared card prices, sales history, and auction snapshots from KosMore Services. Public auction prices have a five-minute provider delay. Linking the same player in another browser also brings over confirmed listing prices. Settings, notes, and pinned shortcuts move through **Backup & restore**.
 
 - **Card tooltips:** view market analytics, your listing history, matching friends, and private notes while browsing, including pack reveals, trade pickers, and Market Activity.
@@ -19,40 +60,6 @@ Connect your Kosmora account in **Settings → Connected Account** to load share
 - **Backup & restore:** export and import settings, album shortcuts, family preferences, and private notes across browsers or computers.
 - **Account-aware data:** keep album shortcuts and private reminders associated with the correct Kosmora account.
 
-## Install & update
-
-### Install a release
-
-The release ZIP contains the ready-to-load extension. Node.js, pnpm, and a source checkout are not required. KosMore targets Chromium-based browsers and declares Chrome 120 as its minimum version.
-
-1. Download the KosMore release ZIP and extract it to a permanent folder, such as `Documents\KosMore`.
-2. Open your browser's Extensions page: `chrome://extensions` in Chrome, `edge://extensions` in Edge, or `vivaldi://extensions` in Vivaldi.
-3. Turn on **Developer mode**, click **Load unpacked**, and select the extracted folder containing `manifest.json`.
-4. Open Kosmora and refresh any tabs that were already open.
-5. Open KosMore from the browser's Extensions menu to configure it. You can also use the **Settings gear** in a card tooltip.
-
-Keep the extracted folder in place; the browser loads the extension from that location.
-
-### Update an existing installation
-
-**Upgrading from 2.0.0 or an earlier unpacked build with a different extension ID?** Export your backup before replacing any files. Since 2.0.1, unpacked builds share a stable extension ID. Extract the new build into a separate permanent folder, disable the old installation, and use **Load unpacked** on the new folder. Import your backup, reconnect under **Connected Account**, and refresh your Kosmora tabs. Check your notes and pinned albums before removing the old installation.
-
-For updates between builds that already share the stable ID, use the existing folder.
-
-1. Optionally export a backup through **KosMore settings → Backup & restore**.
-2. Extract the new release ZIP and replace the extension files in the same installation folder.
-3. Open your browser's Extensions page and click **Reload** on KosMore. Keep the existing extension installed to preserve its settings and notes.
-4. Refresh your Kosmora tabs and reopen KosMore settings.
-
-### Install or update from source
-
-Use Node.js 22.12 or newer and the pnpm version declared in `package.json`.
-
-1. Obtain the source, or pull the latest changes in your existing checkout.
-2. Run `pnpm install`, then `pnpm build` from the repository folder.
-3. For a new installation, use **Load unpacked** to select the generated `dist` folder. For an update, reload the existing extension after rebuilding. If it loads from a separate folder, copy the rebuilt files there first.
-4. Refresh your Kosmora tabs and reopen settings. Pulling source alone does not rebuild the extension.
-
 ## Feature groups
 
 The sections below follow the order shown in settings. Each feature group's top-right switch **saves and applies immediately**. Other options use that group's **Save** and **Cancel** buttons. Turning a group off disables its options and Save/Cancel buttons while preserving its saved preferences. Unsaved option edits remain available when you turn it back on in the same settings page.
@@ -65,10 +72,12 @@ Card overlays, Sales Overlay, profile reminders, trade reminders, and navigation
 
 ### Connected account
 
-1. Enter the **KosMore Services API base URL** from your administrator. Enter your tester invite code if you received one.
+1. The **KosMore Services API base URL** is already filled in and masked. If you use a self-hosted service, enter its URL here. Enter your tester invite code if you received one.
 2. Choose **Connect**, allow access to the Services host when prompted, and approve KosMore in the Kosmora sign-in window.
 3. If the browser cannot open that window, choose **Copy Link** and paste the link into a new tab in the same browser profile. This also works as the first sign-in option. If the clipboard is unavailable, copy the **Sign-in link** field manually. The link expires after ten minutes.
 4. Return to Settings and check the linked handle. Private open listings load on demand when the signed-in game account matches. The provider covers open single-card listings and omits lots and face-down listings.
+
+The default URL follows extension updates. A custom URL stays in effect until you change it. To restore the default, clear the URL field and leave it. If the service address changes, choose **Connect** to link your account at the new address.
 
 If Settings reports that access is blocked, ask the administrator to restore access and select **Retry access**. Use **Reconnect** for a new sign-in when needed. If an invite is reported as unavailable, request a new one.
 
@@ -158,7 +167,9 @@ The **Pack Openings** switch starts on. Turn it off to pause pack price warnings
 
 Find the shortcuts under **Hotkeys → Pack Opening** and the automation and display options under **Pack Openings**. Pack hotkeys start off and bindings start empty. You can also record arrows, Home, and End. Use **Save** at the bottom of Hotkeys to apply changes across all three tabs.
 
-**Show remaining pack count** starts on and shows the number of ready packs above **Open the Next Pack**.
+**Show remaining pack count** starts on and shows the number of ready packs below the summary buttons.
+
+**Open 10 at once** appears on a pack summary when you own the batch-opening talent and have at least ten other ready packs. Each click opens one batch and shows its recap. Under **Hotkeys → Pack Opening**, you can assign **Open 10 at once** to use the same shortcut on the Packs page and on summaries. The shortcut starts unassigned.
 
 - **Next Card** tears the ready pack and steps through the reveal. A pinned tooltip follows each card as you advance. On the summary, use **Next Card**, **Previous Card**, **Focus First Card**, or **Focus Last Card** to inspect the grid with the tooltip. The selected card keeps focus while summary badges finish loading.
 - **See Card** opens the focused card’s detail page. Press **Enter** on a focused summary card to use Kosmora’s close-up viewer.

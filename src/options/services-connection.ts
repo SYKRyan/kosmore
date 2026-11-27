@@ -131,7 +131,7 @@ export function servicesConnection(showStatus: (status: ConnectionStatus) => voi
                 ? `Linked to ${current.handle}.`
                 : url
                   ? "Link your Kosmora account to load card data."
-                  : "Enter the Services URL provided for testing."),
+                  : "Leave the field empty to restore the default Services URL."),
         !!error,
       ),
     );
@@ -154,6 +154,7 @@ export function servicesConnection(showStatus: (status: ConnectionStatus) => voi
     render();
   });
   input.addEventListener("change", () => {
+    const edited = input.value;
     const base = parsed();
     if (!base && input.value.trim()) {
       render(
@@ -168,6 +169,7 @@ export function servicesConnection(showStatus: (status: ConnectionStatus) => voi
           op: "servicesSave",
           base: base ?? "",
         });
+        if (input.value === edited) input.value = current.base;
         if (!busy) render();
       });
     void saving.catch((error) => render(messageOf(error)));

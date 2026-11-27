@@ -16,6 +16,17 @@ const BATCH_INPUT =
   ".bsell-prices .bsell-input input,.bsell-prices label input";
 const SELL_INPUT = 'form.sell-form input[data-testid="sell-start"]';
 export const SALES_SUMMARY_WARNING = '[data-kosmore-sales-warning="summary"]';
+export function singleSaleCard(
+  doc: Document,
+  deal: Element | null = doc.querySelector(".deal"),
+): CardContext | null {
+  const url = new URL(doc.location.href);
+  if (url.pathname !== "/market/sell") return null;
+  const card = deal?.querySelector(".deal-visual .kc-article");
+  const context = card ? resolveCard(card, doc) : null;
+  const subject = url.searchParams.get("subject")?.replace(/^0+(?=\d)/, "");
+  return subject === undefined || subject === context?.subjectId ? context : null;
+}
 export function salesTarget(
   input: HTMLInputElement,
   doc: Document = document,
@@ -28,25 +39,19 @@ export function salesTarget(
   const url = new URL(doc.location.href);
   let after: HTMLElement | null = null;
   let card: Element | null = null;
+  let context: CardContext | null = null;
   if (url.pathname === "/market/sell/batch") {
     const row = input.closest(".bsell-row");
     if (!row || row.querySelector(BATCH_INPUT) !== input) return;
     after = row.querySelector<HTMLElement>(".bsell-prices");
     card = row.querySelector(".bsell-head");
+    context = card && resolveCard(card, doc);
   } else if (url.pathname === "/market/sell" && input.matches(SELL_INPUT)) {
     after = input.closest<HTMLElement>("label.fld-big");
-    card =
-      input.closest(".deal")?.querySelector(".deal-visual .kc-article") ?? null;
+    context = singleSaleCard(doc, input.closest(".deal"));
+    card = context?.anchor ?? null;
   }
-  const context = card && resolveCard(card, doc);
   if (!after || !card || !context) return;
-  if (
-    url.pathname === "/market/sell" &&
-    url.searchParams.has("subject") &&
-    url.searchParams.get("subject")?.replace(/^0+(?=\d)/, "") !==
-      context.subjectId
-  )
-    return;
   const article = card.matches(".kc-article")
     ? card
     : card.querySelector(".kc-article");

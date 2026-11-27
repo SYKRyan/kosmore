@@ -42,6 +42,7 @@ import { CardOverlays, priceWarningForPage } from "./card-overlays";
 import { NavigationHotkeys } from "./navigation";
 import { PACK_FOCUS, PackOpeningHotkeys } from "./pack-opening-hotkeys";
 import { SalesOverlays } from "./sales-overlays";
+import { singleSaleCard } from "../kosmora/sales";
 import { observePage } from "./page-changes";
 import { FriendTooltip } from "./friend-tooltip";
 import { ProfileReminders } from "./profile-reminders";
@@ -181,9 +182,10 @@ window.addEventListener("message", (event) => {
           void client.account(undefined, false).catch(() => {});
         void chrome.storage.local.set({ "kosmore.gameAccountHint": observed });
       }
-      if (event.data.kind === "inventory" && remainingPackCountEnabled()) {
+      if (event.data.kind === "inventory" && settings.packOpeningsEnabled) {
         try {
-          client.observeInventory(event.data.data, event.data.href);
+          const ids = client.observeInventory(event.data.data, event.data.href);
+          if (ids) remainingPacks.inventory(ids);
         } catch {}
       }
       if (event.data.kind === "opening" && pageSettings().enabled)
@@ -267,9 +269,6 @@ function refreshServiceControls(
     if (popup && current && affected.has(current.subjectId)) void show(current);
   }, 80);
 }
-function remainingPackCountEnabled() {
-  return settings.packOpeningsEnabled && settings.showRemainingPackCount;
-}
 function syncRelayPreferences() {
   const family =
     FAMILY_IMPACT_AVAILABLE && settings.familyImpactOverlaysEnabled;
@@ -281,7 +280,7 @@ function syncRelayPreferences() {
       preferences: {
         servicesCards: needsServicesCards(),
         packOpenings: pageSettings().enabled,
-        inventory: remainingPackCountEnabled(),
+        inventory: settings.packOpeningsEnabled,
         fusion: family && settings.showFusionFamilyOverlay,
         vortex: family && settings.showVortexFamilyOverlay,
         familyMilestones:
@@ -300,7 +299,8 @@ function syncRelayPreferences() {
 }
 const remainingPacks = new RemainingPacks(
   client,
-  remainingPackCountEnabled,
+  () => settings.packOpeningsEnabled,
+  () => settings.showRemainingPackCount,
 );
 let pinnedState: PopupState = { pinned: false, position: null };
 let fusionReview: { pin: PopupState; previousCard: CardContext | null; url: string } | undefined;
@@ -325,6 +325,7 @@ const packOpeningHotkeys = new PackOpeningHotkeys(
       popup.host.matches(":popover-open") &&
       pageSettings().enabled
     ),
+  () => remainingPacks.activate(),
 );
 let marketFinishes: Finish[] = [...FINISHES];
 let pendingFilterWrites = 0;
@@ -358,7 +359,7 @@ const preferencesReady = Promise.all([
   fusionFamily?.setSettings(settings);
   tooltipButtons.setSettings(settings);
   if (!pageSettings().enabled) hide();
-  else if (visiblePin().pinned && !popup && !current) createView(null);
+  else if (visiblePin().pinned) restorePinnedView();
   packOpeningHotkeys.start();
   remainingPacks.start();
 });
@@ -397,7 +398,23 @@ function dismiss() {
 function navigationAway() {
   hovered = false;
   hide();
-  if (pageSettings().enabled && visiblePin().pinned) createView(null);
+  if (pageSettings().enabled && visiblePin().pinned) restorePinnedView();
+}
+function syncPinnedSaleCard() {
+  if (location.pathname !== "/market/sell") return false;
+  const card = singleSaleCard(document);
+  if (!card) return false;
+  if (card.anchor !== current?.anchor || contextKey(card) !== contextKey(current) ||
+      popup?.context !== current) {
+    clearTimeout(openTimer);
+    cancelClose();
+    current = card;
+    void show(card, { restorePinned: true });
+  }
+  return true;
+}
+function restorePinnedView() {
+  if (!syncPinnedSaleCard() && !popup && !current) createView(null);
 }
 function syncFusionReview() {
   if (!preferencesLoaded) return false;
@@ -424,7 +441,7 @@ function syncFusionReview() {
       if (restored && card && contextKey(restored) === contextKey(card)) {
         current = restored;
         void show(restored, { restorePinned: true });
-      } else createView(null);
+      } else restorePinnedView();
     }
   }
   return true;
@@ -500,6 +517,7 @@ async function show(
   if (
     fromHover &&
     settings.tooltipTakesFocus &&
+    !(context.anchor.matches(".bsell-row") && document.activeElement?.matches(".bsell-row :is(input,select,textarea)")) &&
     !(context.surface === "summary" && document.activeElement?.matches(".ko-summary .ko-grid-open")) &&
     context.anchor.matches(":hover")
   ) {
@@ -779,6 +797,7 @@ function enter(target: Element, pointer?: PointerEvent) {
     return;
   }
   if (!pointer && (keyboardOpened || target.hasAttribute(PACK_FOCUS))) return;
+  if (popup?.isPinned && syncPinnedSaleCard()) return;
   const context = resolveCard(target);
   if (!context) {
     hovered = false;
@@ -807,6 +826,7 @@ function enter(target: Element, pointer?: PointerEvent) {
   }, settings.hoverDelayMs);
 }
 function openFromButton(context: CardContext) {
+  if (popup?.isPinned && syncPinnedSaleCard()) return;
   packOpeningHotkeys.inspectSummaryCard(context.anchor);
   clearTimeout(openTimer);
   cancelClose();
@@ -1172,6 +1192,7 @@ observePage(() => {
     }
   }
   if (popup?.isPinned && !popup.host.isConnected) popup.mount();
+  if (popup?.isPinned && syncPinnedSaleCard()) return;
   if (!current) return;
   if (!current.anchor.isConnected) {
     if (!popup?.isPinned) hide();
@@ -1308,7 +1329,7 @@ function applySettings(next: Settings) {
     if (current && activeRequest)
       loadHeaderSignals(popup, current, activeRequest.signal);
   } else if (visiblePin().pinned && !settingsForPage(previous, location.pathname).enabled) {
-    createView(null);
+    restorePinnedView();
   }
   packOpeningHotkeys.dismissFoundPackAutomatically();
   remainingPacks.refresh();
@@ -1321,7 +1342,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
       pinnedState = { ...pinnedState, pinned, position };
       if (fusionReview || !pageSettings().enabled) return;
       if (popup) popup.setPinnedPlacement(pinned ? pinPosition() : undefined);
-      else if (pinned && !wasPinned && !current) createView(null);
+      if (pinned && !wasPinned) restorePinnedView();
     });
   }
   if (area === "local" && client.displayAccount) {

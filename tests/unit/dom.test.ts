@@ -237,22 +237,18 @@ it("resolves shared multi-select overlays outside the Sell picker", () => {
     }
   }
 });
-it("resolves batch-sale thumbnails and names without treating price/copy controls as cards", () => {
+it("resolves every part of a batch-sale box to the same card and anchor", () => {
   history.replaceState(null, "", "/market/sell/batch?s=46.f");
   document.body.innerHTML = `<ul class="bsell-list">${batchSellRow("46", "Andromeda", "kc-fa")}</ul>`;
-  for (const target of [
-    document.querySelector(".kc-img")!,
-    document.querySelector(".bsell-name")!,
-  ])
+  for (const target of document.querySelectorAll(".bsell-row, .bsell-row *"))
     expect(resolveCard(target)).toMatchObject({
       subjectId: "46",
       name: "Andromeda",
       variant: { veil: false, fullArt: true },
-      anchor: document.querySelector(".bsell-head"),
+      anchor: document.querySelector(".bsell-row"),
       copyId: undefined,
     });
-  for (const target of document.querySelectorAll("button, input"))
-    expect(resolveCard(target)).toBeNull();
+  expect(resolveCard(document.querySelector(".bsell-list")!)).toBeNull();
   expect(cardOverlayTargets().size).toBe(0);
   document.querySelector(".bsell-row")!.setAttribute("hidden", "");
   expect(resolveCard(document.querySelector(".kc-img")!)).toBeNull();

@@ -1085,7 +1085,7 @@ test("overlay button: stays attached through synchronous nested scrolling withou
   }
 });
 
-test("overlay button: many-sale cards use the listing-box corner and leave price and copy controls unchanged", async () => {
+test("overlay button: many-sale cards use the thumbnail corner and leave price and copy controls unchanged", async () => {
   await enableTooltipButtons();
   await page.goto("https://kosmora.io/market/sell/batch");
   const rows = page.locator(".bsell-row"),
@@ -1097,7 +1097,7 @@ test("overlay button: many-sale cards use the listing-box corner and leave price
   await expect(
     rows.locator(".kc-article [data-kosmore-tooltip-buttons]"),
   ).toHaveCount(0);
-  const box = (await rows.first().boundingBox())!,
+  const box = (await rows.first().locator(".bsell-thumb").boundingBox())!,
     rect = (await first.boundingBox())!;
   expect(Math.abs(rect.x + rect.width / 2 - (box.x + 8))).toBeLessThan(1);
   expect(
@@ -2270,6 +2270,14 @@ test("pack hotkeys record, cancel, clear and validate like navigation hotkeys", 
     await expect(anyKey).not.toBeChecked();
     await expect(autoSkip).toBeChecked();
     await expect(autoDismiss).toBeChecked();
+    const openTen = pack.getByRole("button", { name: "Set shortcut for Open 10 at once", exact: true });
+    await expect(openTen).toHaveText("Not set");
+    await openTen.click();
+    await openTen.press("b");
+    await save.click();
+    await expect(hotkeys.locator(".savebar .status")).toContainText("Saved");
+    await options.reload();
+    await expect(openTen).toHaveText("B");
     await expect(
       pack.getByRole("button", {
         name: "Set shortcut for Next Pack/Back to Packs",
@@ -2609,7 +2617,201 @@ test("tooltip hotkeys reuse popup actions, respect typing and native dialogs, an
   await expect(page).toHaveURL(`https://kosmora.io${marketPath}`);
 });
 
-test("Pack Openings shows the ready-pack count above the native Next Pack button", async () => {
+async function batchOpeningTab(showRemainingPackCount = false) {
+  await pulsarSettings({
+    packOpeningHotkeysEnabled: true,
+    showRemainingPackCount,
+    packOpeningHotkeys: shortcutBindings({ openTen: "KeyB" }),
+  });
+  const tab = await context.newPage();
+  const ids = Array.from({ length: 29 }, (_, i) =>
+    `12345678-1234-4321-8765-${String(i + 1).padStart(12, "0")}`);
+  const state = { ready: [...ids], owned: true, reads: 0, talentReads: 0 };
+  await tab.route("**/api/talents3", route => {
+    state.talentReads++;
+    return route.fulfill({ json: { paths: [{ ranks: [{
+      owned: state.owned ? "fortune.1a" : "fortune.1b", options: [{ id: "fortune.1a" }],
+    }] }] } });
+  });
+  await tab.route("**/api/packs/inventory", route => {
+    state.reads++;
+    return route.fulfill({ json: { packs: state.ready.map(openingId => ({ status: "ready", openingId })) } });
+  });
+  await tab.route("**/packs/open?*", route => route.fulfill({
+    contentType: "text/html", body: '<main class="ko-summary"><div class="op-actions-stack"><button class="btn-gold btn-lg">Open the Next Pack</button><div class="op-actions-pair"><button>Share</button><a href="/home">Home</a></div></div></main>',
+  }));
+  const button = tab.getByRole("button", { name: "Open 10 at once", exact: true });
+  const base = "https://kosmora.io/packs/open";
+  return { tab, ids, state, button, base };
+}
+
+test("open ten chains a click and a shortcut into separate native recaps", async () => {
+  const { tab, ids, state, button, base } = await batchOpeningTab();
+  const heldBefore = "12345678-1234-4321-8765-000000000000";
+  state.ready.unshift(OPENING, heldBefore, ids[0]);
+  const bodies: string[][] = [], keys: string[] = [];
+  let release!: () => void;
+  const paused = new Promise<void>(resolve => { release = resolve; });
+  try {
+    await tab.route("**/api/talents3/powers/batch-open", async route => {
+      const req = route.request(), { openingIds } = req.postDataJSON();
+      expect(req.method()).toBe("POST");
+      bodies.push(openingIds);
+      keys.push(req.headers()["idempotency-key"]);
+      if (bodies.length === 1) await paused;
+      state.ready = state.ready.filter(id => ![OPENING, heldBefore, ...openingIds].includes(id));
+      const held = bodies.length === 1 ? openingIds[9] : undefined;
+      if (held) state.ready.unshift(held);
+      await route.fulfill({ json: { packs: openingIds.map((id: string) => id === held
+        ? { openingId: id, held: true }
+        : { openingId: id, ok: true, opening: { id, cards: [{ slot: 1 }] } }) } });
+    });
+    await tab.goto(`${base}?id=${OPENING}&held=${heldBefore}`);
+    await expect(button).toBeVisible();
+    await expect(tab.locator("[data-kosmore-remaining-packs]")).toHaveCount(0);
+    expect(state.reads).toBe(1);
+    await button.dblclick();
+    await expect(button).toBeDisabled();
+    const star = button.locator(".kosmore-star");
+    await expect(button).toHaveAttribute("aria-busy", "true");
+    await expect(star).toHaveCSS("animation-name", "kosmore-pack-spin");
+    await tab.emulateMedia({ reducedMotion: "reduce" });
+    await expect(star).toHaveCSS("animation-name", "none");
+    await tab.emulateMedia({ reducedMotion: "no-preference" });
+    await tab.keyboard.press("b");
+    await expect.poll(() => bodies.length).toBe(1);
+    release();
+    await expect(tab).toHaveURL(`${base}?batch=${ids.slice(0, 9).join(",")}&held=${ids[9]},${heldBefore}`);
+    await expect(button).toBeEnabled();
+    await expect(star).toHaveCSS("animation-name", "none");
+    await tab.keyboard.down("b");
+    await tab.keyboard.down("b");
+    await tab.keyboard.up("b");
+    await expect(tab).toHaveURL(`${base}?batch=${ids.slice(10, 20).join(",")}&held=${ids[9]}`);
+    await expect.poll(() => state.reads).toBeGreaterThanOrEqual(5);
+    await expect(button).toHaveCount(0);
+    expect(bodies).toEqual([ids.slice(0, 10), ids.slice(10, 20)]);
+    expect(keys.every(key => /^t3bo-[\da-f-]+$/i.test(key))).toBe(true);
+    expect(new Set(keys).size).toBe(2);
+  } finally {
+    release();
+    await tab.close();
+  }
+});
+
+test("open ten honors talent, replay, fresh inventory, and interrupted responses", async () => {
+  const { tab, ids, state, button, base } = await batchOpeningTab();
+  let posts = 0;
+  try {
+    await tab.route("**/api/talents3/powers/batch-open", async route => {
+      posts++;
+      state.ready = state.ready.slice(10);
+      await route.abort("connectionreset");
+    });
+    state.owned = false;
+    await tab.goto(`${base}?id=${OPENING}`);
+    await expect.poll(() => state.talentReads).toBe(1);
+    await expect(button).toHaveCount(0);
+    state.owned = true;
+    await tab.goto(`${base}?id=${OPENING}&replay=1`);
+    await expect(tab.locator("#kosmore-pack-hotkeys-style")).toBeAttached();
+    await expect(button).toHaveCount(0);
+    await tab.goto(`${base}?id=${OPENING}`);
+    await expect(button).toBeVisible();
+    state.ready = ids.slice(0, 9);
+    await button.click();
+    await expect(button).toHaveCount(0);
+    expect(posts).toBe(0);
+    state.ready = ids.slice(0, 20);
+    await tab.reload();
+    await expect(button).toBeVisible();
+    const before = state.reads;
+    await button.click();
+    await expect(tab.getByRole("status")).toContainText("Check your pack history");
+    expect(state.reads).toBe(before + 2);
+    await expect(button).toBeEnabled();
+    expect(posts).toBe(1);
+  } finally { await tab.close(); }
+});
+
+test("open ten shortcut activates the native ten-pack button only when available", async () => {
+  const { tab } = await batchOpeningTab();
+  try {
+    await tab.route("**/packs", route => route.fulfill({ contentType: "text/html", body:
+      '<input><button data-testid="t3-spree" onclick="this.dataset.clicks=Number(this.dataset.clicks || 0)+1">Open 9 at once</button><dialog>Details</dialog>' }));
+    await tab.goto("https://kosmora.io/packs");
+    await expect(tab.locator("#kosmore-pack-hotkeys-style")).toBeAttached();
+    const native = tab.getByTestId("t3-spree");
+    await tab.keyboard.press("b");
+    await native.evaluate(b => { b.textContent = "Open 10 at once"; });
+    await tab.locator("input").focus();
+    await tab.keyboard.press("b");
+    await tab.locator("input").evaluate(el => el.blur());
+    await tab.evaluate(() => document.querySelector("dialog")!.showModal());
+    await tab.keyboard.press("b");
+    await tab.evaluate(() => document.querySelector("dialog")!.close());
+    await expect(native).not.toHaveAttribute("data-clicks");
+    await tab.keyboard.down("b");
+    await tab.keyboard.down("b");
+    await tab.keyboard.up("b");
+    await expect(native).toHaveAttribute("data-clicks", "1");
+  } finally { await tab.close(); }
+});
+
+test("open ten rechecks the account and routes held-only results to the first held pack", async () => {
+  const { tab, ids, button, base } = await batchOpeningTab();
+  let handle = "FixturePlayer", posts = 0;
+  try {
+    await tab.route("**/api/me", route => route.fulfill({ json: { ...me, handle } }));
+    await tab.route("**/api/talents3/powers/batch-open", route => {
+      posts++;
+      return route.fulfill({ json: { packs: [
+        { openingId: ids[3], held: true },
+        { openingId: ids[1], held: true },
+      ] } });
+    });
+    await tab.goto(`${base}?id=${OPENING}`);
+    await expect(button).toBeVisible();
+    handle = "AnotherPlayer";
+    const changed = tab.waitForResponse(response => response.url().endsWith("/api/me"));
+    await button.click();
+    await changed;
+    await expect(button).toBeEnabled();
+    expect(posts).toBe(0);
+    await button.click();
+    await expect(tab).toHaveURL(`${base}?id=${ids[3]}`);
+    expect(posts).toBe(1);
+  } finally { await tab.close(); }
+});
+
+test("open ten keeps the star centered and the count below a compact action row", async () => {
+  const { tab, base, button } = await batchOpeningTab(true);
+  try {
+    await tab.goto(`${base}?id=${OPENING}`);
+    await expect(button).toBeVisible();
+    const count = tab.locator(".op-actions-stack > [data-kosmore-remaining-packs]:last-child");
+    await expect(count).toHaveText("29 packs ready");
+    for (const width of [320, 375, 1024]) {
+      await tab.setViewportSize({ width, height: 640 });
+      const [next, bulk, star, label, otherActions, ready] = await Promise.all([
+        tab.getByRole("button", { name: "Open the Next Pack" }), button,
+        button.locator(".kosmore-star"), button.getByText("Open 10 at once"),
+        tab.locator(".op-actions-pair"), count,
+      ].map(async locator => (await locator.boundingBox())!));
+      expect(next.y).toBe(bulk.y);
+      expect(next.x + next.width).toBeLessThanOrEqual(bulk.x);
+      expect(bulk.x + bulk.width).toBeLessThanOrEqual(width);
+      expect(bulk.height).toBeGreaterThanOrEqual(44);
+      expect(star.x + star.width).toBeLessThan(label.x);
+      expect(Math.abs(star.y + star.height / 2 - label.y - label.height / 2)).toBeLessThan(1);
+      const countGap = ready.y - (otherActions.y + otherActions.height);
+      expect(countGap).toBeGreaterThanOrEqual(0);
+      expect(countGap).toBeLessThanOrEqual(4);
+    }
+  } finally { await tab.close(); }
+});
+
+test("Pack Openings shows the ready-pack count below the native summary buttons", async () => {
   const path = "**/api/packs/inventory";
   const nextId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   let checks = 0;
@@ -2643,10 +2845,10 @@ test("Pack Openings shows the ready-pack count above the native Next Pack button
     await expect(page.locator(".ko-beat-shown")).toBeVisible();
     await page.keyboard.press("ArrowRight");
     const count = page.locator(
-      ".op-actions-stack > .ko-mega-progress:has(+ button)",
+      ".op-actions-stack > [data-kosmore-remaining-packs]:last-child",
     );
     await expect(count).toHaveText("2 packs ready");
-    await expect(count).toHaveCSS("margin-block-start", "-4px");
+    await expect(count).toHaveCSS("margin-block-start", "0px");
     await options.goto(
       `chrome-extension://${extensionId}/options.html#pack-opening-hotkeys`,
     );
@@ -3822,7 +4024,7 @@ test("settings groups are ordered with separate account controls and a fixed anc
       const labelSizes = await options.locator(`#${section} input[type=number]`).evaluateAll(
         (inputs) => inputs.map((input) => getComputedStyle((input as HTMLInputElement).labels![0]).fontSize),
       );
-      expect(labelSizes).toEqual(Array(section === "hover-tooltip" ? 5 : 4).fill(settingNameSize));
+      expect(labelSizes).toEqual(Array(section === "trade-reminders" ? 4 : 5).fill(settingNameSize));
     }
     const socialSelector = options.getByRole("radiogroup", { name: "Social settings" });
     await expect(socialSelector.locator("label")).toHaveText(["Reminders", "Trade", "Tooltip"]);
@@ -3849,8 +4051,8 @@ test("settings groups are ordered with separate account controls and a fixed anc
       "#trade-reminders .rule + .row:has(#tradeNotesDismissDelayMs)",
       "#trade-reminders .rule + .row:has(#tradeNotesWidth)",
       "#trade-reminders .rule + .row:has(#tradeNotesHeight)",
-      "#pack-opening-hotkeys [data-shortcut='nextPack']",
-      "#pack-opening-hotkeys .hotkey-row:has([data-shortcut='nextPack']) + .hotkey-row [data-shortcut='dismissFoundPack']",
+      "#pack-opening-hotkeys .hotkey-row:has([data-shortcut='nextPack']) + .hotkey-row [data-shortcut='openTen']",
+      "#pack-opening-hotkeys .hotkey-row:has([data-shortcut='openTen']) + .hotkey-row [data-shortcut='dismissFoundPack']",
     ])
       await expect(options.locator(selector)).toHaveCount(1);
     for (const label of [
@@ -4065,7 +4267,19 @@ test("settings groups are ordered with separate account controls and a fixed anc
     await expect(socialIcon).toHaveCSS("color", "rgb(66, 239, 220)");
     const accountBadge = options.locator("header").getByRole("button", { name: "Connect Account" });
     await expect(accountBadge).toHaveCSS("border-top-color", "rgb(240, 128, 128)");
-    await expect(accountBadge).toHaveCSS("background-color", "rgb(70, 37, 44)");
+    const accountLink = nav.getByRole("link", { name: "Connected Account", exact: true });
+    await expect(nav.getByRole("link", { name: "Backup & Restore", exact: true })).toHaveCSS("animation-name", "none");
+    for (const control of [accountBadge, accountLink])
+      await expect(control).toHaveCSS("animation-name", "connection-pulse");
+    await expect(connection).toHaveCSS("animation-name", "connection-border-pulse");
+    await options.emulateMedia({ reducedMotion: "reduce" });
+    await expect(connection).toHaveCSS("animation-name", "none");
+    await expect(connection).toHaveCSS("border-top-color", "rgb(240, 128, 128)");
+    for (const control of [accountBadge, accountLink]) {
+      await expect(control).toHaveCSS("background-color", "rgb(70, 37, 44)");
+      await expect(control).toHaveCSS("animation-name", "none");
+    }
+    await options.emulateMedia({ reducedMotion: "no-preference" });
     await accountBadge.click({ position: { x: 5, y: 10 } });
     await expect(options).toHaveURL(/#connected-account$/);
     await expect(connection.getByRole("heading", { name: "Connected Account" })).toBeInViewport();
@@ -7998,19 +8212,19 @@ test("Sell Many picker supports hover and focus without selecting cards or closi
   );
   expect(writeRequests).toBe(0);
 });
-test("Sell Many batch thumbnails and names update the pinned popup without changing sale inputs", async () => {
+test("Sell Many boxes update the floating and pinned popup without changing sale inputs", async () => {
   await mkdir("test-results/screenshots", { recursive: true });
   await page.goto(
     "https://kosmora.io/market/sell/batch?s=42.v,46.f&from=market",
   );
   const rows = page.locator(".bsell-row"),
     popup = page.locator("#kosmore-root");
-  await rows.nth(0).locator(".kc-img").hover();
+  await rows.nth(0).hover({ position: { x: 4, y: 4 } });
   await expect(popup.locator("h2")).toHaveText("Northern Lights");
   await expect(popup.locator(".subtitle")).toContainText("No. 42 · Shiny");
   await popup.getByRole("button", { name: "Pin popup", exact: true }).click();
   const before = await popup.boundingBox();
-  for (const selector of [".bsell-name", ".kc-img"]) {
+  for (const selector of ["input", ".bsell-name", ".kc-img"]) {
     await rows.nth(1).locator(selector).hover();
     await expect(popup.locator("h2")).toHaveText("Andromeda");
     await expect(popup.locator(".subtitle")).toContainText("No. 46 · Full art");
@@ -8029,7 +8243,7 @@ test("Sell Many batch thumbnails and names update the pinned popup without chang
   await page
     .getByLabel("Starting price for Northern Lights", { exact: true })
     .fill("17.50");
-  await expect(popup.locator("h2")).toHaveText("Andromeda");
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
   await page
     .getByRole("button", {
       name: "Choose copy of Northern Lights",
@@ -8045,6 +8259,39 @@ test("Sell Many batch thumbnails and names update the pinned popup without chang
     "true",
   );
   expect(writeRequests).toBe(0);
+});
+test("Sell Single loads the pinned card on entry and keeps it while editing in button mode", async () => {
+  await enableTooltipButtons();
+  await worker.evaluate(() => chrome.storage.local.set({ "kosmore.popupPin": { pinned: true } }));
+  await page.goto("https://kosmora.io/market/sell?subject=42");
+  const popup = page.locator("#kosmore-root[data-pinned]");
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  const input = page.getByRole("textbox", { name: "Starting price" });
+  await input.fill("18.50");
+  await expect(input).toBeFocused();
+  await tooltipButton().click();
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  await expect(input).toHaveValue("18.50");
+  await page.evaluate(() => {
+    history.pushState({}, "", "/market");
+    document.querySelector(".deal")!.remove();
+  });
+  await expect(popup).toBeVisible();
+  await expect(popup).not.toContainText("Northern Lights");
+});
+test("Sell Single picks up a shared pin and a card rendered after navigation", async () => {
+  await page.goto("https://kosmora.io/market/sell?subject=42");
+  const popup = page.locator("#kosmore-root[data-pinned]");
+  await worker.evaluate(() => chrome.storage.local.set({ "kosmore.popupPin": { pinned: true } }));
+  await expect(popup.locator("h2")).toHaveText("Northern Lights");
+  await page.evaluate(() => history.pushState({}, "", "/market/sell?subject=46"));
+  await expect(popup).not.toContainText("Northern Lights");
+  await page.locator(".deal-visual").evaluate((visual, nextCard) => {
+    visual.innerHTML = nextCard;
+  }, face("46", "Andromeda"));
+  await expect(popup.locator("h2")).toHaveText("Andromeda");
+  await page.locator(".sell-form").hover();
+  await expect(popup.locator("h2")).toHaveText("Andromeda");
 });
 test("sales badges fill only their own controlled batch price fields with independent adjustments", async () => {
   await page.route("**/api/auctions?**", async (route) => {

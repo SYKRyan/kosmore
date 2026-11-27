@@ -23,7 +23,7 @@ interface Entry {
   host: HTMLElement;
   mount: HTMLElement;
   button: HTMLButtonElement;
-  summaryResize?: ResizeObserver;
+  resize?: ResizeObserver;
 }
 interface Mount {
   count: number;
@@ -99,12 +99,8 @@ export class TooltipButtons {
       const link = root.querySelector<HTMLAnchorElement>(MARKET_ACTIVITY_LINK);
       return link ? resolveCard(link) : null;
     }
-    if (root.matches(".bsell-row")) {
-      const head = root.querySelector<HTMLElement>(".bsell-head");
-      return location.pathname === "/market/sell/batch" && head
-        ? resolveCard(head)
-        : null;
-    }
+    if (root.matches(".bsell-thumb"))
+      return location.pathname === "/market/sell/batch" ? resolveCard(root) : null;
     return cardOverlaysAllowed(root) ? resolveCard(root) : null;
   }
   private targets(scope: Document | Element) {
@@ -131,8 +127,9 @@ export class TooltipButtons {
         ...(enclosing ? [enclosing] : []),
         ...scope.querySelectorAll<HTMLElement>(".bsell-row"),
       ]) {
-        const context = this.contextOf(row);
-        if (context) targets.set(row, context);
+        const thumb = row.querySelector<HTMLElement>(".bsell-thumb");
+        const context = thumb && this.contextOf(thumb);
+        if (thumb && context) targets.set(thumb, context);
       }
     }
     return targets;
@@ -146,7 +143,7 @@ export class TooltipButtons {
     for (const [root, entry] of this.entries) {
       if (
         changes &&
-        !affected(entry.summaryResize ? entry.mount : root, changes)
+        !affected(entry.resize ? entry.mount : root, changes)
       )
         continue;
       const context =
@@ -161,7 +158,7 @@ export class TooltipButtons {
       } else {
         entry.context = context;
         if (!entry.host.isConnected) entry.mount.append(entry.host);
-        if (entry.summaryResize) this.positionSummaryButton(entry);
+        if (entry.resize) this.positionCardButton(entry);
       }
     }
     const scopes = !changes || changes.full ? [document] : changes.roots;
@@ -239,11 +236,11 @@ export class TooltipButtons {
         });
         this.entries.set(root, entry);
         mount.append(host);
-        if (context.surface === "summary" && mount !== root) {
-          this.positionSummaryButton(entry);
-          entry.summaryResize = new ResizeObserver(() => this.positionSummaryButton(entry));
-          entry.summaryResize.observe(root, { box: "border-box" });
-          entry.summaryResize.observe(mount, { box: "border-box" });
+        if ((context.surface === "summary" || root.matches(".bsell-thumb")) && mount !== root) {
+          this.positionCardButton(entry);
+          entry.resize = new ResizeObserver(() => this.positionCardButton(entry));
+          entry.resize.observe(root, { box: "border-box" });
+          entry.resize.observe(mount, { box: "border-box" });
         }
       }
     }
@@ -253,13 +250,15 @@ export class TooltipButtons {
     }
   }
   private mountFor(root: HTMLElement): HTMLElement | null {
+    // Keep the button accessible outside the decorative aria-hidden thumbnail.
+    if (root.matches(".bsell-thumb")) return root.closest(".bsell-head");
     // Card-wide picker hit targets are siblings of the face. Anchor to their
     // shared tile so both controls participate in the same local stacking context.
     return (
       root.closest<HTMLElement>(".pick, .ko-summary .ko-grid > li") ?? root
     );
   }
-  private positionSummaryButton({ root, mount, host }: Entry) {
+  private positionCardButton({ root, mount, host }: Entry) {
     // Keep the button above the native tile hit target, but measure from the
     // card face. Captions and grid row stretching can extend the tile below it.
     let left = root.offsetLeft;
@@ -295,7 +294,7 @@ export class TooltipButtons {
     }
   }
   private remove(entry: Entry) {
-    entry.summaryResize?.disconnect();
+    entry.resize?.disconnect();
     entry.host.remove();
     const state = this.mounts.get(entry.mount)!;
     if (--state.count) return;

@@ -1,0 +1,60 @@
+.ko-summary .op-actions-stack:has(> [data-kosmore-remaining-packs]) {
+  row-gap: 0.25rem;
+}
+
+.ko-summary .op-actions-stack:has(> [data-kosmore-open-ten]) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem 0.375rem;
+  inline-size: min(100%, 28rem);
+  box-sizing: border-box;
+  margin-inline: auto;
+}
+
+.ko-summary .op-actions-stack:has(> [data-kosmore-open-ten]) > * {
+  grid-column: 1 / -1;
+}
+
+.ko-summary .op-actions-stack:has(> [data-kosmore-open-ten]) > button.btn-gold.btn-lg {
+  grid-column: auto;
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-inline-size: 0;
+  min-block-size: 44px;
+  padding-inline: 0.5rem;
+  white-space: normal;
+}
+
+.ko-summary button[data-kosmore-open-ten] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35em;
+}
+
+[data-kosmore-open-ten] > .kosmore-star {
+  flex: none;
+  inline-size: 0.9em;
+  block-size: 0.9em;
+  background: currentColor;
+}
+
+[data-kosmore-open-ten][aria-busy="true"] > .kosmore-star {
+  animation: kosmore-pack-spin 1s linear infinite;
+}
+
+@keyframes kosmore-pack-spin {
+  to { transform: rotate(1turn); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-kosmore-open-ten][aria-busy="true"] > .kosmore-star {
+    animation: none;
+  }
+}
+
+.ko-summary .op-actions-stack > [data-kosmore-remaining-packs] {
+  margin: 0;
+  text-align: center;
+  line-height: 1.25;
+}

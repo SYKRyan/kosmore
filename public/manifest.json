@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "KosMore",
-  "version": "2.0.50",
+  "version": "2.0.60",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvPkORTFo9zmE8tNehOyAHkD0QWM1PJyBAApkGblIuf1vueA+UEQP3fxmXTEYEcCSo0FHUrDcWR7OLrFB8ESdS/7QRulrhkbCHyFRRcphxV1l99mEqreDHZ3///7TvEV9gJ9nC0y5SgVdA1s0UJV61YB1sCHKgLmYNRLfZVoVhzny9C14X2+PnfNYqfVWKGoPUrOSI5ep5sQGjzWf8JQYRCoNMYsnTBfoV6ucmYT5CRw+kV7noVGSYoEmKdfJOZRZ2uxsI5eAtKfPwOwVZQIf61Og0CKu2ifYA8OuYjTdhu/dBS7d1Bm2ZQVsB7SMgjPfTmS/yInulz6uClj19PWU8wIDAQAB",
   "description": "Card insights and pinned album shortcuts for Kosmora, including pack reveals and summaries.",
   "minimum_chrome_version": "120",

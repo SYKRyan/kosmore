@@ -86,8 +86,10 @@ const logo = el("img", "settings-logo");
 logo.src = "icons/128.png";
 logo.alt = "";
 title.prepend(logo);
-head.append(el("p", "brand", "KosMore"), title);
-const accountBadge = button("Connect Account", () => location.assign("#connected-account"), "account-badge disconnected");
+const brand = el("p", "brand");
+brand.append(el("span", "brand-prefix", "Kos"), "More");
+head.append(brand, title);
+const accountBadge = button("Connect Account", () => location.assign("#connected-account"), "account-badge");
 accountBadge.setAttribute("aria-controls", "connected-account");
 header.append(head, accountBadge);
 app.append(header);
@@ -637,7 +639,7 @@ function priceWarningControls(
 const showRemainingPackCount = checkboxSetting(
   "showRemainingPackCount",
   "Show remaining pack count",
-  "Show how many ready packs remain above Open the Next Pack.",
+  "Show how many ready packs remain below the summary buttons.",
   (checked) => {
     draft.showRemainingPackCount = checked;
     void persistFeature(packBehavior, "showRemainingPackCount", showRemainingPackCount);
@@ -920,7 +922,7 @@ connection.append(el("h2", "", "Connected Account"), connectionContent);
 connectionContent.append(servicesConnection(({ handle, blocked }) => {
   const connected = !!handle && !blocked;
   accountBadge.textContent = connected ? `Connected to ${handle}` : "Connect Account";
-  accountBadge.classList.toggle("disconnected", !connected);
+  document.body.classList.toggle("connection-required", !connected);
 }));
 connection.setAttribute("aria-label", "connected account");
 const albumSettings = el("section", "panel");

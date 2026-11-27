@@ -79,12 +79,9 @@ export function resolveCard(
     picker.querySelector(".kc-article")
       ? picker
       : null;
-  const batchHead =
-    doc.location.pathname === "/market/sell/batch" &&
-    !target.closest(
-      "button, input, select, textarea, [role='button'], [role='combobox']",
-    )
-      ? target.closest<HTMLElement>(".bsell-row .bsell-head")
+  const batchRow =
+    doc.location.pathname === "/market/sell/batch"
+      ? target.closest<HTMLElement>(".bsell-row")
       : null;
   // Activity thumbnails are decorative to screen readers, but their outer
   // auction links are visible interactive cards with an independently readable ID.
@@ -114,11 +111,11 @@ export function resolveCard(
     target.closest<HTMLElement>(".kc-article") ??
     summary?.querySelector<HTMLElement>(".kc-article") ??
     reveal?.querySelector<HTMLElement>(".ko-face-front .kc-article");
-  const root = pickable ?? batchHead ?? activityLink ?? article ?? linked;
+  const root = batchRow ?? pickable ?? activityLink ?? article ?? linked;
   if (!root) return null;
   if (root.closest('[aria-hidden="true"],[hidden],[inert]')) return null;
   if (root.closest(".ko-face-back")) return null;
-  const link = linked ?? root.closest<HTMLAnchorElement>('a[href*="/card/"]');
+  const link = batchRow ? null : linked ?? root.closest<HTMLAnchorElement>('a[href*="/card/"]');
   const linkUrl = link?.getAttribute("href")
     ? new URL(link.getAttribute("href")!, doc.location.href)
     : null;
@@ -148,7 +145,7 @@ export function resolveCard(
   const pageCopy =
     url.pathname === `/card/${id}` ? url.searchParams.get("copy") : null;
   const copyId =
-    activityLink || batchHead || pickable
+    activityLink || batchRow || pickable
       ? null
       : (linkUrl?.searchParams.get("copy") ?? pageCopy);
   const openingIds =
@@ -177,7 +174,7 @@ export function resolveCard(
     subjectId: id,
     numberOne: !!face.querySelector(".kc-no1"),
     name:
-      (batchHead?.querySelector(".bsell-name")?.textContent?.trim() ||
+      (batchRow?.querySelector(".bsell-name")?.textContent?.trim() ||
         undefined) ??
       (activityLink
         ?.querySelector(

@@ -44,9 +44,12 @@ vi.mock("../../src/services-card-store", () => ({
       for (const row of cards) database.cards.set(row.key, row);
       for (const row of listings) database.listings.set(row.key, row);
     }
-    async saveConnection(value: typeof database.connection) {
+    async saveConnection(
+      value: typeof database.connection,
+      clearListings = true,
+    ) {
       database.connection = value;
-      database.listings.clear();
+      if (clearListings) database.listings.clear();
     }
     async prune(before: number) {
       for (const name of ["cards", "listings"] as const)
@@ -74,6 +77,8 @@ it("shares public batches and loads one independent listing snapshot only on pri
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("services-config.json"))
+        return Response.json({ defaultBaseUrl: "https://default.example.com" });
       if (url.endsWith("card-cache-config.json"))
         return Response.json({
           retentionDays: 30,
@@ -388,10 +393,13 @@ it("checks OAuth state, binds the bearer to the base URL, and clears private dat
     validState = false;
   const callback = "https://fixture.chromiumapp.org/kosmore-services";
   const base = "https://test.example.com/pilot";
+  let defaultBaseUrl = base;
   const exchange = vi.fn();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("services-config.json"))
+        return Response.json({ defaultBaseUrl, legacyBaseUrl: base });
       if (url.endsWith("card-cache-config.json"))
         return Response.json({ retentionDays: 30, freshnessSeconds: 300 });
       expect(url.startsWith(base)).toBe(true);
@@ -449,7 +457,6 @@ it("checks OAuth state, binds the bearer to the base URL, and clears private dat
   });
   const previous = database.connection;
   try {
-    installServicesBackground();
     const send = (op: string, base?: string) =>
       new Promise<FixtureResult>((resolve) =>
         listener(
@@ -458,6 +465,13 @@ it("checks OAuth state, binds the bearer to the base URL, and clears private dat
           resolve,
         ),
       );
+    // Earlier installations only stored the effective URL and session.
+    database.connection = { session: previous.session, base };
+    installServicesBackground();
+    expect((await send("servicesStatus")).data).toMatchObject({
+      base,
+      handle: previous.session.handle,
+    });
     expect(await send("servicesConnect", base)).toMatchObject({
       ok: false,
       error: expect.stringContaining("callback"),
@@ -470,6 +484,19 @@ it("checks OAuth state, binds the bearer to the base URL, and clears private dat
     });
     database.listings.set("private", { fetchedAt: Date.now() });
     const next = "https://test.example.com/other";
+    defaultBaseUrl = next;
+    installServicesBackground();
+    expect((await send("servicesStatus")).data).toEqual({ base: next });
+    expect(database.connection.session).toBeUndefined();
+    expect(database.listings.size).toBe(0);
+    // A custom URL survives a release with a different default.
+    await send("servicesSave", base);
+    defaultBaseUrl = "https://new.example.com";
+    installServicesBackground();
+    expect((await send("servicesStatus")).data).toEqual({ base });
+    expect((await send("servicesSave", "")).data).toEqual({
+      base: defaultBaseUrl,
+    });
     expect(await send("servicesSave", next)).toEqual({
       requestId: "test",
       ok: true,

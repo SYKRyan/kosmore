@@ -41,6 +41,7 @@ export const PACK_OPENING = [
   { id: "skipOpening", label: "Skip Opening" },
   { id: "later", label: "Later" },
   { id: "nextPack", label: "Next Pack/Back to Packs" },
+  { id: "openTen", label: "Open 10 at once" },
   { id: "dismissFoundPack", label: "Dismiss Found Pack" },
   { id: "seeCard", label: "See Card" },
   { id: "share", label: "Share" },

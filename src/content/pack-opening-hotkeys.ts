@@ -28,7 +28,7 @@ const REVEAL = ".ko-scene:not(.ko-summary-scene)";
 const SKIP = "button.ko-skip:not(.ko-later):not(.ko-talents)";
 const SKIP_WARNING = ".ko-skip-note, [data-testid='skip-note']";
 const OPENING_PATH = "/packs/open";
-export const NEXT_PACK = ".op-actions-stack > button.btn-gold.btn-lg";
+export const NEXT_PACK = ".op-actions-stack > button.btn-gold.btn-lg:not([data-kosmore-open-ten])";
 const BACK_TO_PACKS = '.op-actions-stack > a.btn-gold.btn-lg[href="/packs"]';
 const AUTO_SKIP_PREFIX = "kosmore.autoSkipOpening.";
 const MODIFIER_KEYS = new Set([
@@ -122,6 +122,7 @@ export class PackOpeningHotkeys {
     private beforeActivate: () => void,
     private insideTooltip: (element: Element) => boolean,
     private pinnedTooltipVisible: () => boolean,
+    private openTen: () => void,
   ) {}
 
   start() {
@@ -296,7 +297,7 @@ export class PackOpeningHotkeys {
       this.allowNativeFocus(event);
     const settings = this.settings();
     if (
-      location.pathname !== OPENING_PATH ||
+      (location.pathname !== OPENING_PATH && location.pathname !== "/packs") ||
       !settings.hotkeysEnabled ||
       !settings.packOpeningsEnabled ||
       !settings.packOpeningHotkeysEnabled ||
@@ -319,6 +320,13 @@ export class PackOpeningHotkeys {
         const binding = settings.packOpeningHotkeys[id];
         return binding && shortcutKey(binding) === key;
       })?.id;
+    if (location.pathname === "/packs") {
+      if (action === "openTen" && event.isTrusted && !modal()) {
+        const native = control(document, 'button[data-testid="t3-spree"]');
+        if (native && /\b10\b/.test(native.textContent ?? "")) this.activate(event, native);
+      }
+      return;
+    }
     if (!action && !settings.anyKeyDismissesFoundPack) return;
 
     const dialog = modal();
@@ -367,7 +375,10 @@ export class PackOpeningHotkeys {
       return;
     }
     if (summary) {
-      if (action === "nextPack")
+      if (action === "openTen" && event.isTrusted && !dialog && control(summary, "[data-kosmore-open-ten]")) {
+        this.consume(event);
+        this.openTen();
+      } else if (action === "nextPack")
         this.activate(
           event,
           control(summary, NEXT_PACK) ?? control(summary, BACK_TO_PACKS),

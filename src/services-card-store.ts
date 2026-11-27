@@ -20,6 +20,7 @@ type Stores = { cards: CachedCard; listings: CachedListings };
 
 interface StoredConnection {
   base: string;
+  usesDefault?: boolean;
   session?: {
     token: string;
     blocked?: boolean;
@@ -89,7 +90,7 @@ export class ServicesCardStore {
     );
   }
 
-  async saveConnection(connection: StoredConnection) {
+  async saveConnection(connection: StoredConnection, clearListings = true) {
     const db = await this.open();
     return new Promise<void>((resolve, reject) => {
       const transaction = db.transaction(
@@ -99,7 +100,7 @@ export class ServicesCardStore {
       transaction.oncomplete = () => resolve();
       transaction.onabort = () => reject(transaction.error);
       transaction.objectStore("connection").put(connection, "current");
-      transaction.objectStore("listings").clear();
+      if (clearListings) transaction.objectStore("listings").clear();
     });
   }
 

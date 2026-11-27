@@ -236,6 +236,7 @@ export class GameClient implements KosmoraClient {
     )
       return;
     this.inventory = { key: href, at: Date.now(), ids: parseReadyPackIds(raw) };
+    return this.inventory.ids;
   }
 
   async verifiedCopy(subject: string, copyId: string, expectedAccount: string) {
@@ -369,6 +370,7 @@ export class GameClient implements KosmoraClient {
     method: "GET" | "POST" | "DELETE",
     body?: unknown,
     signal?: AbortSignal,
+    idempotencyKey?: string,
   ): Promise<unknown> {
     const startedAt = Date.now();
     if (startedAt < this.blockedUntil)
@@ -392,6 +394,7 @@ export class GameClient implements KosmoraClient {
               Accept: "application/json",
               "Content-Type": "application/json",
               "x-kosmora": "1",
+              ...(idempotencyKey && { "Idempotency-Key": idempotencyKey }),
             }
           : { Accept: "application/json" },
       // The native transport sends valid JSON for every write, including DELETE.
@@ -1215,7 +1218,8 @@ export class GameClient implements KosmoraClient {
     }
   }
 
-  async readyPackIds(signal?: AbortSignal): Promise<string[]> {
+  async readyPackIds(signal?: AbortSignal, fresh = false): Promise<string[]> {
+    if (fresh) this.inventory = undefined;
     if (
       this.inventory &&
       this.inventory.key === location.href &&
@@ -1226,10 +1230,46 @@ export class GameClient implements KosmoraClient {
       "ready-packs",
       async (shared) =>
         parseReadyPackIds(await this.read("/packs/inventory", shared)),
-      false,
+      fresh,
       signal,
     );
     return ids;
+  }
+
+  async batchOpenAccount(fresh = false): Promise<string | undefined> {
+    const account = await this.account(undefined, fresh);
+    const version = this.accountVersion;
+    const tree = object(await this.read("/talents3"));
+    if (version !== this.accountVersion || !Array.isArray(tree.paths)) return;
+    const owned = tree.paths.some(path =>
+      Array.isArray(path?.ranks) && path.ranks.some((rank: { owned?: string } | null) =>
+        rank?.owned === "fortune.1a"));
+    return owned ? account.key : undefined;
+  }
+
+  async openPackBatch(ids: string[], account: string, previousHeld: string[]): Promise<string> {
+    if (ids.length !== 10 || new Set(ids.map(uuid)).size !== 10 ||
+        this.lastAccount?.key !== account)
+      throw new Error("The selected packs or account changed.");
+    const data = object(await this.send("/talents3/powers/batch-open", "POST",
+      { openingIds: ids }, undefined, `t3bo-${crypto.randomUUID()}`));
+    const opened: string[] = [], held: string[] = [];
+    if (Array.isArray(data.packs)) {
+      const remaining = new Set(ids);
+      for (const pack of data.packs) {
+        if (!remaining.delete(pack?.openingId)) continue;
+        if (pack.ok === true && pack.opening?.id === pack.openingId &&
+            Array.isArray(pack.opening.cards) && pack.opening.cards.length)
+          opened.push(pack.openingId);
+        else if (pack.held === true) held.push(pack.openingId);
+      }
+    }
+    if (opened.length) {
+      held.push(...previousHeld);
+      return `/packs/open?batch=${opened.join(",")}${held.length ? "&held=" + held.join(",") : ""}`;
+    }
+    if (held.length) return "/packs/open?id=" + held[0];
+    throw new Error("Kosmora returned no confirmed openings.");
   }
   async albums(
     id?: string,

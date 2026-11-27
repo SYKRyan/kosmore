@@ -44,6 +44,7 @@ const required = new Set(
   [
     "manifest.json",
     "card-cache-config.json",
+    "services-config.json",
     "link-complete.html",
     "link-complete.js",
     manifest.background.service_worker,

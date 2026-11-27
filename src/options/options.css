@@ -219,6 +219,9 @@ h2 {
   text-transform: uppercase;
   margin-bottom: 16px;
 }
+.brand-prefix {
+  color: #fff;
+}
 .intro {
   max-width: 610px;
   color: var(--settings-muted);
@@ -259,22 +262,43 @@ h2 {
   min-width: 0;
 }
 .header button.account-badge {
-  --badge-fill: #163e32;
-  --badge-border: #68bf92;
-  --badge-text: #b9f2d0;
   font-size: 11px;
-  color: var(--badge-text);
-  background: var(--badge-fill);
-  border: 1px solid var(--badge-border);
+  color: #b9f2d0;
+  background: #163e32;
+  border: 1px solid #68bf92;
   border-radius: 20px;
   padding: 5px 11px;
   max-width: 100%;
   overflow-wrap: anywhere;
 }
-.header .account-badge.disconnected {
-  --badge-fill: #46252c;
-  --badge-border: #f08080;
-  --badge-text: #ffcdce;
+.connection-required :is(.header .account-badge, .settings-nav-link[href="#connected-account"]) {
+  color: #ffcdce;
+  background: #46252c;
+  border-color: #f08080;
+  @media (prefers-reduced-motion: no-preference) {
+    animation: connection-pulse 2.4s ease-in-out infinite;
+  }
+}
+@keyframes connection-pulse {
+  50% {
+    background-color: #803541;
+    box-shadow: 0 0 10px #ef62624d;
+  }
+}
+.connection-required #connected-account {
+  border-color: #f08080;
+  @media (prefers-reduced-motion: no-preference) {
+    animation: connection-border-pulse 2.4s ease-in-out infinite;
+  }
+}
+@keyframes connection-border-pulse {
+  0%, 100% {
+    border-color: #ad515c;
+  }
+  50% {
+    border-color: #ff9c9c;
+    box-shadow: 0 0 12px #ef62624d;
+  }
 }
 .account-badge:is(:hover, :focus-visible) {
   filter: brightness(1.15);
