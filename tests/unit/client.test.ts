@@ -160,6 +160,7 @@ function harness({
       }
       if (init?.method === "POST") {
         posts++;
+        if (full) return Response.json({}, { status: 409 });
         added = true;
         if (timeout) throw new TypeError("network failed after commit");
         return Response.json({ added: 1 });
@@ -171,8 +172,7 @@ function harness({
         });
       if (path.startsWith("/api/collection/")) return Response.json(card());
       if (path.startsWith("/api/albums")) {
-        const d = albums(added);
-        if (full) d.albums[0].items = 2000;
+        const d = albums(added, full ? 2000 : undefined);
         if (unknownMembership)
           delete (d.albums[0] as { contains?: boolean }).contains;
         if (missingAlbum) d.albums = [];
@@ -323,15 +323,30 @@ it("uses only the explicit add endpoint and confirms a timeout without repeating
     copyId: COPY_A,
   });
 });
-it("rejects unowned copies, full albums, and account switches before writing", async () => {
-  for (const opts of [{ full: true }, { other: true }, {}]) {
+it("reports a server rejection for a full album without repeating the write", async () => {
+  const h = harness({ full: true });
+  await h.client.observeCardDetails(card());
+  const copy = {
+    id: COPY_A,
+    subjectId: "42",
+    state: "available",
+    variant: { veil: false, fullArt: false },
+  };
+  await expect(h.client.add(ALBUM_A, copy, "fixtureplayer")).rejects.toMatchObject({
+    status: 409,
+  });
+  expect(h.posts()).toBe(1);
+  expect((await h.client.albums("42"))[0].contains).toBe(false);
+});
+it("rejects unowned copies and account switches before writing", async () => {
+  for (const opts of [{ other: true }, {}]) {
     const h = harness(opts);
     await h.client.observeCardDetails(card());
     await expect(
       h.client.add(
         ALBUM_A,
         {
-          id: opts.full || opts.other ? COPY_A : COPY_B,
+          id: opts.other ? COPY_A : COPY_B,
           subjectId: "42",
           state: "available",
           variant: { veil: false, fullArt: false },

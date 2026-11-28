@@ -1498,8 +1498,6 @@ export class GameClient implements KosmoraClient {
       if (album.contains) return;
       if (album.contains === undefined)
         throw new Error("Album membership could not be verified.");
-      if (album.items >= 2000)
-        throw new Error("This album is full (2,000 cards).");
       try {
         object(
           await this.send(`/albums/${albumId}/items`, "POST", {
@@ -1514,7 +1512,11 @@ export class GameClient implements KosmoraClient {
           undefined,
           true,
         ).catch(() => null);
-        if (!refreshed?.find((a) => a.id === albumId)?.contains) throw error;
+        if (!refreshed?.find((a) => a.id === albumId)?.contains) {
+          if (error instanceof ApiError && error.status === 409)
+            throw new ApiError("This album may be full (409).", 409);
+          throw error;
+        }
       }
       this.albumReads.clear();
       if (

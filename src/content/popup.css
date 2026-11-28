@@ -555,7 +555,8 @@ h3 {
   color: #b6a6c8;
   margin: 8px 0;
 }
-.error {
+.error,
+.album-status.error {
   color: #f1aab5;
 }
 .legend {

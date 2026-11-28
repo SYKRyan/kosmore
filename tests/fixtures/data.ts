@@ -34,12 +34,12 @@ export const card = (id = "42") => ({
 export const friends = {
   friends: [{ handle: "batu" }, { handle: "FriendB" }, { handle: "NoMatch" }],
 };
-export const albums = (contains = false) => ({
+export const albums = (contains = false, items = 12) => ({
   albums: [
     {
       id: ALBUM_A,
       name: "Space & discovery",
-      items: 12,
+      items,
       contains,
       containsCount: +contains,
     },

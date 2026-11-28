@@ -71,6 +71,7 @@ let variantFailure = false,
   inventoryEmpty = false,
   writeRequests = 0,
   membership = false,
+  albumItems = 12,
   account = "FixturePlayer";
 const artwork = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="350"><defs><radialGradient id="g"><stop stop-color="#674b94"/><stop offset="1" stop-color="#16132e"/></radialGradient></defs><rect width="400" height="350" fill="url(#g)"/><g fill="#e8d4a2"><circle cx="75" cy="55" r="2"/><circle cx="330" cy="90" r="3"/><circle cx="125" cy="220" r="2"/><circle cx="270" cy="290" r="2"/><path d="M200 90 212 155 280 175 212 194 200 255 184 194 120 175 184 155Z"/></g></svg>`;
 function fixture(mode: "summary" | "reveal" | "page" = "summary", count = 6) {
@@ -162,7 +163,7 @@ test.beforeAll(async () => {
           return;
         }
         body = prices(url.searchParams.get("finish") === "fullart" ? 0 : 3);
-      } else if (path === "/api/albums") body = albums(membership);
+      } else if (path === "/api/albums") body = albums(membership, albumItems + Number(membership));
       else if (path.startsWith("/api/openings/")) body = opening;
       else {
         await route.fulfill({ status: 404, json: { code: "not_found" } });
@@ -245,6 +246,7 @@ test.beforeEach(async () => {
   holdSlow = false;
   inventoryEmpty = false;
   membership = false;
+  albumItems = 12;
   writeRequests = 0;
   account = "FixturePlayer";
   await worker.evaluate(
@@ -1611,7 +1613,8 @@ test("mobile friendly: full-screen hover tooltips close from the buffer even wit
   await expect(popup).toHaveCount(0);
 });
 
-test("recap overlay resolves repeated subjects to their exact copies and adds only on an explicit click", async () => {
+test("recap overlay resolves repeated subjects to their exact copies and adds to an album above 2,000 cards on an explicit click", async () => {
+  albumItems = 2100;
   await page.goto(`https://kosmora.io/packs/open?id=${OPENING}&recap=1`);
   await page.locator(".ko-grid-open").nth(1).hover();
   const popup = page.locator("#kosmore-root");
@@ -2041,11 +2044,11 @@ test("a failed album addition keeps the tooltip open and a successful retry clos
       "kosmore.settings": { ...saved, closeTooltipWhenAddedToAlbum: true },
     });
   });
-  let failed = true;
+  let failureStatus = 409;
   await page.route(`**/api/albums/${ALBUM_A}/items`, async (route) => {
     writeRequests++;
-    if (failed)
-      await route.fulfill({ status: 503, json: { error: "unavailable" } });
+    if (failureStatus)
+      await route.fulfill({ status: failureStatus, json: {} });
     else {
       membership = true;
       await route.fulfill({ json: { added: 1 } });
@@ -2061,14 +2064,20 @@ test("a failed album addition keeps the tooltip open and a successful retry clos
       });
     await expect(album).toBeEnabled();
     await album.click();
-    await expect(popup.locator(".album-status.error")).toContainText("503");
-    await expect(popup).toBeVisible();
+    const error = popup.locator(".album-status.error");
+    await expect(error).toHaveText("This album may be full (409).");
+    await expect(error).toHaveCSS("color", "rgb(241, 170, 181)");
     expect(writeRequests).toBe(1);
-    failed = false;
+    failureStatus = 503;
+    await album.click();
+    await expect(error).toHaveText("Kosmora could not complete the request (503).");
+    await expect(popup).toBeVisible();
+    expect(writeRequests).toBe(2);
+    failureStatus = 0;
     await expect(album).toBeEnabled();
     await album.click();
     await expect(popup).toHaveCount(0);
-    expect(writeRequests).toBe(2);
+    expect(writeRequests).toBe(3);
   } finally {
     await page.unroute(`**/api/albums/${ALBUM_A}/items`);
   }

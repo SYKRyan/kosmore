@@ -1935,11 +1935,9 @@ export class Popup {
         ? "Unavailable"
         : album.contains
           ? "Already added"
-          : album.items >= 2000
-            ? "Album full"
-            : !selected
-              ? "Choose a copy"
-              : undefined;
+          : !selected
+            ? "Choose a copy"
+            : undefined;
       if (why) b.append(el("small", "", why));
       b.disabled = !!why || this.pending;
       tile.append(b);

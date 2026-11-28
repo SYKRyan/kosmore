@@ -8,9 +8,9 @@ The release ZIP is ready to load in a Chromium-based browser. KosMore requires C
 
 ### First installation
 
-1. Download `KosMore-2.0.60.zip`. Extract it into a folder you will keep, such as `Documents\KosMore`. Open that folder and find `manifest.json`. This is the folder you will select in step 3.
+1. Download `KosMore-2.0.62.zip`. Extract it into a folder you will keep, such as `Documents\KosMore`. Open that folder and find `manifest.json`. This is the folder you will select in step 3.
 2. Open the Extensions page in the browser you use for Kosmora. In Chrome, enter `chrome://extensions` in the address bar. In Edge, enter `edge://extensions`. In Vivaldi, enter `vivaldi://extensions`.
-3. Turn on **Developer mode**. Select **Load unpacked**, choose the folder containing `manifest.json`, and confirm. The Extensions page should now list **KosMore 2.0.60**. Keep that folder in place.
+3. Turn on **Developer mode**. Select **Load unpacked**, choose the folder containing `manifest.json`, and confirm. The Extensions page should now list **KosMore 2.0.62**. Keep that folder in place.
 4. Open Kosmora in the same browser profile and sign in to the player you want to link. Refresh any Kosmora tabs that were already open.
 5. Open the browser’s **Extensions** menu and select **KosMore** to open Settings. Select the red **Connect Account** button at the top.
 6. Leave the masked **KosMore Services API base URL** filled in. If you received a tester invite code, enter it. Select **Connect**, allow access to the Services host if prompted, and approve KosMore in the Kosmora sign-in window.
@@ -22,12 +22,12 @@ On **Vivaldi for Android**, extract the ZIP with your Files app. In Vivaldi, ena
 
 ### Update an existing installation
 
-You can update directly from 2.0.51. These steps also apply to other unpacked releases from 2.0.1 onward.
+You can update directly from 2.0.60. These steps also apply to other unpacked releases from 2.0.1 onward.
 
 1. Open the browser profile where KosMore is already installed. For an optional backup, open **KosMore Settings → Backup & Restore → Export backup** and save the file.
-2. Download `KosMore-2.0.60.zip` and extract it. Open the extracted folder that contains `manifest.json`.
+2. Download `KosMore-2.0.62.zip` and extract it. Open the extracted folder that contains `manifest.json`.
 3. Copy the **contents** of that folder into the folder your browser already uses for KosMore. Choose **Replace** or **Overwrite** when prompted. The new `manifest.json` should replace the old one at the same location.
-4. On the browser’s Extensions page, find the existing **KosMore** entry and select **Reload** (the circular arrow). Check that the version now reads **2.0.60**.
+4. On the browser’s Extensions page, find the existing **KosMore** entry and select **Reload** (the circular arrow). Check that the version now reads **2.0.62**.
 5. Refresh your open Kosmora tabs and reopen KosMore Settings. If the green badge shows your handle, you’re done. If you see **Connect Account**, follow steps 5–7 under **First installation**. Your saved settings and notes carry over with an in-place update.
 
 **Using a build from 2.0.0 or earlier with a different extension ID?** In the old installation, export a backup first. Disable that installation and follow **First installation** using a separate folder. In the new installation, open **Backup & Restore**, select the saved file, review the preview, and choose **Import backup**. Verify your notes and pinned albums before removing the old installation.
@@ -124,6 +124,7 @@ Choose the albums that appear as shortcuts in the card tooltip. Keep a Kosmora t
 - Reorder **Pinned shortcuts** with the move controls; the tooltip follows this order and displays three compact shortcuts per row, aligned with the stat boxes. Long album names use ellipses.
 - Record or clear an album hotkey in its **Pinned shortcuts** row. With a card tooltip open, press the saved hotkey to use the album button for the selected copy. Save the group to store the pins, order, and hotkeys for that account.
 - In a card tooltip, choose the owned copy when necessary and click an album shortcut to add it. Existing membership is shown, with a remove control for removing the card from that album.
+- Album shortcuts support capacity upgrades from the Astra Shop. If Kosmora rejects an add with a 409 conflict, the tooltip displays “This album may be full (409).” in red.
 
 Album actions use your signed-in Kosmora account. Unpinning a shortcut only removes the shortcut from KosMore.
 
